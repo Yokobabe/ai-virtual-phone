@@ -62,13 +62,13 @@ API 配置里的开关。开启后支持 function calling 的模型走原生工�
 ## 部署与分支
 
 ### Q: 怎么部署自己的实例？
-可部署到 Netlify / Vercel：导入仓库 → 选 main 或 test 分支 → 构建设置默认 → 平台后台添加环境变量 NEXT_PUBLIC_SELF_HOSTED_MODE=true → 部署。本地运行：Node.js 20+，npm install && npm run dev（默认端口 3001）。
+可部署到 Netlify / Vercel：导入仓库 → 选 main 或 test 分支 → 构建设置默认 → 直接部署即可（自托管/单机模式已默认开启，无需任何环境变量、无需账号门禁）。本地运行：Node.js 20+，npm install && npm run dev（默认端口 3001）。如需启用官方账号/激活码系统，才需要显式设置 NEXT_PUBLIC_SELF_HOSTED_MODE=false 并自建 Supabase。
 
 ### Q: main 和 test 分支有什么区别？
 main 是正常设备版；test 是兼容设备版。部分设备全屏或显示异常时改部署 test 分支，功能保持同步。
 
 ### Q: NEXT_PUBLIC_SELF_HOSTED_MODE 是什么？
-true = 单机模式，跳过账号/激活码门禁，用本地账号直接进入（个人自部署推荐）；false = 启用账号门禁，需要自建 Supabase 并配置 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / ACCOUNT_GATE_SECRET。
+该变量控制是否启用官方账号/激活码门禁。默认（不设置或留空）即为单机/自托管模式：跳过账号门禁，用本地账号直接进入，无需任何环境变量。仅当你要接入作者官方账号系统时，才需要显式设为 false 并自建 Supabase（配置 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / ACCOUNT_GATE_SECRET）。个人自部署通常不需要设置它。
 
 ### Q: 哪些环境变量不能公开？
 NEXT_PUBLIC_ 开头的变量会打包进浏览器代码、完全公开。Supabase service_role、后台管理密钥、第三方 API 私钥绝不能写进任何 NEXT_PUBLIC_ 变量。

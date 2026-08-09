@@ -25,6 +25,7 @@ export function resolveVoiceConfig(characterId: string, appId?: ContentAppId): V
  * Supported providers:
  * - Minimax: REST API → hex-encoded mp3
  * - OpenAI: REST API → binary audio blob
+ * - ElevenLabs: REST API (xi-api-key) → mp3，多语种（默认 multilingual_v2 含中文）
  */
 export async function synthesizeSpeech(
     text: string,
@@ -41,6 +42,10 @@ export async function synthesizeSpeech(
 
     if (provider === "OpenAI") {
         return synthesizeOpenAI(text, voiceConfig);
+    }
+
+    if (provider === "ElevenLabs") {
+        return synthesizeElevenLabs(text, voiceConfig);
     }
 
     return null;
@@ -153,6 +158,47 @@ async function synthesizeOpenAI(text: string, config: VoiceApiConfig): Promise<B
     if (!response.ok) {
         const errText = await response.text().catch(() => "");
         throw new Error(`OpenAI TTS 请求失败 (${response.status}): ${errText}`);
+    }
+
+    const blob = await response.blob();
+    return new Blob([await blob.arrayBuffer()], { type: "audio/mpeg" });
+}
+
+// ── ElevenLabs TTS ──────────────────────────────────
+// 鉴权用 xi-api-key 请求头（与 Minimax/OpenAI 一样浏览器直连，密钥存本地设置，
+// 不依赖任何 Netlify 环境变量）。Voice ID 取自 config.defaultVoice；可留空后在
+// 语音设置页「同步音色列表」拉取，或手动粘贴。默认模型 multilingual_v2 含中文。
+
+const DEFAULT_ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1";
+
+async function synthesizeElevenLabs(text: string, config: VoiceApiConfig): Promise<Blob | null> {
+    if (!config.apiKey) throw new Error("ElevenLabs API Key 未配置");
+    const voiceId = (config.defaultVoice || "").trim();
+    if (!voiceId) throw new Error("ElevenLabs 未设置 Voice ID（请在默认音色处填写，或先点同步音色列表）");
+
+    const baseUrl = (config.baseUrl || DEFAULT_ELEVENLABS_BASE_URL).replace(/\/$/, "");
+    const response = await fetchWithTimeout(`${baseUrl}/text-to-speech/${encodeURIComponent(voiceId)}`, {
+        method: "POST",
+        headers: {
+            "xi-api-key": config.apiKey,
+            "Content-Type": "application/json",
+            Accept: "audio/mpeg",
+        },
+        body: JSON.stringify({
+            text,
+            model_id: config.model || "eleven_multilingual_v2",
+            voice_settings: {
+                stability: 0.5,
+                similarity_boost: 0.75,
+                style: 0.0,
+                use_speaker_boost: true,
+            },
+        }),
+    });
+
+    if (!response.ok) {
+        const errText = await response.text().catch(() => "");
+        throw new Error(`ElevenLabs TTS 请求失败 (${response.status}): ${errText.slice(0, 200)}`);
     }
 
     const blob = await response.blob();
