@@ -15,6 +15,7 @@ import {
 import { getMascotContext, subscribeMascotContext } from "@/lib/mascot-context";
 import { mascotNavigate, DIY_WIDGET_PREVIEW_EVENT, type DiyWidgetPreviewEventDetail, type DiyWidgetPreviewRequest } from "@/lib/mascot-events";
 import { DIY_WIDGET_GUARD_STYLE } from "@/components/widgets/diy-widget-renderer";
+import { MediaPreviewOverlay } from "@/components/chat/media-preview-overlay";
 import {
   clearMascotToolHistoryMessages,
   deleteMascotMessageWithLinkedTools,
@@ -613,6 +614,7 @@ export function MascotFloat() {
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   // ref → blob object URL 缓存，渲染预览用
   const [imagePreviewCache, setImagePreviewCache] = useState<Record<string, string>>({});
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [nineSliceCalibration, setNineSliceCalibration] = useState<NineSliceCalibrationEventDetail | null>(null);
   const [diyWidgetPreview, setDiyWidgetPreview] = useState<DiyWidgetPreviewRequest | null>(null);
   const [activeMascotMessageIndex, setActiveMascotMessageIndex] = useState<number | null>(null);
@@ -1018,7 +1020,16 @@ export function MascotFloat() {
                 const url = imagePreviewCache[ref];
                 if (!url) return <div key={idx} className="mascot-msg-image mascot-msg-image-loading" />;
                 /* eslint-disable-next-line @next/next/no-img-element */
-                return <img key={idx} src={url} alt="" className="mascot-msg-image" />;
+                return (
+                  <img
+                    key={idx}
+                    src={url}
+                    alt=""
+                    className="mascot-msg-image"
+                    style={{ cursor: "pointer" }}
+                    onClick={e => { e.stopPropagation(); setPreviewImageUrl(url); }}
+                  />
+                );
               })}
             </div>
           )}
@@ -1056,7 +1067,16 @@ export function MascotFloat() {
                 const url = imagePreviewCache[ref];
                 if (!url) return <div key={idx} className="mascot-msg-image mascot-msg-image-loading" />;
                 /* eslint-disable-next-line @next/next/no-img-element */
-                return <img key={idx} src={url} alt="" className="mascot-msg-image" />;
+                return (
+                  <img
+                    key={idx}
+                    src={url}
+                    alt=""
+                    className="mascot-msg-image"
+                    style={{ cursor: "pointer" }}
+                    onClick={e => { e.stopPropagation(); setPreviewImageUrl(url); }}
+                  />
+                );
               })}
             </div>
           )}
@@ -2101,6 +2121,14 @@ export function MascotFloat() {
         />
       )}
 
+      {previewImageUrl && (
+        <MediaPreviewOverlay
+          imageUrl={previewImageUrl}
+          saveFilename="小卷图片.png"
+          onClose={() => setPreviewImageUrl(null)}
+        />
+      )}
+
       {diyWidgetPreview && (
         <DiyWidgetPreviewDialog
           request={diyWidgetPreview}
@@ -2266,7 +2294,13 @@ export function MascotFloat() {
                         placeholder={`跟${mascotDisplayName}聊聊...`}
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
+                        onKeyDown={(event) => {
+                          // 悬浮面板是单行输入框（装不下换行），回车始终发送；只挡输入法候选确认
+                          if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+                          event.preventDefault();
+                          void handleSend();
+                        }}
+                        enterKeyHint="send"
                         disabled={isThinking}
                       />
                       {isThinking
@@ -2368,7 +2402,12 @@ export function MascotFloat() {
                           placeholder={context.mode === "editing" ? `告诉${mascotDisplayName}你想改什么...` : `跟${mascotDisplayName}聊聊...`}
                           value={chatInput}
                           onChange={(e) => setChatInput(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+                            event.preventDefault();
+                            void handleSend();
+                          }}
+                          enterKeyHint="send"
                           disabled={isThinking}
                         />
                         {isThinking

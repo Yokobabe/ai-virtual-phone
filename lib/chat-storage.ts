@@ -224,6 +224,7 @@ export type ChatMessage = {
     };
     isTyping?: boolean; // temporary flag for UI rendering
     statusPanel?: string; // AI display-only status content from [状态栏] tags
+    statusRegionMode?: "custom"; // 该消息生成时会话处于自定义状态栏模式（缺省=原生渲染）
     innerMonologue?: string; // AI inner monologue content from [内心] tags
     reasoningText?: string; // 模型思维链（reasoning/CoT）内容，挂在回复批次的第一条气泡上
     stateValues?: StateValue[]; // parsed character state values from inner monologue
@@ -254,7 +255,16 @@ export type ChatAppSettings = {
     quickActionEnabled?: boolean; // When true, show the floating quick action entry
     browserNotificationsEnabled?: boolean; // When true, send browser Notification API alerts when page is hidden
     enterToSendEnabled?: boolean; // When true, Enter sends chat input and Shift+Enter inserts a newline
+    callVibrationEnabled?: boolean; // 语音/视频来电等待接听时循环振动（默认开；iOS 网页不支持振动则无效果）
+    maxToolRounds?: number; // 单条消息的工具循环轮数上限（默认 5；每轮=一次模型请求，轮内调用条数不限）
 };
+
+/** 单条消息工具循环轮数上限（默认 5，夹在 1–20 之间） */
+export function getMaxToolRounds(): number {
+    const raw = loadChatAppSettings().maxToolRounds;
+    if (typeof raw !== "number" || !Number.isFinite(raw)) return 5;
+    return Math.max(1, Math.min(20, Math.round(raw)));
+}
 
 export const CHAT_APP_SETTINGS_UPDATED_EVENT = "chat-app-settings-updated";
 export const CHAT_MESSAGE_PUSHED_EVENT = "chat-message-pushed";
@@ -652,12 +662,55 @@ function normalizeChatSessions(sessions: ChatSession[]): NormalizedSessionList {
     return { items: normalized, changed, redirects };
 }
 
+// ── 用户主动删除的好友（墓碑）────────────────────────
+// 删好友是「删联系人、留会话」——会话留着，重新加回来才能接上历史记录。
+// 但下面的 restoreContactsForPrivateSessions 是条数据抢救逻辑：它看到
+// 「有会话却没联系人」就认定联系人表丢了，照着会话把联系人重建回来，
+// 于是刚删掉的好友立刻复活。这里把用户的主动删除记一笔，让抢救逻辑跳过
+// 它们；重新加好友时 addChatContact 会自动销掉墓碑。
+const REMOVED_CONTACTS_KEY = "ai_phone_removed_contacts_v1";
+registerKvMigration(REMOVED_CONTACTS_KEY);
+
+function loadRemovedContactIds(): Set<string> {
+    if (typeof window === "undefined") return new Set<string>();
+    try {
+        const raw = kvGet(REMOVED_CONTACTS_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        const ids: string[] = Array.isArray(parsed) ? parsed.filter((id: unknown): id is string => typeof id === "string" && !!id) : [];
+        return new Set<string>(ids);
+    } catch {
+        return new Set<string>();
+    }
+}
+
+function saveRemovedContactIds(ids: Set<string>): void {
+    if (typeof window === "undefined") return;
+    kvSet(REMOVED_CONTACTS_KEY, JSON.stringify([...ids]));
+}
+
+function markContactRemoved(characterId: string): void {
+    if (!characterId) return;
+    const ids = loadRemovedContactIds();
+    if (ids.has(characterId)) return;
+    ids.add(characterId);
+    saveRemovedContactIds(ids);
+}
+
+function unmarkContactRemoved(characterId: string): void {
+    if (!characterId) return;
+    const ids = loadRemovedContactIds();
+    if (!ids.delete(characterId)) return;
+    saveRemovedContactIds(ids);
+}
+
 function restoreContactsForPrivateSessions(contacts: ChatContact[], sessions: ChatSession[]): NormalizedList<ChatContact> {
     const characterIds = new Set(loadCharacters().map(character => character.id));
+    const removedByUser = loadRemovedContactIds();
     const privateSessionsWithMessages = sessions.filter(session =>
         !session.isGroup
         && session.contactId
         && characterIds.has(session.contactId)
+        && !removedByUser.has(session.contactId)
         && Boolean(getLastVisibleSessionMessage(session.id))
     );
     if (privateSessionsWithMessages.length === 0 || contacts.length >= privateSessionsWithMessages.length) {
@@ -936,6 +989,9 @@ export function saveChatContacts(contacts: ChatContact[]) {
 }
 
 export function addChatContact(characterId: string): ChatContact | null {
+    // 任何一条"重新加上好友"的路径都会走到这里（通过好友申请、搜索添加、
+    // 后台引擎重新建联系），统一在这里解除删除状态，不会漏。
+    unmarkContactRemoved(characterId);
     const contacts = loadChatContacts();
     if (contacts.find(c => c.characterId === characterId)) return null; // already exists
 
@@ -951,6 +1007,7 @@ export function addChatContact(characterId: string): ChatContact | null {
 export function removeChatContact(characterId: string) {
     const contacts = loadChatContacts();
     saveChatContacts(contacts.filter(c => c.characterId !== characterId));
+    markContactRemoved(characterId);
 }
 
 // ── CRUD for Sessions ─────────────────────────
@@ -1802,6 +1859,7 @@ export function replaceResponseBatchWithParts(
     parts: { content: string; mediaType?: ChatMessage["mediaType"]; mediaData?: ChatMessage["mediaData"] }[],
     options?: {
         statusPanel?: string;
+        statusRegionMode?: "custom";
         innerMonologue?: string;
         reasoningText?: string;
         stateValues?: StateValue[];
@@ -1844,6 +1902,7 @@ export function replaceResponseBatchWithParts(
         responseRoundId: firstMessage.responseRoundId,
         editableResponseText: firstMessage.editableResponseText,
         statusPanel: index === (options?.metaPartIndex ?? 0) ? options?.statusPanel : undefined,
+        statusRegionMode: index === (options?.metaPartIndex ?? 0) && options?.statusPanel ? options?.statusRegionMode : undefined,
         innerMonologue: index === (options?.metaPartIndex ?? 0) ? options?.innerMonologue : undefined,
         reasoningText: index === (options?.metaPartIndex ?? 0) ? options?.reasoningText : undefined,
         stateValues: index === (options?.metaPartIndex ?? 0) ? options?.stateValues : undefined,
@@ -1906,6 +1965,7 @@ export function replaceGroupResponseRound(
         rawResponseText?: string;
         responseBatchId?: string;
         statusPanel?: string;
+        statusRegionMode?: "custom";
         innerMonologue?: string;
         reasoningText?: string;
         stateValues?: StateValue[];
@@ -1947,6 +2007,7 @@ export function replaceGroupResponseRound(
         responseRoundId,
         editableResponseText,
         statusPanel: msg.statusPanel,
+        statusRegionMode: msg.statusRegionMode,
         innerMonologue: msg.innerMonologue,
         reasoningText: msg.reasoningText,
         stateValues: msg.stateValues,

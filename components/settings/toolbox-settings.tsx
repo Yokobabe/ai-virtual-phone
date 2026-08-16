@@ -25,6 +25,7 @@ import type { CustomAppToolDefinition } from "@/lib/custom-app-types";
 import { downloadFile } from "@/lib/download-utils";
 import {
     CALENDAR_MANAGEMENT_CAPABILITY_ID,
+    AGENT_COMPUTER_CAPABILITY_ID,
     LOCAL_DATA_LIBRARY_CAPABILITY_ID,
     loadInternalCapabilities,
     saveInternalCapabilities,
@@ -33,6 +34,7 @@ import {
     TOOLBOX_MANAGEMENT_CAPABILITY_ID,
 } from "@/lib/internal-capability-storage";
 import { discoverMcpTools, startMcpOAuth } from "@/lib/tool-executor";
+import { getMaxToolRounds, loadChatAppSettings, saveChatAppSettings } from "@/lib/chat-storage";
 import { SettingsContext } from "@/components/phone-settings-app";
 import { Toggle, Input, Textarea, Select } from "@/components/ui/form";
 import { ConfirmDialog, ContentDialog } from "@/components/ui/modal";
@@ -125,9 +127,9 @@ export function ToolboxSettings() {
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
     const [confirmDeleteType, setConfirmDeleteType] = useState<"rest" | "restPackage" | "composite" | "compositePackage" | "mcp">("rest");
     const [isDiscovering, setIsDiscovering] = useState(false);
-    const [discoverError, setDiscoverError] = useState<string | null>(null);
     const [isAuthorizing, setIsAuthorizing] = useState(false);
-    const [authResult, setAuthResult] = useState<string | null>(null);
+    // MCP 操作结果统一走一次性弹窗，不在编辑页里留常驻文案
+    const [mcpNotice, setMcpNotice] = useState<{ title: string; message: string; error?: boolean } | null>(null);
     const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
     const [showExportDialog, setShowExportDialog] = useState(false);
     const [exportSelection, setExportSelection] = useState<string[]>([]);
@@ -135,6 +137,13 @@ export function ToolboxSettings() {
     const [toolboxImportError, setToolboxImportError] = useState<string | null>(null);
     const [expandedCompositePackageIds, setExpandedCompositePackageIds] = useState<Set<string>>(() => new Set());
     const [expandedCustomAppGroupIds, setExpandedCustomAppGroupIds] = useState<Set<string>>(() => new Set());
+    const [maxToolRounds, setMaxToolRounds] = useState(() => getMaxToolRounds());
+
+    const handleMaxToolRoundsChange = (value: number) => {
+        const settings = loadChatAppSettings();
+        saveChatAppSettings({ ...settings, maxToolRounds: value });
+        setMaxToolRounds(value);
+    };
 
     function refreshCustomAppTools() {
         setCustomAppTools(loadCustomAppChatTools());
@@ -366,7 +375,6 @@ export function ToolboxSettings() {
     async function handleDiscover(server: McpServerConfig) {
         if (!server.url.trim()) return;
         setIsDiscovering(true);
-        setDiscoverError(null);
         try {
             const tools = await discoverMcpTools(server.url, server);
             // Update draft or persisted server
@@ -376,7 +384,7 @@ export function ToolboxSettings() {
                 updateMcpServer(server.id, { discoveredTools: tools });
             }
         } catch (e) {
-            setDiscoverError(e instanceof Error ? e.message : "发现失败");
+            setMcpNotice({ title: "发现工具失败", message: e instanceof Error ? e.message : "发现失败", error: true });
         } finally {
             setIsDiscovering(false);
         }
@@ -795,6 +803,21 @@ export function ToolboxSettings() {
                 className="hidden"
                 onChange={handleImportTools}
             />
+            {/* 通用：单条消息的工具循环轮数上限 */}
+            <div className="ui-group-card !flex-row !items-center">
+                <div className="flex-1 flex flex-col gap-1 min-w-0">
+                    <span className="menu-label">工具轮数上限</span>
+                    <span className="menu-desc !mt-0 !whitespace-normal">单条消息最多进行几轮工具调用（每轮一次模型请求，轮内条数不限）。连续干活的任务（如角色电脑跑命令）可调高</span>
+                </div>
+                <div className="shrink-0 w-[112px]">
+                    <Select
+                        value={String(maxToolRounds)}
+                        onChange={e => handleMaxToolRoundsChange(Number(e.target.value))}
+                    >
+                        {[3, 5, 8, 12, 20].map(n => <option key={n} value={n}>{n === 5 ? "5（默认）" : n}</option>)}
+                    </Select>
+                </div>
+            </div>
             {/* REST Tools */}
             <div className="flex justify-between items-center gap-3">
                 <p className="settings-menu-section-title">Tools</p>
@@ -1049,7 +1072,8 @@ export function ToolboxSettings() {
             </div>
 
             <div className="flex flex-col gap-2">
-                {internalCapabilities.map(item => {
+                {/* 角色电脑的开关收进 设置 → 角色电脑，与小坊的开关放在一处 */}
+                {internalCapabilities.filter(item => item.id !== AGENT_COMPUTER_CAPABILITY_ID).map(item => {
                     const summary = (
                         <div className="flex-1 flex flex-col gap-1 min-w-0">
                             <div className="flex items-center gap-[6px] min-w-0">
@@ -1194,7 +1218,7 @@ export function ToolboxSettings() {
                 <div className="flex flex-col gap-2">
                     {mcpServers.map(s => (
                         <div key={s.id} className="ui-group-card !flex-row !items-center">
-                            <button onClick={() => { setEditMcpId(s.id); setDiscoverError(null); setAuthResult(null); }}
+                            <button onClick={() => setEditMcpId(s.id)}
                                 className="flex-1 min-w-0 bg-none border-none cursor-pointer py-2 px-0 text-left flex items-center gap-2 overflow-hidden">
                                 <div className="flex-1 flex flex-col gap-1 min-w-0">
                                     <span className="menu-label truncate min-w-0">{s.name}</span>
@@ -1273,7 +1297,6 @@ export function ToolboxSettings() {
                 const onConfirm = () => { if (isNewRest) confirmDraftRest(); else setEditRestId(null); };
                 const onCancel = () => { if (isNewRest) cancelDraftRest(); else setEditRestId(null); };
                 const title = editRest.builtIn ? editRest.name : (isNewRest ? "添加工具" : "编辑工具");
-                const directFetchInputId = `direct-fetch-${editRest.id}`;
 
                 if (editRest.builtIn) {
                     // Only tools that carry a key in fixedParams (weather/search) need an
@@ -1294,10 +1317,9 @@ export function ToolboxSettings() {
                                     </span>
                                 </div>
                                 )}
-                                <div className="flex items-center gap-2">
-                                    <input type="checkbox" id={directFetchInputId} checked={editRest.directFetch ?? true}
-                                        onChange={e => setR({ directFetch: e.target.checked })} />
-                                    <label htmlFor={directFetchInputId} className="menu-desc">直连模式（跳过服务端代理，无超时限制）</label>
+                                <div className="flex items-center justify-between gap-3">
+                                    <span className="menu-desc">直连模式（跳过服务端代理，无超时限制）</span>
+                                    <Toggle checked={editRest.directFetch ?? true} onChange={c => setR({ directFetch: c })} />
                                 </div>
                             </div>
                         </ContentDialog>
@@ -1335,10 +1357,9 @@ export function ToolboxSettings() {
                                     <option value="POST">POST</option>
                                 </Select>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <input type="checkbox" id={directFetchInputId} checked={editRest.directFetch ?? true}
-                                    onChange={e => setR({ directFetch: e.target.checked })} />
-                                <label htmlFor={directFetchInputId} className="menu-desc">直连模式（跳过服务端代理，无超时限制）</label>
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="menu-desc">直连模式（跳过服务端代理，无超时限制）</span>
+                                <Toggle checked={editRest.directFetch ?? true} onChange={c => setR({ directFetch: c })} />
                             </div>
                             <div className="flex flex-col gap-1">
                                 <label className="menu-desc ml-1">固定参数（API Key 等，不暴露给 AI）</label>
@@ -1529,6 +1550,14 @@ export function ToolboxSettings() {
                     if (isNewMcp) setDraftMcp(prev => prev ? { ...prev, ...updates } : prev);
                     else updateMcpServer(editMcp.id, updates);
                 };
+                const hasAuthHeader = (headers?: Record<string, string>) =>
+                    Object.keys(headers || {}).some(k => k.trim().toLowerCase() === "authorization");
+                // Token 会覆盖请求头里的 Authorization——在冲突刚形成时弹一次提醒，不在页面常驻
+                const noticeTokenOverridesHeader = () => setMcpNotice({
+                    title: "请求头 Authorization 将被忽略",
+                    message: "「访问 Token」和请求头 Authorization 同时配置时，以 Token 栏为准，请求头里的 Authorization 不会发送。建议只保留一处。",
+                    error: true,
+                });
                 const onConfirm = () => { if (isNewMcp) confirmDraftMcp(); else setEditMcpId(null); };
                 const onCancel = () => { if (isNewMcp) cancelDraftMcp(); else setEditMcpId(null); };
 
@@ -1542,6 +1571,10 @@ export function ToolboxSettings() {
                             <div className="flex flex-col gap-1">
                                 <label className="menu-desc ml-1">服务器 URL</label>
                                 <Input value={editMcp.url} placeholder="https://mcp-server.example.com" onChange={e => setM({ url: e.target.value })} />
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="menu-desc">直连模式（浏览器直接请求，本机/内网 MCP 必开；需服务器允许 CORS，仅支持 Streamable HTTP）</span>
+                                <Toggle className="flex-none" checked={editMcp.directFetch ?? false} onChange={c => setM({ directFetch: c })} />
                             </div>
                             <div className="flex flex-col gap-1">
                                 <label className="menu-desc ml-1">工具描述</label>
@@ -1558,8 +1591,11 @@ export function ToolboxSettings() {
                                     type="password"
                                     value={editMcp.accessToken || ""}
                                     placeholder="需要鉴权的 MCP 填这里，会作为 Bearer Token 发送"
-                                    onChange={e => setM({
-                                        accessToken: e.target.value.trim(),
+                                    onChange={e => {
+                                        const nextToken = e.target.value.trim().replace(/^bearer\s+/i, "");
+                                        if (nextToken && !editMcp.accessToken && hasAuthHeader(editMcp.headers)) noticeTokenOverridesHeader();
+                                        setM({
+                                        accessToken: nextToken,
                                         refreshToken: undefined,
                                         tokenExpiresAt: undefined,
                                         oauthClientId: undefined,
@@ -1569,7 +1605,8 @@ export function ToolboxSettings() {
                                         oauthRegistrationEndpoint: undefined,
                                         oauthAuthorizationServer: undefined,
                                         oauthProtectedResourceMetadataUrl: undefined,
-                                    })}
+                                        });
+                                    }}
                                 />
                                 <span className="menu-desc ml-1">适用于需要 `Authorization: Bearer TOKEN` 的 MCP 服务器。</span>
                             </div>
@@ -1577,7 +1614,10 @@ export function ToolboxSettings() {
                                 <label className="menu-desc ml-1">请求头（可选）</label>
                                 <FixedParamsEditor
                                     params={editMcp.headers || {}}
-                                    onChange={headers => setM({ headers })}
+                                    onChange={headers => {
+                                        if (editMcp.accessToken && !hasAuthHeader(editMcp.headers) && hasAuthHeader(headers)) noticeTokenOverridesHeader();
+                                        setM({ headers });
+                                    }}
                                     keyPlaceholder="Header 名"
                                     valuePlaceholder="Header 值"
                                 />
@@ -1590,7 +1630,7 @@ export function ToolboxSettings() {
                                             <Search size={14} /> {isDiscovering ? "发现中..." : "发现工具"}
                                         </button>
                                         <button className="ui-btn ui-btn-outline" onClick={async () => {
-                                            setIsAuthorizing(true); setAuthResult(null);
+                                            setIsAuthorizing(true);
                                             const targetMcp = { ...editMcp };
                                             if (draftMcp?.id === editMcp.id) {
                                                 persistMcp([targetMcp, ...mcpServers]);
@@ -1599,17 +1639,17 @@ export function ToolboxSettings() {
                                             }
                                             const r = await startMcpOAuth(targetMcp);
                                             setIsAuthorizing(false);
-                                            setAuthResult(r.success ? "授权成功 ✓" : (r.error || "授权失败"));
                                             if (r.success) {
                                                 setMcpServers(loadMcpServers());
+                                                setMcpNotice({ title: "OAuth 授权成功", message: "已获取访问令牌，可以直接使用该 MCP 服务器。" });
+                                            } else {
+                                                setMcpNotice({ title: "OAuth 授权失败", message: r.error || "授权失败", error: true });
                                             }
                                         }} disabled={isAuthorizing || !editMcp.url.trim()}>
                                             {isAuthorizing ? "授权中..." : "OAuth 授权"}
                                         </button>
                                     </div>
                                     {editMcp.accessToken && <span className="menu-desc text-[var(--c-icon-green)]">✓ 已配置 Token</span>}
-                                    {authResult && <span className={`menu-desc ${authResult.includes("✓") ? "text-[var(--c-icon-green)]" : "text-[var(--c-danger)]"}`}>{authResult}</span>}
-                                    {discoverError && <span className="menu-desc text-[var(--c-danger)]">{discoverError}</span>}
                                     {editMcp.discoveredTools && editMcp.discoveredTools.length > 0 && (
                                         <div className="flex flex-col gap-1">
                                             <label className="menu-desc ml-1">已发现 {editMcp.discoveredTools.length} 个工具</label>
@@ -1753,6 +1793,19 @@ export function ToolboxSettings() {
                     cancelLabel=""
                     onConfirm={() => setToolboxImportError(null)}
                     onCancel={() => setToolboxImportError(null)}
+                />
+            )}
+
+            {mcpNotice && (
+                <ConfirmDialog
+                    title={mcpNotice.title}
+                    message={mcpNotice.message}
+                    icon={mcpNotice.error ? AlertCircle : Wrench}
+                    variant={mcpNotice.error ? "danger" : "action"}
+                    confirmLabel="我知道了"
+                    cancelLabel=""
+                    onConfirm={() => setMcpNotice(null)}
+                    onCancel={() => setMcpNotice(null)}
                 />
             )}
 
