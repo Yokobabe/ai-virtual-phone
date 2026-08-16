@@ -67,6 +67,10 @@ export type ChatSession = {
     groupMutes?: Record<string, string>; // (characterId | "self") → mute expiry ISO
     allowAdminActionsOnUser?: boolean; // characters may kick/mute the user (default off)
     isSpectator?: boolean; // 围观群：用户不在群内，只能生成/线下
+    /** NPC 面具模式的发言主体；缺省表示普通 user 私聊。 */
+    roleplayActorCharacterId?: string;
+    /** 创建面具会话时所在世界，用于校验关系网权限。 */
+    roleplayWorldId?: string;
 };
 
 export type ChatMessageStatus = "sending" | "sent" | "read" | "failed";
@@ -244,7 +248,7 @@ export type ChatMessage = {
         syncedAt?: string;
     };
     // Group chat fields
-    senderCharacterId?: string; // which character sent this assistant message in a group chat
+    senderCharacterId?: string; // character sender in group chat or NPC-roleplay user turn
     senderName?: string; // cached display name to avoid repeated lookups
 };
 
@@ -642,9 +646,10 @@ function normalizeChatSessions(sessions: ChatSession[]): NormalizedSessionList {
             continue;
         }
 
-        const existingIndex = privateIndexByContact.get(session.contactId);
+        const privateKey = `${session.roleplayActorCharacterId || "user"}::${session.contactId}`;
+        const existingIndex = privateIndexByContact.get(privateKey);
         if (existingIndex === undefined) {
-            privateIndexByContact.set(session.contactId, normalized.length);
+            privateIndexByContact.set(privateKey, normalized.length);
             normalized.push(session);
             continue;
         }
@@ -708,6 +713,7 @@ function restoreContactsForPrivateSessions(contacts: ChatContact[], sessions: Ch
     const removedByUser = loadRemovedContactIds();
     const privateSessionsWithMessages = sessions.filter(session =>
         !session.isGroup
+        && !session.roleplayActorCharacterId
         && session.contactId
         && characterIds.has(session.contactId)
         && !removedByUser.has(session.contactId)
@@ -1038,7 +1044,7 @@ export function saveChatSessions(sessions: ChatSession[]) {
 
 export function createOrGetSession(contactId: string): ChatSession {
     const sessions = loadChatSessions();
-    const existing = sessions.find(s => s.contactId === contactId);
+    const existing = sessions.find(s => !s.isGroup && !s.roleplayActorCharacterId && s.contactId === contactId);
     if (existing) return existing;
 
     const newSession: ChatSession = {
@@ -1052,6 +1058,35 @@ export function createOrGetSession(contactId: string): ChatSession {
         visionImagePromptLimit: DEFAULT_VISION_IMAGE_PROMPT_LIMIT,
     };
     saveChatSessions([newSession, ...sessions]); // Prepend new session
+    return newSession;
+}
+
+export function createOrGetNpcRoleplaySession(
+    actorCharacterId: string,
+    contactId: string,
+    worldId: string,
+): ChatSession {
+    const sessions = loadChatSessions();
+    const existing = sessions.find(session => (
+        !session.isGroup
+        && session.roleplayActorCharacterId === actorCharacterId
+        && session.contactId === contactId
+    ));
+    if (existing) return existing;
+
+    const newSession: ChatSession = {
+        id: `sess_npc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        contactId,
+        roleplayActorCharacterId: actorCharacterId,
+        roleplayWorldId: worldId,
+        unreadCount: 0,
+        updatedAt: new Date().toISOString(),
+        isPinned: false,
+        bilingualTranslationEnabled: true,
+        collapseBilingualTranslation: true,
+        visionImagePromptLimit: DEFAULT_VISION_IMAGE_PROMPT_LIMIT,
+    };
+    saveChatSessions([newSession, ...sessions]);
     return newSession;
 }
 

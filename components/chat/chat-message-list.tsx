@@ -46,9 +46,10 @@ type ChatMessageListProps = {
     activeSession: ChatSession | null;
     onSelectSession: (session: ChatSession | null) => void;
     onSelectMascot: () => void;
+    onOpenRoleplay: () => void;
 };
 
-export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, onSelectMascot }: ChatMessageListProps) {
+export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, onSelectMascot, onOpenRoleplay }: ChatMessageListProps) {
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [listFilter, setListFilter] = useState("");
     const [listTab, setListTab] = useState<"all" | "private" | "group">("all");
@@ -120,7 +121,7 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
                         <button className="page-back-btn shrink-0 mr-2" type="button" onClick={onCloseApp} aria-label="返回">
                             <ChevronLeft size={24} strokeWidth={1.5} />
                         </button>
-                        <div className="flex items-center gap-[10px]">
+                        <button type="button" className="flex items-center gap-[10px] text-left" onClick={onOpenRoleplay} aria-label="切换 NPC 扮演身份">
                             <div className="w-[36px] h-[36px] rounded-full overflow-hidden bg-[var(--c-input)] flex items-center justify-center shrink-0">
                                 {identity?.avatarUrl ? (
                                     <img src={identity.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
@@ -135,7 +136,7 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
                                     <span className="ts-10 text-[var(--c-icon)] font-medium">在线</span>
                                 </div>
                             </div>
-                        </div>
+                        </button>
                     </div>
                 }
                 rightAction={
@@ -221,6 +222,7 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
                                 && (!keyword || (mascotSettings.nickname || "AI助手").toLowerCase().includes(keyword));
                             const regularItems = [...sessions]
                             .filter(s => {
+                                if (s.roleplayActorCharacterId) return false;
                                 if (!(s.isGroup || contactIds.has(s.contactId))) return false;
                                 if (!getLastVisibleSessionMessage(s.id)) return false;
                                 if (listTab === "private" && s.isGroup) return false;

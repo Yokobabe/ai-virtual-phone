@@ -83,6 +83,7 @@ import { extractTextToolDirectiveText } from "@/lib/text-tool-protocol";
 import { emitChatPluginEvent, getChatPluginHookBus, runChatPluginTransform } from "@/lib/chat-plugin-hooks";
 import { CHAT_PLUGIN_TOAST_EVENT, getChatPluginRuntime } from "@/lib/chat-plugin-runtime";
 import { ChatPluginSlot } from "@/components/chat/chat-plugin-slot";
+import { characterToRoleplayIdentity } from "@/lib/npc-roleplay";
 
 // ── Call system message detection ──────────────────────────
 // Call messages are stored with user/assistant role for correct prompt alternation,
@@ -597,6 +598,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     stickerCharacterIds?: string[];
     isGroup: boolean;
     isSpectator: boolean;
+    isNpcRoleplay: boolean;
     muteUntilMs: number;
     isGenerating: boolean;
     theaterMode: boolean;
@@ -628,6 +630,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     stickerCharacterIds,
     isGroup,
     isSpectator,
+    isNpcRoleplay,
     muteUntilMs,
     isGenerating,
     theaterMode,
@@ -716,8 +719,10 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
         { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="7" y1="8" x2="17" y2="8" /><line x1="7" y1="12" x2="14" y2="12" /><line x1="7" y1="16" x2="11" y2="16" /></svg>, label: "文字图片", onClick: () => onOpenRichModal("text_photo") },
         { icon: <AlertCircle size={22} strokeWidth={1.5} color="var(--c-text)" />, label: "系统指令", onClick: () => onOpenRichModal("system_instruction") },
         { icon: <Clapperboard size={22} strokeWidth={1.5} color={theaterMode ? "var(--c-icon-active)" : "var(--c-text)"} />, label: "番外指令模式", active: theaterMode, onClick: onToggleTheaterMode },
-        { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>, label: "视频通话", onClick: onStartVideoCall },
-        { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" /></svg>, label: "语音通话", onClick: onStartVoiceCall },
+        ...(!isNpcRoleplay ? [
+            { icon: <svg key="video" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>, label: "视频通话", onClick: onStartVideoCall },
+            { icon: <svg key="voice" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" /></svg>, label: "语音通话", onClick: onStartVoiceCall },
+        ] : []),
         { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>, label: "红包", onClick: () => onOpenRichModal("red_packet") },
         { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><text x="12" y="16" textAnchor="middle" fontSize="12" fill="var(--c-text)" stroke="none">¥</text></svg>, label: "转账", onClick: () => onOpenRichModal(isGroup ? "transfer_target" : "transfer") },
         { icon: <Gift size={22} strokeWidth={1.5} color="var(--c-text)" />, label: "礼物", onClick: () => onOpenRichModal("gift") },
@@ -807,17 +812,19 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
             />
 
             <div className="chat-input-actions">
-                <button
-                    onClick={onToggleOfflineMode}
-                    className="ui-bare-btn text-[var(--c-text)] chat-offline-toggle"
-                    aria-label="线下模式"
-                    title="线下模式"
-                >
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0Z" />
-                        <circle cx="12" cy="10" r="3" />
-                    </svg>
-                </button>
+                {!isNpcRoleplay && (
+                    <button
+                        onClick={onToggleOfflineMode}
+                        className="ui-bare-btn text-[var(--c-text)] chat-offline-toggle"
+                        aria-label="线下模式"
+                        title="线下模式"
+                    >
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0Z" />
+                            <circle cx="12" cy="10" r="3" />
+                        </svg>
+                    </button>
+                )}
                 <button onClick={onToggleEmojiPanel} disabled={inputLocked} className="ui-bare-btn text-[var(--c-text)]" style={inputLocked ? { opacity: 0.35 } : undefined}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" /></svg>
                 </button>
@@ -1052,6 +1059,12 @@ const OfflineTextInputBar = memo(forwardRef<OfflineTextInputHandle, {
 }));
 
 export function ChatRoom({ session, onBack }: ChatRoomProps) {
+    const roleplayActor = useMemo(() => session.roleplayActorCharacterId
+        ? loadCharacters().find(c => c.id === session.roleplayActorCharacterId) || null
+        : null, [session.roleplayActorCharacterId]);
+    const roleplaySenderFields = roleplayActor
+        ? { senderCharacterId: roleplayActor.id, senderName: roleplayActor.name }
+        : {};
     const [liveCSS, setLiveCSS] = useState(session.customCSS || "");
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [transientMessages, setTransientMessages] = useState<ChatMessage[]>([]);
@@ -1651,9 +1664,11 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
     );
 
     useEffect(() => {
-        setUserIdentity(resolveUserIdentity(session.contactId, "chat"));
+        setUserIdentity(roleplayActor
+            ? characterToRoleplayIdentity(roleplayActor)
+            : resolveUserIdentity(session.contactId, "chat"));
         setTransientMessages([]);
-        setOfflineMode(kvGet(CHAT_OFFLINE_MODE_PREFIX + session.id) === "1");
+        setOfflineMode(roleplayActor ? false : kvGet(CHAT_OFFLINE_MODE_PREFIX + session.id) === "1");
         setOfflineVisibleCount(OFFLINE_INITIAL_LOAD);
         offlineTextInputRef.current?.clear();
         setPendingOfflineUserText("");
@@ -1729,7 +1744,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
             kvRemove(pendingKey);
             void runManagedGeneration({ history: msgs, onDecline: triggerReply });
         }
-    }, [session.id]);
+    }, [session.id, roleplayActor]);
 
     const needsInitialScrollRef = useRef(true);
     const prevMsgCountRef = useRef(0);
@@ -2885,7 +2900,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
 
     // Helper: handle AI-triggered call from splitAndSaveAIMessages result
     const handleCallTrigger = (triggerCall?: "voice" | "video") => {
-        if (!triggerCall) return;
+        if (!triggerCall || session.roleplayActorCharacterId) return;
         setCallInitiator("character");
         if (triggerCall === "voice") setShowVoiceCall(true);
         else setShowVideoCall(true);
@@ -3129,7 +3144,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
                 if (!isCurrentGeneration()) return;
                 const result = await splitAndSaveAIMessages(flattenCompletionResult(cr), { ...generationGuard, reasoningText: capturedReasoning });
                 if (!isCurrentGeneration()) return;
-                scheduleFollowUp(session.id, 0, result.stateValues);
+                if (!session.roleplayActorCharacterId) scheduleFollowUp(session.id, 0, result.stateValues);
                 handleCallTrigger(result.triggerCall);
                 shouldRunDeclineReply = Boolean(result.hasDecline);
             }
@@ -3256,6 +3271,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
             const sysMsg = pushChatMessage({
                 sessionId: session.id,
                 role: "user",
+                ...roleplaySenderFields,
                 content: `${pokeSender} 拍了拍 ${pokeTarget}`,
                 mediaType: "poke",
                 mediaData: { pokeSender, pokeTarget },
@@ -3271,6 +3287,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
         const newMsg = pushChatMessage({
             sessionId: session.id,
             role: "user",
+            ...roleplaySenderFields,
             content,
             mediaType,
             mediaData: walletDebit.mediaData,
@@ -3617,9 +3634,9 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
                 if (!isCurrentGeneration()) return;
 
                 if (lastSendResult) {
-                    scheduleFollowUp(session.id, 0, lastSendResult.stateValues);
+                    if (!session.roleplayActorCharacterId) scheduleFollowUp(session.id, 0, lastSendResult.stateValues);
                     const isHidden = !mountedRef.current || !isChatRoomElementVisible(wrapperRef.current);
-                    if (isHidden && lastSendResult.triggerCall) {
+                    if (!session.roleplayActorCharacterId && isHidden && lastSendResult.triggerCall) {
                         window.dispatchEvent(new CustomEvent("ai-call-trigger", {
                             detail: { sessionId: session.id, type: lastSendResult.triggerCall },
                         }));
@@ -3736,6 +3753,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
             const newMsg = pushChatMessage({
                 sessionId: session.id,
                 role: "user",
+                ...roleplaySenderFields,
                 content: currentText,
                 mediaType: diceOnly ? "dice" : isQuoting ? "quote" : undefined,
                 mediaData: diceOnly ? { diceFace } : isQuoting ? quoteData : undefined,
@@ -5872,6 +5890,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
 	                stickerCharacterIds={session.isGroup ? session.participantIds : undefined}
 	                isGroup={!!session.isGroup}
 	                isSpectator={!!session.isGroup && !!session.isSpectator}
+	                isNpcRoleplay={Boolean(session.roleplayActorCharacterId)}
 	                muteUntilMs={session.isGroup && session.groupMutes?.[GROUP_SELF_KEY] ? new Date(session.groupMutes[GROUP_SELF_KEY]).getTime() : 0}
 	                isGenerating={isGenerating}
 	                theaterMode={theaterMode}
@@ -6182,6 +6201,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
                         const ownerN = walletUpdatedMsg.senderName || (walletUpdatedMsg.role === "assistant" ? (character?.name || "对方") : claimerN);
                         const sysMsg = pushChatMessage({
                             sessionId: session.id, role: "user", content: sysText,
+                            ...roleplaySenderFields,
                             mediaType: actionType as ChatMessage["mediaType"],
                             ...(session.isGroup ? { mediaData: { claimer: claimerN, owner: ownerN }, senderName: claimerN } : {}),
                         });

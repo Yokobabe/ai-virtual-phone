@@ -49,6 +49,7 @@ import { ConfirmDialog } from "@/components/ui/modal";
 import { CHAT_SESSION_CSS_EXAMPLE } from "@/lib/css-examples";
 import { Toggle, Input } from "@/components/ui/form";
 import { PageShell } from "@/components/ui/page-shell";
+import { characterToRoleplayIdentity } from "@/lib/npc-roleplay";
 
 // 自定义状态栏预填模板：微博主页（契约=「状态栏」章节整段正文，含【逻辑】【格式】与包裹要求）
 const STATUS_REGION_STARTER_CONTRACT = [
@@ -491,7 +492,12 @@ export function ChatSettingsPanel({
     const groupChars = session.isGroup
         ? (session.participantIds || []).map(id => characters.find(c => c.id === id)).filter(Boolean)
         : [];
-    const userIdentity = resolveUserIdentity(undefined, session.isGroup ? "group_chat" : "chat");
+    const roleplayActor = session.roleplayActorCharacterId
+        ? characters.find(item => item.id === session.roleplayActorCharacterId)
+        : undefined;
+    const userIdentity = roleplayActor
+        ? characterToRoleplayIdentity(roleplayActor)
+        : resolveUserIdentity(undefined, session.isGroup ? "group_chat" : "chat");
 
     // ── Group member management ──
     const [, setRosterVersion] = useState(0); // bump to re-render after admin actions

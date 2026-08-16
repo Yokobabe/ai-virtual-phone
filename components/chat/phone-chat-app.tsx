@@ -16,6 +16,8 @@ import { kvGet } from "@/lib/kv-db";
 import { formatXiaohongshuShareForPrompt, type ChatSharePayload } from "@/lib/chat-share";
 import { CHAT_OPEN_SESSION_EVENT, CHAT_OPEN_ADD_CONTACT_EVENT } from "@/lib/chat-notification-events";
 import { getMascotSettingsSnapshot } from "@/lib/mascot-settings";
+import { NpcRoleplayHome, NpcRoleplayMaskPicker } from "./npc-roleplay";
+import { loadActiveNpcRoleplayActorId, setActiveNpcRoleplayActorId } from "@/lib/npc-roleplay";
 
 type TabKey = "messages" | "contacts" | "feeds" | "me";
 
@@ -39,6 +41,8 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
     const [visitedSessions, setVisitedSessions] = useState<Map<string, ChatSession>>(new Map());
     const [dbReady, setDbReady] = useState(false);
     const [hideTabBar, setHideTabBar] = useState(false);
+    const [roleplayActorId, setRoleplayActorId] = useState<string | null>(() => loadActiveNpcRoleplayActorId());
+    const [showRoleplayPicker, setShowRoleplayPicker] = useState(false);
 
     // Hydrate IndexedDB → in-memory caches on mount
     useEffect(() => {
@@ -47,7 +51,10 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
             // Resolve initial session after hydration
             if (initialSessionId) {
                 const s = loadChatSessions().find(s => s.id === initialSessionId);
-                if (s) setActiveSession(s);
+                if (s) {
+                    if (s.roleplayActorCharacterId) setRoleplayActorId(s.roleplayActorCharacterId);
+                    setActiveSession(s);
+                }
             }
         });
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -64,7 +71,10 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
             return;
         }
         const s = loadChatSessions().find(s => s.id === initialSessionId);
-        if (s) setActiveSession(s);
+        if (s) {
+            if (s.roleplayActorCharacterId) setRoleplayActorId(s.roleplayActorCharacterId);
+            setActiveSession(s);
+        }
     }, [initialSessionId, dbReady]);
 
     // When sharePayload is set, switch to contacts tab (and close any open chat room)
@@ -82,6 +92,7 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
             if (!sessionId) return;
             const session = loadChatSessions().find(s => s.id === sessionId);
             if (!session) return;
+            if (session.roleplayActorCharacterId) setRoleplayActorId(session.roleplayActorCharacterId);
             setActiveMascot(false);
             setActiveSession(session);
             setActiveTab("messages");
@@ -197,6 +208,24 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
         setActiveTab("messages");
     };
 
+    const selectRoleplayActor = (actorId: string) => {
+        setActiveNpcRoleplayActorId(actorId);
+        setRoleplayActorId(actorId);
+        setActiveSession(null);
+        setActiveMascot(false);
+        setActiveTab("messages");
+        setShowRoleplayPicker(false);
+    };
+
+    const exitRoleplay = () => {
+        setActiveNpcRoleplayActorId(null);
+        setRoleplayActorId(null);
+        setActiveSession(null);
+        setActiveMascot(false);
+        setActiveTab("messages");
+        setShowRoleplayPicker(false);
+    };
+
     // Listen for CSS updates from settings panel
     useEffect(() => {
         const onCSSUpdate = () => setChatAppCSS(kvGet("chat-app-custom-css") || "");
@@ -224,7 +253,22 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
             {chatAppCSS && <SessionCustomCSS css={chatAppCSS} scope=".chat-app" />}
             {/* The Main Content Area */}
             <div className="chat-main-content relative flex-1 flex flex-col overflow-hidden" {...(activeSession || activeMascot ? { "data-covered-by-room": "" } : {})}>
-                {activeTab === "messages" && <ChatMessageList onCloseApp={onClose} activeSession={activeSession} onSelectSession={(session) => { setActiveMascot(false); setActiveSession(session); }} onSelectMascot={handleSelectMascot} />}
+                {activeTab === "messages" && (roleplayActorId ? (
+                    <NpcRoleplayHome
+                        actorId={roleplayActorId}
+                        onCloseApp={onClose}
+                        onOpenPicker={() => setShowRoleplayPicker(true)}
+                        onSelectSession={(session) => { setActiveMascot(false); setActiveSession(session); }}
+                    />
+                ) : (
+                    <ChatMessageList
+                        onCloseApp={onClose}
+                        activeSession={activeSession}
+                        onSelectSession={(session) => { setActiveMascot(false); setActiveSession(session); }}
+                        onSelectMascot={handleSelectMascot}
+                        onOpenRoleplay={() => setShowRoleplayPicker(true)}
+                    />
+                ))}
                 {activeTab === "contacts" && (
                     <ChatContactsList
                         onCloseApp={onClose}
@@ -248,7 +292,7 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
             </div>
 
             {/* Bottom Navigation Bar — hide when inside a chat room */}
-            <nav className="chat-tab-bar chat-bottom-glass-bar" data-ui="nav" style={{ display: activeSession || activeMascot || hideTabBar ? "none" : undefined }}>
+            <nav className="chat-tab-bar chat-bottom-glass-bar" data-ui="nav" style={{ display: activeSession || activeMascot || hideTabBar || roleplayActorId ? "none" : undefined }}>
                 <button
                     className={`chat-tab ${activeTab === "messages" ? "chat-tab-active" : ""}`}
                     onClick={() => setActiveTab("messages")}
@@ -290,6 +334,16 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
                     <MascotChatRoom
                         onBack={() => setActiveMascot(false)}
                         onDeleted={() => setActiveMascot(false)}
+                    />
+                </div>
+            )}
+            {showRoleplayPicker && (
+                <div className="absolute inset-0 z-[120] bg-[var(--c-page-body-bg)]">
+                    <NpcRoleplayMaskPicker
+                        currentActorId={roleplayActorId}
+                        onSelectActor={selectRoleplayActor}
+                        onExitToUser={exitRoleplay}
+                        onClose={() => setShowRoleplayPicker(false)}
                     />
                 </div>
             )}

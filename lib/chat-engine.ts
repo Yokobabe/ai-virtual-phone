@@ -84,6 +84,13 @@ import {
 } from "./bilingual-prompt-defaults";
 import { parseOfflineResponse, type ParsedOfflineResponse } from "./chat-offline-storage";
 import { throwIfAborted } from "./abort-utils";
+import { formatCharacterRelationsForPrompt } from "./character-world-storage";
+import {
+    buildNpcRoleplayPromptContext,
+    canNpcRoleplayContact,
+    characterToRoleplayIdentity,
+    isSupportingNpc,
+} from "./npc-roleplay";
 
 
 
@@ -1803,7 +1810,19 @@ export async function buildChatPromptMessages(
         ? []
         : (activeSlot.regexIds || []).map(id => allRegexes.find(r => r.id === id)).filter(Boolean) as typeof allRegexes;
 
-    const userIdentity = resolveUserIdentity(character.id, resolvedAppId);
+    const roleplayActor = session.roleplayActorCharacterId
+        ? chars.find(item => item.id === session.roleplayActorCharacterId)
+        : undefined;
+    if (session.roleplayActorCharacterId && (!isSupportingNpc(roleplayActor) || !canNpcRoleplayContact(
+        session.roleplayActorCharacterId,
+        character.id,
+        session.roleplayWorldId,
+    ))) {
+        throw new ChatEngineError("这个 NPC 与目标角色没有可用的直接关系，无法继续该会话。");
+    }
+    const userIdentity = roleplayActor
+        ? characterToRoleplayIdentity(roleplayActor)
+        : resolveUserIdentity(character.id, resolvedAppId);
     const attachedImages = config.enableImageRecognition === true ? options?.attachedImages : undefined;
     const historyForPrompt: ChatMessage[] = attachedImages?.length
         ? [
@@ -1828,15 +1847,19 @@ export async function buildChatPromptMessages(
     const memConfig = loadMemoryConfig();
     const isOfflineMode = options?.appTags?.includes("offline") === true;
     const effectiveAppTags = mergeAppTags(options?.appTags, promptProfile?.appTags, resolvedAppId);
-    const toolsAllowed = options?.toolsAllowed !== false && !isOfflineMode;
+    // NPC roleplay MVP is an online conversation surface only. Do not let the
+    // masked NPC operate the real user's phone/app tools.
+    const toolsAllowed = options?.toolsAllowed !== false && !isOfflineMode && !roleplayActor;
     const enabledTools = toolsAllowed ? getEnabledTools(resolvedAppId) : [];
     const toolsEnabled = enabledTools.length > 0
         && (options?.forceEnableTools === true || presetIncludesToolsMacro(preset, resolvedAppId, effectiveAppTags));
     const usesNativeActions = Boolean(toolsEnabled && nativeToolProtocolForConfig(config));
     const { recentBlocks, truncatedHistory, wbActivationContext, unifiedRecentItems } = prepareShortTermContext(character.id, resolvedAppId, {
+        userName: userIdentity?.name,
         history: historyForPrompt,
         includeDirectChatEntries: isOfflineMode,
         includeNativeToolHistory: usesNativeActions,
+        excludeChatSessionId: session.id,
         excludeOfflineSessionId: options?.excludeOfflineSessionId,
         promptTimestampOptions,
     });
@@ -1892,6 +1915,10 @@ export async function buildChatPromptMessages(
         worldBooks,
         regexes,
         userIdentity,
+        characterRelations: [
+            formatCharacterRelationsForPrompt(character.id),
+            roleplayActor ? buildNpcRoleplayPromptContext(roleplayActor, character, session.roleplayWorldId) : "",
+        ].filter(Boolean).join("\n\n"),
         appId: resolvedAppId,
         appTags: effectiveAppTags,
         initialStateValues: getLatestCharacterStateValues(character.id),
@@ -2491,6 +2518,14 @@ export async function generateChatCompletion(
             incrementEventCounter(character.id); // user message
             incrementEventCounter(character.id); // AI reply
             await maybeRunSummarization(character.id, character.name);
+            if (session.roleplayActorCharacterId) {
+                const actor = loadCharacters().find(item => item.id === session.roleplayActorCharacterId);
+                if (actor) {
+                    incrementEventCounter(actor.id); // NPC's own message
+                    incrementEventCounter(actor.id); // reply that NPC received
+                    await maybeRunSummarization(actor.id, actor.name);
+                }
+            }
         } catch (err) {
             console.warn("[ChatEngine] Memory counter/summarization failed:", err);
         }

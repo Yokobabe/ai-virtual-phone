@@ -51,7 +51,7 @@ function formatPhotoDirectiveForPrompt(msg: ChatMessage): string {
 export type NativeTimelineEntry = {
     id: string;
     sourceApp: "chat" | "moments" | "story" | "vn" | "map" | "game" | "diary" | "xiaohongshu" | "interview_magazine" | "cocreate" | "checkphone" | "custom_app";
-    sourceDetail?: "direct" | "group" | "system" | "story" | "chat_offline" | "game" | "diary_entry" | "notewall" | "xiaohongshu" | "black_market_theater" | "interview_issue" | "interview_shared_issue" | "cocreate_project" | "checkphone" | "custom_app_event"; // chat sub-type: 1:1 vs group chat vs system note
+    sourceDetail?: "direct" | "npc_roleplay" | "group" | "system" | "story" | "chat_offline" | "game" | "diary_entry" | "notewall" | "xiaohongshu" | "black_market_theater" | "interview_issue" | "interview_shared_issue" | "cocreate_project" | "checkphone" | "custom_app_event"; // chat sub-type: 1:1 vs NPC roleplay vs group chat vs system note
     authorType?: "user" | "character" | "npc"; // who authored this entry
     postAuthorType?: "user" | "character"; // for moments: who owns the parent post
     sessionId?: string;
@@ -164,6 +164,7 @@ export function loadNativeTimeline(
         userName?: string;
         appId?: import("./settings-types").ContentAppId;
         excludeOfflineSessionId?: string;
+        excludeChatSessionId?: string;
         timeAware?: boolean;
         promptTimestampOptions?: PromptTimestampOptions;
     }
@@ -178,7 +179,12 @@ export function loadNativeTimeline(
     // ── Chat messages ──
     const sessions = loadChatSessions();
     // Include direct chat session AND group sessions where this character participates
-    const session = sessions.find(s => !s.isGroup && s.contactId === characterId);
+    const directSessions = sessions.filter(s => !s.isGroup && (
+        (!s.roleplayActorCharacterId && s.contactId === characterId)
+        || (Boolean(s.roleplayActorCharacterId) && (
+            s.contactId === characterId || s.roleplayActorCharacterId === characterId
+        ))
+    ));
     const groupSessions = sessions.filter(s => s.isGroup && s.participantIds?.includes(characterId));
 
     // Process group sessions
@@ -272,14 +278,18 @@ export function loadNativeTimeline(
         }
     }
 
-    if (session) {
+    for (const session of directSessions) {
+        if (session.id === options?.excludeChatSessionId) continue;
+        const isNpcRoleplay = Boolean(session.roleplayActorCharacterId);
+        const roleplayActorName = chars.find(c => c.id === session.roleplayActorCharacterId)?.name ?? "NPC";
+        const roleplayTargetName = chars.find(c => c.id === session.contactId)?.name ?? "角色";
         const messages = loadChatMessages(session.id);
         for (const msg of messages) {
             if (msg.isRetracted) continue;
             if (isPromptHiddenChatMessage(msg)) continue;
             if (options?.afterTimestamp && msg.createdAt <= options.afterTimestamp) continue;
 
-            const msgLabel = formatPromptEventLabel("私聊", msg.createdAt, timeAware, timestampOptions);
+            const msgLabel = formatPromptEventLabel(isNpcRoleplay ? "NPC私聊" : "私聊", msg.createdAt, timeAware, timestampOptions);
 
             if (msg.role === "system") {
                 // UI-only notification — skip from prompt
@@ -318,7 +328,11 @@ export function loadNativeTimeline(
                 continue;
             }
 
-            const sender = msg.role === "user" ? userName : msg.role === "tool" ? "工具" : charName;
+            const sender = msg.role === "user"
+                ? (isNpcRoleplay ? roleplayActorName : userName)
+                : msg.role === "tool"
+                    ? "工具"
+                    : (isNpcRoleplay ? roleplayTargetName : charName);
             let content = stripStateAndInnerForPrompt(msg.content || "");
 
             // Action notifications: always override content to bracket format (stored content is natural language for UI)
@@ -381,7 +395,9 @@ export function loadNativeTimeline(
             entries.push({
                 id: msg.id,
                 sourceApp: "chat",
-                sourceDetail: "direct",
+                sourceDetail: isNpcRoleplay ? "npc_roleplay" : "direct",
+                sessionId: session.id,
+                authorType: isNpcRoleplay ? "character" : (msg.role === "user" ? "user" : "character"),
                 timestamp: msg.createdAt,
                 content: `${msgLabel} ${sender}: ${content}`,
             });
@@ -901,6 +917,7 @@ export function prepareShortTermContext(
         history?: ChatMessage[];
         excludeGroupSessionId?: string;
         excludeOfflineSessionId?: string;
+        excludeChatSessionId?: string;
         includeNativeToolHistory?: boolean;
         includeDirectChatEntries?: boolean;
         timeAware?: boolean;
@@ -917,6 +934,7 @@ export function prepareShortTermContext(
         userName: options?.userName,
         appId: appId as import("./settings-types").ContentAppId,
         excludeOfflineSessionId: options?.excludeOfflineSessionId,
+        excludeChatSessionId: options?.excludeChatSessionId,
         timeAware,
         promptTimestampOptions: options?.promptTimestampOptions,
     });
@@ -1026,6 +1044,15 @@ export function prepareShortTermContext(
         if (chatEntries.length > 0) {
             raw.push({ tag: "recent_chat", order: FEATURE_ORDER.chat, entries: chatEntries });
         }
+    }
+
+    const roleplayChatEntries = timeline.filter(e => (
+        e.sourceApp === "chat"
+        && e.sourceDetail === "npc_roleplay"
+        && e.sessionId !== options?.excludeChatSessionId
+    ));
+    if (roleplayChatEntries.length > 0) {
+        raw.push({ tag: "recent_npc_roleplay", order: FEATURE_ORDER.chat, entries: roleplayChatEntries });
     }
 
     const offlineGroupChatEntries = timeline.filter(e => isChatOfflineEntry(e) && e.groupSessionId);
