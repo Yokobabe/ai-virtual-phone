@@ -17,6 +17,7 @@ import {
     normalizeVisionImagePromptLimit,
     MAX_VISION_IMAGE_PROMPT_LIMIT,
     type ChatMessage,
+    getChatSessionTargetCharacterId,
 } from "@/lib/chat-storage";
 import {
     GROUP_SELF_KEY,
@@ -345,12 +346,12 @@ export function ChatSettingsPanel({
     const statusPresetSupported = useMemo(() => {
         if (session.isGroup) return false;
         try {
-            const slot = resolveBinding(loadBindingConfig(), session.contactId, "chat");
+            const slot = resolveBinding(loadBindingConfig(), getChatSessionTargetCharacterId(session), "chat");
             const presets = loadPresets();
             const preset = (slot.presetId ? presets.find(item => item.id === slot.presetId) : null) ?? presets.find(item => item.builtIn) ?? null;
             return !!preset && presetSupportsStatusRegion(preset.prompts.map(item => item.content));
         } catch { return false; }
-    }, [session.isGroup, session.contactId]);
+    }, [session.isGroup, session.contactId, session.roleplayTargetCharacterId]);
     const saveStatusRegion = (next: StatusRegionConfig) => {
         setStatusRegion(next);
         saveStatusRegionConfig(session.id, next);
@@ -482,11 +483,11 @@ export function ChatSettingsPanel({
     const [groupName, setGroupName] = useState(session.groupName || "");
 
     const characters = loadCharacters();
-    const character = characters.find(c => c.id === session.contactId);
+    const character = characters.find(c => c.id === getChatSessionTargetCharacterId(session));
 
     const characterName = session.isGroup
         ? (groupName || session.groupName || "群聊")
-        : (alias || character?.name || `User_${session.contactId.slice(-4)}`);
+        : (alias || character?.name || `User_${getChatSessionTargetCharacterId(session).slice(-4)}`);
 
     // Group members
     const groupChars = session.isGroup
@@ -722,7 +723,7 @@ export function ChatSettingsPanel({
                             }}
                         >
                             {msg.mediaType === "poke"
-                                ? <MessageBubble msg={msg} charName={senderChar?.name} userName={userIdentity?.name || "你"} characterId={msg.senderCharacterId || session.contactId} />
+                                ? <MessageBubble msg={msg} charName={senderChar?.name} userName={userIdentity?.name || "你"} characterId={msg.senderCharacterId || getChatSessionTargetCharacterId(session)} />
                                 : getSearchResultText(msg)}
                         </div>
                     </div>
@@ -768,7 +769,7 @@ export function ChatSettingsPanel({
                                     charName={senderChar?.name}
                                     userName={userIdentity?.name || "你"}
                                     groupSize={session.isGroup ? (session.participantIds?.length || 0) + (session.isSpectator ? 0 : 1) : undefined}
-                                    characterId={msg.senderCharacterId || session.contactId}
+                                    characterId={msg.senderCharacterId || getChatSessionTargetCharacterId(session)}
                                     defaultTranslationExpanded={session.collapseBilingualTranslation !== false ? false : true}
                                 />
                             </div>
@@ -1462,7 +1463,7 @@ export function ChatSettingsPanel({
             {/* Sub-page: TA 的电脑 */}
             {showComputer && (
                 <CharacterComputerPage
-                    characterId={session.contactId}
+                    characterId={getChatSessionTargetCharacterId(session)}
                     characterName={characterName}
                     onClose={() => setShowComputer(false)}
                 />

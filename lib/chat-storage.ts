@@ -71,7 +71,17 @@ export type ChatSession = {
     roleplayActorCharacterId?: string;
     /** 创建面具会话时所在世界，用于校验关系网权限。 */
     roleplayWorldId?: string;
+    /** NPC 面具会话的真实聊天对象；contactId 使用合成值以兼容旧版回退。 */
+    roleplayTargetCharacterId?: string;
 };
+
+export function getChatSessionTargetCharacterId(session: Pick<ChatSession, "contactId" | "roleplayTargetCharacterId">): string {
+    return session.roleplayTargetCharacterId || session.contactId;
+}
+
+function buildNpcRoleplayContactId(actorCharacterId: string, targetCharacterId: string): string {
+    return `npc-roleplay:${actorCharacterId}:${targetCharacterId}`;
+}
 
 export type ChatMessageStatus = "sending" | "sent" | "read" | "failed";
 export type ChatMessageRole = "user" | "assistant" | "system" | "tool";
@@ -618,9 +628,17 @@ function normalizeChatSessions(sessions: ChatSession[]): NormalizedSessionList {
             changed = true;
             continue;
         }
-        const item = id === session.id && contactId === session.contactId
+        const roleplayTargetCharacterId = session.roleplayActorCharacterId
+            ? (session.roleplayTargetCharacterId?.trim() || contactId)
+            : undefined;
+        const normalizedContactId = session.roleplayActorCharacterId && roleplayTargetCharacterId
+            ? buildNpcRoleplayContactId(session.roleplayActorCharacterId, roleplayTargetCharacterId)
+            : contactId;
+        const item = id === session.id
+            && normalizedContactId === session.contactId
+            && roleplayTargetCharacterId === session.roleplayTargetCharacterId
             ? session
-            : { ...session, id, contactId };
+            : { ...session, id, contactId: normalizedContactId, ...(roleplayTargetCharacterId ? { roleplayTargetCharacterId } : {}) };
         const existing = byId.get(id);
         if (!existing) {
             byId.set(id, item);
@@ -646,7 +664,7 @@ function normalizeChatSessions(sessions: ChatSession[]): NormalizedSessionList {
             continue;
         }
 
-        const privateKey = `${session.roleplayActorCharacterId || "user"}::${session.contactId}`;
+        const privateKey = `${session.roleplayActorCharacterId || "user"}::${getChatSessionTargetCharacterId(session)}`;
         const existingIndex = privateIndexByContact.get(privateKey);
         if (existingIndex === undefined) {
             privateIndexByContact.set(privateKey, normalized.length);
@@ -1070,15 +1088,16 @@ export function createOrGetNpcRoleplaySession(
     const existing = sessions.find(session => (
         !session.isGroup
         && session.roleplayActorCharacterId === actorCharacterId
-        && session.contactId === contactId
+        && getChatSessionTargetCharacterId(session) === contactId
     ));
     if (existing) return existing;
 
     const newSession: ChatSession = {
         id: `sess_npc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        contactId,
+        contactId: buildNpcRoleplayContactId(actorCharacterId, contactId),
         roleplayActorCharacterId: actorCharacterId,
         roleplayWorldId: worldId,
+        roleplayTargetCharacterId: contactId,
         unreadCount: 0,
         updatedAt: new Date().toISOString(),
         isPinned: false,
@@ -2094,7 +2113,7 @@ function getStateOwnerCharacterId(
 
     const session = sessionsById.get(msg.sessionId);
     if (!session || session.isGroup) return null;
-    return session.contactId || null;
+    return getChatSessionTargetCharacterId(session) || null;
 }
 
 function isBeforeStateCutoff(

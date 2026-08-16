@@ -9,6 +9,7 @@ import {
     createOrGetNpcRoleplaySession,
     getChatMessagePreview,
     getLastVisibleSessionMessage,
+    getChatSessionTargetCharacterId,
     loadChatSessions,
     type ChatSession,
 } from "@/lib/chat-storage";
@@ -156,7 +157,7 @@ export function NpcRoleplayHome({
             </div>
             <div className="px-5 flex flex-col">
                 {targets.map(target => {
-                    const session = sessions.find(item => item.roleplayActorCharacterId === actorId && item.contactId === target.character.id);
+                    const session = sessions.find(item => item.roleplayActorCharacterId === actorId && getChatSessionTargetCharacterId(item) === target.character.id);
                     const last = session ? getLastVisibleSessionMessage(session.id) : null;
                     return (
                         <button

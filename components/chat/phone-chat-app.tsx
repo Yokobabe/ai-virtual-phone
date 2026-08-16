@@ -8,7 +8,7 @@ import { ChatRoom } from "./chat-room";
 import { MascotChatRoom } from "./mascot-chat-room";
 import { UserProfilePanel } from "./user-profile-panel";
 import { MessageCircle, Users, Aperture, UserRound } from "lucide-react";
-import { ChatSession, loadChatSessions, pushChatMessage, hydrateChatStorage } from "@/lib/chat-storage";
+import { ChatSession, getChatSessionTargetCharacterId, loadChatSessions, pushChatMessage, hydrateChatStorage } from "@/lib/chat-storage";
 import { notifyMascotPageContext } from "@/lib/mascot-events";
 import { loadCharacters } from "@/lib/character-storage";
 import { SessionCustomCSS } from "@/components/ui/session-custom-css";
@@ -134,12 +134,13 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
             });
             // Push session info to mascot context so 小卷 can access sessionId
             const chars = loadCharacters();
-            const char = chars.find(c => c.id === activeSession.contactId);
+            const targetCharacterId = getChatSessionTargetCharacterId(activeSession);
+            const char = chars.find(c => c.id === targetCharacterId);
             notifyMascotPageContext({
                 page: "chat",
                 mode: "chatting",
                 label: `聊天 · ${(activeSession as Record<string, unknown>).alias as string || char?.name || "对话"}`,
-                fields: { sessionId: activeSession.id, contactId: activeSession.contactId },
+                fields: { sessionId: activeSession.id, contactId: targetCharacterId },
             });
         }
     }, [activeSession]); // eslint-disable-line react-hooks/exhaustive-deps

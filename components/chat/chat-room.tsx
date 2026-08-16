@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, Fragment, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChatSession, ChatMessage, CHAT_APP_SETTINGS_UPDATED_EVENT, CHAT_INITIAL_VISIBLE_MESSAGE_COUNT, CHAT_LOAD_MORE_MESSAGE_COUNT, CHAT_REQUEST_REPLY_EVENT, loadChatAppSettings, loadChatMessages, loadChatContacts, loadChatSessions, saveChatSessions, pushChatMessage, updateChatMessage, deleteChatMessage, deleteChatMessagesFrom, deleteChatMessagesByIds, retractChatMessage, editChatMessage, updateMessageMediaData, replaceResponseBatchWithParts, replaceGroupResponseRound, isReadingDiscussMessage, isSystemInstructionMessage, createResponseBatchId, createResponseRoundId, getLatestStateValues, getLatestCharacterStateValues, compareChatMessages } from "@/lib/chat-storage";
+import { ChatSession, ChatMessage, CHAT_APP_SETTINGS_UPDATED_EVENT, CHAT_INITIAL_VISIBLE_MESSAGE_COUNT, CHAT_LOAD_MORE_MESSAGE_COUNT, CHAT_REQUEST_REPLY_EVENT, loadChatAppSettings, loadChatMessages, loadChatContacts, loadChatSessions, saveChatSessions, pushChatMessage, updateChatMessage, deleteChatMessage, deleteChatMessagesFrom, deleteChatMessagesByIds, retractChatMessage, editChatMessage, updateMessageMediaData, replaceResponseBatchWithParts, replaceGroupResponseRound, isReadingDiscussMessage, isSystemInstructionMessage, createResponseBatchId, createResponseRoundId, getLatestStateValues, getLatestCharacterStateValues, getChatSessionTargetCharacterId, compareChatMessages } from "@/lib/chat-storage";
 import type { StateValue } from "@/lib/chat-storage";
 import { parseStateValues, mergeStateValues } from "@/lib/state-value-parser";
 import { parseAIResponse, type ParsedMessagePart } from "@/lib/rich-message-parser";
@@ -1059,6 +1059,7 @@ const OfflineTextInputBar = memo(forwardRef<OfflineTextInputHandle, {
 }));
 
 export function ChatRoom({ session, onBack }: ChatRoomProps) {
+    const sessionTargetId = getChatSessionTargetCharacterId(session);
     const roleplayActor = useMemo(() => session.roleplayActorCharacterId
         ? loadCharacters().find(c => c.id === session.roleplayActorCharacterId) || null
         : null, [session.roleplayActorCharacterId]);
@@ -1071,7 +1072,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
     const [stickerReady, setStickerReady] = useState(false);
     const [character, setCharacter] = useState<Character | null>(() => {
         const chars = loadCharacters();
-        return chars.find(c => c.id === session.contactId) || null;
+        return chars.find(c => c.id === sessionTargetId) || null;
     });
     const [isGenerating, setIsGenerating] = useState(false);
     const [offlineMode, setOfflineMode] = useState(false);
@@ -1544,12 +1545,12 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
 
     const activeRegexes = useMemo<RegexConfig[]>(() => {
         const bindings = loadBindingConfig();
-        const activeSlot = resolveBinding(bindings, session.isGroup ? undefined : session.contactId, session.isGroup ? "group_chat" : "chat");
+        const activeSlot = resolveBinding(bindings, session.isGroup ? undefined : sessionTargetId, session.isGroup ? "group_chat" : "chat");
         const allRegexes = loadRegexes();
         return (activeSlot.regexIds || [])
             .map(id => allRegexes.find(regex => regex.id === id))
             .filter((regex): regex is RegexConfig => Boolean(regex));
-    }, [regexRevision, session.contactId, session.isGroup]);
+    }, [regexRevision, sessionTargetId, session.isGroup]);
 
     const displayRegexMacroEngine = useMemo(() => {
         const charName = session.isGroup
@@ -1601,10 +1602,10 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
         if (session.discardInvalidStickers !== true) return parts;
         const characterIds = senderCharacterId
             ? [senderCharacterId]
-            : (session.isGroup ? (session.participantIds ?? []) : [session.contactId]);
+            : (session.isGroup ? (session.participantIds ?? []) : [sessionTargetId]);
         return parts.filter(part => part.mediaType !== "sticker"
             || isKnownStickerLabel(part.mediaData?.label || "", characterIds));
-    }, [session.discardInvalidStickers, session.isGroup, session.participantIds, session.contactId]);
+    }, [session.discardInvalidStickers, session.isGroup, session.participantIds, sessionTargetId]);
 
     const normalizeDisplayParts = useCallback((parts: ReturnType<typeof parseAIResponse>["parts"]) => {
         const charN = character?.name || "对方";
@@ -1666,7 +1667,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
     useEffect(() => {
         setUserIdentity(roleplayActor
             ? characterToRoleplayIdentity(roleplayActor)
-            : resolveUserIdentity(session.contactId, "chat"));
+            : resolveUserIdentity(sessionTargetId, "chat"));
         setTransientMessages([]);
         setOfflineMode(roleplayActor ? false : kvGet(CHAT_OFFLINE_MODE_PREFIX + session.id) === "1");
         setOfflineVisibleCount(OFFLINE_INITIAL_LOAD);
@@ -1690,7 +1691,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
         setHasMore(nextHasMore);
         const charIds = session.isGroup && session.participantIds
             ? session.participantIds
-            : [session.contactId];
+            : [sessionTargetId];
         Promise.all(charIds.map(id => prewarmStickerCache(id))).then(() => {
             setStickerReady(true);
             needsInitialScrollRef.current = true;
@@ -2044,7 +2045,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
                 orderId: targetMsg.mediaData?.shoppingOrderId,
                 requestId: targetMsg.mediaData?.paymentRequestId,
                 accepted: true,
-                payerCharacterId: session.contactId,
+                payerCharacterId: sessionTargetId,
                 payerCharacterName: charN,
             });
         } else if (actionType === "decline_payment_request") {
@@ -2055,7 +2056,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
                 orderId: targetMsg.mediaData?.shoppingOrderId,
                 requestId: targetMsg.mediaData?.paymentRequestId,
                 accepted: false,
-                payerCharacterId: session.contactId,
+                payerCharacterId: sessionTargetId,
                 payerCharacterName: charN,
             });
         } else {
@@ -2070,7 +2071,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
             status: newStatus,
             ...(targetMediaType === "payment_request" ? {
                 paymentResolvedAt: new Date().toISOString(),
-                paymentPayerId: session.contactId,
+                paymentPayerId: sessionTargetId,
                 paymentPayerName: charN,
             } : {}),
         };
@@ -2649,7 +2650,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
         guard?: GenerationRunGuard,
     ): Promise<ChatMessage | null> => {
         if (!isPendingChatGeneratedImageMessage(message)) return Promise.resolve(null);
-        return generateAndApplyChatGeneratedImage(message, characterId || session.contactId, { signal: guard?.signal })
+        return generateAndApplyChatGeneratedImage(message, characterId || sessionTargetId, { signal: guard?.signal })
             .catch(error => {
                 if (!isAbortLikeError(error)) {
                     console.warn("[ImageGeneration] Failed to generate chat image:", error);
@@ -2709,7 +2710,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
         const rawResponseText = options?.rawResponseText ?? aiResponseText;
         const previousState = session.isGroup
             ? getLatestStateValues(session.id)
-            : getLatestCharacterStateValues(session.contactId);
+            : getLatestCharacterStateValues(sessionTargetId);
 
         const { parts: rawParts, stateValues, freshStateValues, statusPanel, innerMonologue } = parseAIResponse(aiResponseText, previousState);
         const parts = stripInvalidStickerParts(rawParts);
@@ -2819,7 +2820,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
             messageDrafts.push({
                 draft,
                 afterPublish: isPendingChatGeneratedImageMessage(draft)
-                    ? (message) => scheduleGeneratedImageReplacement(message, session.contactId, options)
+                    ? (message) => scheduleGeneratedImageReplacement(message, sessionTargetId, options)
                     : afterPublishEffects[idx],
             });
         }
@@ -3013,7 +3014,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
         const request: MemoryWriteRequest = {
             capabilityId: "memory_write",
             sessionId: session.id,
-            characterId: session.contactId,
+            characterId: sessionTargetId,
             content: msg.mediaData?.memoryContent || msg.content,
             importance: msg.mediaData?.memoryImportance ?? 0.8,
             ...(msg.mediaData?.memoryReason ? { reason: msg.mediaData.memoryReason } : {}),
@@ -3335,7 +3336,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
         const launchContext = {
             source: "chat_plus_action",
             sessionId: session.id,
-            characterId: session.contactId,
+            characterId: sessionTargetId,
             characterName: character?.name,
             isGroup: Boolean(session.isGroup),
             groupName: session.groupName,
@@ -3369,7 +3370,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
             presentation,
             launchContext,
         });
-    }, [character?.name, groupCharacters, session.contactId, session.groupName, session.id, session.isGroup, session.participantIds]);
+    }, [character?.name, groupCharacters, sessionTargetId, session.groupName, session.id, session.isGroup, session.participantIds]);
 
     const sendShoppingGiftMessage = (gift: ShoppingGiftCandidate, recipient?: Character): boolean => {
         if (session.isGroup && !recipient) {
@@ -3691,7 +3692,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
             const requestCharacterId = typeof detail?.characterId === "string" ? detail.characterId : "";
             const matches = requestSessionId
                 ? requestSessionId === session.id
-                : Boolean(requestCharacterId && !session.isGroup && requestCharacterId === session.contactId);
+                : Boolean(requestCharacterId && !session.isGroup && requestCharacterId === sessionTargetId);
             if (!matches) return;
 
             if (detail) detail.handled = true;
@@ -3706,7 +3707,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
 
         window.addEventListener(CHAT_REQUEST_REPLY_EVENT, handleCustomAppReplyRequest);
         return () => window.removeEventListener(CHAT_REQUEST_REPLY_EVENT, handleCustomAppReplyRequest);
-    }, [session.contactId, session.id, session.isGroup, syncMessagesFromStorage, triggerAIResponse]);
+    }, [sessionTargetId, session.id, session.isGroup, syncMessagesFromStorage, triggerAIResponse]);
 
     // 围观群/被禁言时用户不能发言
     const ensureGroupSpeakPermission = (): boolean => {
@@ -4395,7 +4396,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
         const stateCutoff = storedMessages[firstBatchIndex];
         const previousState = session.isGroup
             ? getLatestStateValues(session.id)
-            : getLatestCharacterStateValues(session.contactId, stateCutoff ? { before: stateCutoff } : undefined);
+            : getLatestCharacterStateValues(sessionTargetId, stateCutoff ? { before: stateCutoff } : undefined);
 
         const { parts: rawParts, stateValues, freshStateValues, statusPanel, innerMonologue } = parseAIResponse(editedResponseContent, previousState);
         const parts = stripInvalidStickerParts(rawParts);
@@ -5159,7 +5160,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
                         {offlineMode ? "线下 · " : ""}
                         {session.isGroup
                             ? `${session.groupName || "群聊"}(${(session.participantIds?.length || 0) + (session.isSpectator ? 0 : 1)})`
-                            : (session.alias || character?.name || `User_${session.contactId.slice(-4)}`)}
+                            : (session.alias || character?.name || `User_${sessionTargetId.slice(-4)}`)}
                         {(isGenerating || isOfflineGenerating) && (
                             <span className="chat-typing-indicator">
                                 {offlineMode ? "线下生成中" : "对方正在输入"}<span className="chat-typing-dots"><i/><i/><i/></span>
@@ -5733,7 +5734,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
                                                 userName={userIdentity?.name || "你"}
                                                 groupSize={session.isGroup ? (session.participantIds?.length || 0) + (session.isSpectator ? 0 : 1) : undefined}
                                                 onShowDetail={setMediaDetailMsg}
-                                                characterId={msg.senderCharacterId || session.contactId}
+                                                characterId={msg.senderCharacterId || sessionTargetId}
                                                 onUpdate={(updated) => setMessages(prev => prev.map(m => m.id === updated.id ? updated : m))}
                                                 onSystemMessage={(text) => {
                                                     const sysMsg = pushChatMessage({
@@ -5886,7 +5887,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
             <ChatTextInputBar
                 ref={chatTextInputRef}
                 characterName={character?.name || "对方"}
-                characterId={session.contactId}
+                characterId={sessionTargetId}
 	                stickerCharacterIds={session.isGroup ? session.participantIds : undefined}
 	                isGroup={!!session.isGroup}
 	                isSpectator={!!session.isGroup && !!session.isSpectator}
@@ -6029,7 +6030,7 @@ export function ChatRoom({ session, onBack }: ChatRoomProps) {
             {/* Rich Media Input Modals */}
             {richModal === "voice_msg" && (
                 <VoiceRecordModal
-                    characterId={session.contactId}
+                    characterId={sessionTargetId}
                     onSend={(text, audioDataUrl) => {
                         setRichModal(null);
                         sendRichMessage("audio", { label: text }, "", audioDataUrl);

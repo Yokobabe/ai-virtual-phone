@@ -3,7 +3,7 @@
 // a unified timeline. Replaces the old ShortTermEvent IndexedDB approach.
 // Used by: memory-bank-page (UI display), memory-summarizer (summarization input).
 
-import { isReadingDiscussMessage, isSystemInstructionMessage, loadChatSessions, loadChatMessages, type ChatMessage } from "./chat-storage";
+import { getChatSessionTargetCharacterId, isReadingDiscussMessage, isSystemInstructionMessage, loadChatSessions, loadChatMessages, type ChatMessage } from "./chat-storage";
 import { buildGroupAdminBracketText } from "./group-admin";
 import { loadMomentPosts, loadMomentComments } from "./moments-storage";
 import { loadCharacters } from "./character-storage";
@@ -182,7 +182,7 @@ export function loadNativeTimeline(
     const directSessions = sessions.filter(s => !s.isGroup && (
         (!s.roleplayActorCharacterId && s.contactId === characterId)
         || (Boolean(s.roleplayActorCharacterId) && (
-            s.contactId === characterId || s.roleplayActorCharacterId === characterId
+            getChatSessionTargetCharacterId(s) === characterId || s.roleplayActorCharacterId === characterId
         ))
     ));
     const groupSessions = sessions.filter(s => s.isGroup && s.participantIds?.includes(characterId));
@@ -282,7 +282,7 @@ export function loadNativeTimeline(
         if (session.id === options?.excludeChatSessionId) continue;
         const isNpcRoleplay = Boolean(session.roleplayActorCharacterId);
         const roleplayActorName = chars.find(c => c.id === session.roleplayActorCharacterId)?.name ?? "NPC";
-        const roleplayTargetName = chars.find(c => c.id === session.contactId)?.name ?? "角色";
+        const roleplayTargetName = chars.find(c => c.id === getChatSessionTargetCharacterId(session))?.name ?? "角色";
         const messages = loadChatMessages(session.id);
         for (const msg of messages) {
             if (msg.isRetracted) continue;

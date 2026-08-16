@@ -19,6 +19,7 @@ import {
     normalizeVisionImagePromptLimit,
     createResponseBatchId,
     createToolExecutionId,
+    getChatSessionTargetCharacterId,
 } from "./chat-storage";
 import { extractTextToolDirectiveText, stripTextToolDirectives } from "./text-tool-protocol";
 import type { ApiConfig, PresetConfig, Prompt, PromptOrderEntry, RegexConfig } from "./settings-types";
@@ -1775,8 +1776,9 @@ export async function buildChatPromptMessages(
     toolsEnabled: boolean;
 }> {
     const chars = loadCharacters();
-    const character = chars.find(c => c.id === session.contactId);
-    if (!character) throw new ChatEngineError(`Character not found: ${session.contactId}`);
+    const targetCharacterId = getChatSessionTargetCharacterId(session);
+    const character = chars.find(c => c.id === targetCharacterId);
+    if (!character) throw new ChatEngineError(`Character not found: ${targetCharacterId}`);
 
     const resolvedAppId = options?.appId ?? "chat";
     const bindings = loadBindingConfig();
@@ -2075,7 +2077,7 @@ async function generateNativeChatCompletion(
     const requestMessages: LlmRequestMessage[] = toLlmRequestMessages(llmMessages);
     const parts: ChatCompletionPart[] = [];
     const meta = { characterName: character.name, userName: userIdentity?.name };
-    const actionContext = { characterId: session.contactId, sessionId: session.id, sourceEngine: "chat" as const, signal: options?.signal };
+    const actionContext = { characterId: character.id, sessionId: session.id, sourceEngine: "chat" as const, signal: options?.signal };
     const expandableSourceKeys = new Set(enabledTools.filter(tool => !isNativeSingleTool(tool)).map(nativeToolSourceKey));
 
     const maxToolRounds = getMaxToolRounds();
@@ -2155,7 +2157,7 @@ async function generateNativeChatCompletion(
                 realResults = await executeToolCalls(textCalls, {
                     appId: options?.appId ?? "chat",
                     sessionId: session.id,
-                    characterId: session.contactId,
+                    characterId: character.id,
                     sourceEngine: "chat",
                     signal: options?.signal,
                 });
@@ -2320,7 +2322,7 @@ export async function generateChatCompletion(
     // ── Tool calling loop with real-time callbacks ──
     const parts: ChatCompletionPart[] = [];
     const meta = { characterName: character.name, userName: userIdentity?.name };
-    const actionContext = { characterId: session.contactId, sessionId: session.id, sourceEngine: "chat" as const, signal: options?.signal };
+    const actionContext = { characterId: character.id, sessionId: session.id, sourceEngine: "chat" as const, signal: options?.signal };
 
     const maxToolRounds = getMaxToolRounds();
     for (let round = 0; round < maxToolRounds; round++) {
@@ -2430,7 +2432,7 @@ export async function generateChatCompletion(
                 results = await executeToolCalls(toolCalls, {
                     appId: options?.appId ?? "chat",
                     sessionId: session.id,
-                    characterId: session.contactId,
+                    characterId: character.id,
                     sourceEngine: "chat",
                     signal: options?.signal,
                 });
