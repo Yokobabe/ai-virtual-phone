@@ -546,6 +546,11 @@ function pushChronologicalShortTermBlocks(params: {
             }
         }
 
+        if (msg.mediaData?.tapback) {
+            const actor = msg.mediaData.tapbackBy === "assistant" ? characterName : resolvedUserName;
+            body = `${body}${body.trim() ? "\n" : ""}[Tapback:${actor}对这条消息回应了${msg.mediaData.tapback}]`;
+        }
+
         if (!body.trim() && !imageUrl) return;
 
         const isAssistantImage = imageUrl && msg.role === "assistant" && msg.mediaType === "media_file";
@@ -1005,6 +1010,11 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
                 } else {
                     body = formatRichMediaForHistory(msg, resolvedUserName, character?.name || "对方");
                 }
+            }
+
+            if (msg.mediaData?.tapback) {
+                const actor = msg.mediaData.tapbackBy === "assistant" ? (character?.name || "对方") : resolvedUserName;
+                body = `${body}${body.trim() ? "\n" : ""}[Tapback:${actor}对这条消息回应了${msg.mediaData.tapback}]`;
             }
 
             if (!body.trim() && !imageUrl) return;

@@ -12,6 +12,7 @@ import { MessageBubble, MediaDetailModal, prewarmStickerCache, BilingualTextBloc
 import { GeneratedImageErrorDialog } from "./generated-image-error-dialog";
 import { PhotoInputModal, TextPhotoModal, VoiceRecordModal, RedPacketModal, LocationInputModal, SystemInstructionModal } from "./rich-input-modals";
 import { EmojiPanel, StickerPanel } from "./emoji-panel";
+import { IMessageTapbackBadge } from "./imessage-tapback-badge";
 import { StickerSearchSuggest } from "./sticker-search-suggest";
 import { StateValuesPanel } from "./state-values-panel";
 import { generateChatCompletion, generateOfflineChatCompletion, flattenCompletionResult, ChatEngineError } from "@/lib/chat-engine";
@@ -52,7 +53,7 @@ import { useKeyboardDismissAutoSend } from "@/components/chat/use-keyboard-dismi
 import { cancelBailoutKey } from "@/lib/push-bailout-client";
 import { PENDING_REPLY_PREFIX } from "@/lib/friend-request-engine";
 import type { UserIdentity } from "@/components/settings/user-identity";
-import { AlertCircle, Blocks, Check, Trash2, User, ChevronLeft, ChevronRight, Clapperboard, Clock, Gift, Languages, Loader2, MoreHorizontal, X } from "lucide-react";
+import { AlertCircle, Blocks, Check, Copy, FileText, ListChecks, ListX, Pencil, RotateCcw, Trash2, Undo2, User, ChevronLeft, ChevronRight, Clapperboard, Clock, Gift, Languages, Loader2, MoreHorizontal, X } from "lucide-react";
 import { setDebugChatState } from "@/lib/debug-store";
 import { SessionCustomCSS } from "@/components/ui/session-custom-css";
 import { setChatActive } from "@/lib/music-action-queue";
@@ -88,6 +89,7 @@ import { extractTextToolDirectiveText } from "@/lib/text-tool-protocol";
 import { emitChatPluginEvent, getChatPluginHookBus, runChatPluginTransform } from "@/lib/chat-plugin-hooks";
 import { CHAT_PLUGIN_TOAST_EVENT, getChatPluginRuntime } from "@/lib/chat-plugin-runtime";
 import { ChatPluginSlot } from "@/components/chat/chat-plugin-slot";
+import { getTapbackGlyph, IMESSAGE_TAPBACKS, type MessageTapback } from "@/lib/chat-tapback";
 
 // ── Call system message detection ──────────────────────────
 // Call messages are stored with user/assistant role for correct prompt alternation,
@@ -469,6 +471,7 @@ type OfflineActionTarget = {
 type ContextMenuAnchor = {
     x: number;
     y: number;
+    focusBubble?: boolean;
 };
 
 type RenderChatMessage = ChatMessage & {
@@ -491,7 +494,9 @@ type RichModalKind = "photo" | "text_photo" | "red_packet" | "transfer" | "locat
 type ChatTextInputHandle = {
     appendText: (text: string, options?: { focus?: boolean }) => void;
     clear: () => void;
+    focus: () => void;
 };
+
 type OfflineTextInputHandle = {
     clear: () => void;
     setText: (text: string) => void;
@@ -695,6 +700,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
             setInputText("");
             resetTextareaHeight();
         },
+        focus: () => textareaRef.current?.focus(),
     }), [appendText]);
 
     const handleSubmit = () => {
@@ -711,24 +717,42 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
         onClosePanels();
     };
 
+    const handleAIReply = () => {
+        const trimmed = inputText.trim();
+        if (!inputLocked && trimmed) {
+            if (!onSendText(trimmed, { autoReply: true })) return;
+            setInputText("");
+            resetTextareaHeight();
+        } else {
+            onTriggerAIResponse();
+        }
+        onClosePanels();
+    };
+
     const panelOpen = showEmojiPanel || showStickerPanel || showPlusMenu;
     const suggestCharacterIds = useMemo(
         () => (isGroup ? (stickerCharacterIds || []) : characterId ? [characterId] : []),
         [isGroup, stickerCharacterIds, characterId],
     );
     const suggestEnabled = !inputLocked && !panelOpen && !suggestClosed && inputText.trim().length > 0;
+    const imessageMenuIcon = (fileName: string) => (
+        <img className="imessage-plus-app-icon" src={`/imessage26/apps/${fileName}`} alt="" aria-hidden="true" />
+    );
     const plusMenuItems = [
-        { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>, label: "照片墙", onClick: () => onOpenRichModal("photo") },
-        { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="7" y1="8" x2="17" y2="8" /><line x1="7" y1="12" x2="14" y2="12" /><line x1="7" y1="16" x2="11" y2="16" /></svg>, label: "文字图片", onClick: () => onOpenRichModal("text_photo") },
-        { icon: <AlertCircle size={22} strokeWidth={1.5} color="var(--c-text)" />, label: "系统指令", onClick: () => onOpenRichModal("system_instruction") },
-        { icon: <Clapperboard size={22} strokeWidth={1.5} color={theaterMode ? "var(--c-icon-active)" : "var(--c-text)"} />, label: "番外指令模式", active: theaterMode, onClick: onToggleTheaterMode },
-        { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>, label: "视频通话", onClick: onStartVideoCall },
-        { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" /></svg>, label: "语音通话", onClick: onStartVoiceCall },
-        { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>, label: "红包", onClick: () => onOpenRichModal("red_packet") },
-        { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><text x="12" y="16" textAnchor="middle" fontSize="12" fill="var(--c-text)" stroke="none">¥</text></svg>, label: "转账", onClick: () => onOpenRichModal(isGroup ? "transfer_target" : "transfer") },
-        { icon: <Gift size={22} strokeWidth={1.5} color="var(--c-text)" />, label: "礼物", onClick: () => onOpenRichModal("gift") },
-        { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>, label: "位置", onClick: () => onOpenRichModal("location") },
-        { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" /><line x1="8" y1="22" x2="16" y2="22" /></svg>, label: "语音条", onClick: () => onOpenRichModal("voice_msg") },
+        ...(!isGroup ? [{ icon: imessageMenuIcon("offline-mode.jpg"), label: "线下模式", onClick: onToggleOfflineMode }] : []),
+        { icon: !isGroup ? imessageMenuIcon("photo-wall.jpg") : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>, label: "照片墙", onClick: () => onOpenRichModal("photo") },
+        { icon: !isGroup ? imessageMenuIcon("text-image.jpg") : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="7" y1="8" x2="17" y2="8" /><line x1="7" y1="12" x2="14" y2="12" /><line x1="7" y1="16" x2="11" y2="16" /></svg>, label: !isGroup ? "文字图" : "文字图片", onClick: () => onOpenRichModal("text_photo") },
+        { icon: !isGroup ? imessageMenuIcon("system-instruction.jpg") : <AlertCircle size={22} strokeWidth={1.5} color="var(--c-text)" />, label: "系统指令", onClick: () => onOpenRichModal("system_instruction") },
+        { icon: !isGroup ? imessageMenuIcon("red-packet.jpg") : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>, label: "红包", onClick: () => onOpenRichModal("red_packet") },
+        { icon: !isGroup ? imessageMenuIcon("gift.jpg") : <Gift size={22} strokeWidth={1.5} color="var(--c-text)" />, label: "礼物", onClick: () => onOpenRichModal("gift") },
+        { icon: !isGroup ? imessageMenuIcon("location.jpg") : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>, label: "位置", onClick: () => onOpenRichModal("location") },
+        { icon: !isGroup ? imessageMenuIcon("transfer.jpg") : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><text x="12" y="16" textAnchor="middle" fontSize="12" fill="var(--c-text)" stroke="none">¥</text></svg>, label: "转账", onClick: () => onOpenRichModal(isGroup ? "transfer_target" : "transfer") },
+        { icon: !isGroup ? imessageMenuIcon("theater-mode.jpg") : <Clapperboard size={22} strokeWidth={1.5} color={theaterMode ? "var(--c-icon-active)" : "var(--c-text)"} />, label: "番外指令模式", active: theaterMode, onClick: onToggleTheaterMode },
+        ...(isGroup ? [{ icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>, label: "视频通话", onClick: onStartVideoCall }] : []),
+        ...(isGroup ? [
+            { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" /></svg>, label: "语音通话", onClick: onStartVoiceCall },
+            { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" /><line x1="8" y1="22" x2="16" y2="22" /></svg>, label: "语音条", onClick: () => onOpenRichModal("voice_msg") },
+        ] : []),
         ...customPlusActions.map(action => ({
             icon: action.appIconDataUrl
                 ? <span className="chat-plus-custom-app-icon" style={{ backgroundImage: `url(${action.appIconDataUrl})` }} aria-hidden="true" />
@@ -739,7 +763,12 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     ];
 
     return (
-        <div className="chat-input-bar chat-room-main-pane flex flex-col" data-ui="input">
+        <div
+            className="chat-input-bar chat-room-main-pane flex flex-col"
+            data-ui="input"
+            {...(!isGroup ? { "data-imessage-private": "" } : {})}
+            {...(inputText.trim() ? { "data-has-text": "" } : {})}
+        >
             {theaterMode && (
                 <div className="chat-theater-mode-strip" role="status">
                     <span className="chat-theater-mode-icon" aria-hidden="true">
@@ -758,11 +787,19 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                 </div>
             )}
             {quotingMessage && (
-                <div className="chat-quote-bar">
-                    <div className="flex-1 ts-12 text-[var(--c-icon)] overflow-hidden text-ellipsis whitespace-nowrap">
-                        引用 {quotingMessage.role === "user" ? "你" : characterName}: {quotingMessage.content.slice(0, 40)}
+                <div className="imessage-quote-compose-layer" data-quote-role={quotingMessage.role}>
+                    <div className="imessage-quote-compose-bubble" data-role={quotingMessage.role}>
+                        {quotingMessage.content || quotingMessage.mediaData?.label || "消息"}
                     </div>
-                    <button onClick={onClearQuote} className="ui-bare-btn text-[var(--c-icon)] ts-16 leading-none p-[2px]">✕</button>
+                    <button
+                        type="button"
+                        onClick={onClearQuote}
+                        className="imessage-quote-compose-close"
+                        aria-label="取消引用"
+                        title="取消引用"
+                    >
+                        <X size={22} strokeWidth={1.8} aria-hidden="true" />
+                    </button>
                 </div>
             )}
 
@@ -777,6 +814,48 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                     }}
                     onClose={() => setSuggestClosed(true)}
                 />
+            )}
+            {!isGroup && (
+                <div className="imessage-composer-subject">
+                    <span className="imessage-composer-subject-label">主题</span>
+                    <div className="imessage-composer-shortcuts">
+                        <button
+                            type="button"
+                            onClick={onToggleEmojiPanel}
+                            disabled={inputLocked}
+                            className="imessage-composer-shortcut imessage-composer-emoji"
+                            aria-label="表情"
+                            title="表情"
+                            aria-pressed={showEmojiPanel}
+                            {...(showEmojiPanel ? { "data-active": "" } : {})}
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M8.5 14s1.25 1.75 3.5 1.75S15.5 14 15.5 14" /><path d="M9 9.25h.01M15 9.25h.01" /></svg>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onToggleStickerPanel}
+                            disabled={inputLocked}
+                            className="imessage-composer-shortcut imessage-composer-sticker"
+                            aria-label="贴纸"
+                            title="贴纸"
+                            aria-pressed={showStickerPanel}
+                            {...(showStickerPanel ? { "data-active": "" } : {})}
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15.5 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h8.5L21 14.5V8.5Z" /><path d="M14.5 21v-4a2.5 2.5 0 0 1 2.5-2.5h4" /></svg>
+                        </button>
+                    </div>
+                    {!isGenerating && (
+                        <button
+                            type="button"
+                            onClick={handleAIReply}
+                            className="imessage-composer-shortcut imessage-composer-ai-reply"
+                            aria-label="让TA回复"
+                            title={!inputLocked && inputText.trim() ? "发送输入框内容并让TA回复" : "让TA回复"}
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0Z" /></svg>
+                        </button>
+                    )}
+                </div>
             )}
             <textarea
                 ref={textareaRef}
@@ -813,7 +892,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                 disabled={inputLocked}
                 placeholder={inputLocked
                     ? (isSpectator ? "围观中，你不在这个群里" : `禁言中，剩余${Math.ceil(muteRemainingMs / 60000)}分钟`)
-                    : (theaterMode ? "写下番外指令..." : undefined)}
+                    : (theaterMode ? "写下番外指令..." : (!isGroup ? "iMessage 信息" : undefined))}
             />
 
             <div className="chat-input-actions">
@@ -828,20 +907,20 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                         <circle cx="12" cy="10" r="3" />
                     </svg>
                 </button>
-                <button onClick={onToggleEmojiPanel} disabled={inputLocked} className="ui-bare-btn text-[var(--c-text)]" style={inputLocked ? { opacity: 0.35 } : undefined}>
+                <button onClick={onToggleEmojiPanel} disabled={inputLocked} className="ui-bare-btn text-[var(--c-text)] chat-emoji-toggle" style={inputLocked ? { opacity: 0.35 } : undefined}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" /></svg>
                 </button>
-                <button onClick={onToggleStickerPanel} disabled={inputLocked} className="ui-bare-btn text-[var(--c-text)]" style={inputLocked ? { opacity: 0.35 } : undefined}>
+                <button onClick={onToggleStickerPanel} disabled={inputLocked} className="ui-bare-btn text-[var(--c-text)] chat-sticker-toggle" style={inputLocked ? { opacity: 0.35 } : undefined}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z" /><polyline points="14 3 14 8 21 8" /><path d="M8 13h0" /><path d="M16 13h0" /><path d="M10 17c.5.3 1.2.5 2 .5s1.5-.2 2-.5" /></svg>
                 </button>
-                <button onClick={onTogglePlusMenu} disabled={inputLocked} className="ui-bare-btn text-[var(--c-text)]" style={inputLocked ? { opacity: 0.35 } : undefined}>
+                <button onClick={onTogglePlusMenu} disabled={inputLocked} className="ui-bare-btn text-[var(--c-text)] chat-plus-toggle" style={inputLocked ? { opacity: 0.35 } : undefined}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
                 </button>
                 <button
                     onClick={handleSubmit}
                     disabled={!isGenerating && (inputLocked || !inputText.trim())}
                     style={inputLocked && !isGenerating ? { opacity: 0.35 } : undefined}
-                    className="ui-bare-btn text-[var(--c-text)]"
+                    className="ui-bare-btn text-[var(--c-text)] chat-send-btn"
                     aria-label={isGenerating ? "停止本轮生成" : "发送"}
                     title={isGenerating ? "停止本轮生成" : "发送"}
                 >
@@ -854,23 +933,27 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
                     )}
                 </button>
+                {!isGroup && (
+                    <button
+                        type="button"
+                        className="ui-bare-btn text-[var(--c-text)] chat-voice-message-btn"
+                        onClick={() => onOpenRichModal("voice_msg")}
+                        disabled={inputLocked}
+                        aria-label="语音消息"
+                        title="语音消息"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <rect x="9" y="3" width="6" height="12" rx="3" />
+                            <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" />
+                            <path d="M12 18v3" />
+                        </svg>
+                    </button>
+                )}
                 {!isGenerating && (
                     <button
-                        className="ui-bare-btn text-[var(--c-text)]"
+                        className="ui-bare-btn text-[var(--c-text)] chat-ai-reply-btn"
                         title={!inputLocked && inputText.trim() ? "发送输入框内容并触发回复" : "触发 AI 主动回复"}
-                        onClick={() => {
-                            const trimmed = inputText.trim();
-                            // 输入框已有文字：发送输入框内容并立即触发模型回复（一次按键完成），
-                            // 避免「打完字却忘记发送」；没文字时才只触发 AI 主动回复
-                            if (!inputLocked && trimmed) {
-                                if (!onSendText(trimmed, { autoReply: true })) return;
-                                setInputText("");
-                                resetTextareaHeight();
-                            } else {
-                                onTriggerAIResponse();
-                            }
-                            onClosePanels();
-                        }}
+                        onClick={handleAIReply}
                     >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .963L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
@@ -883,12 +966,12 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
             {showPlusMenu && (
                 <div className="chat-plus-menu">
                     {plusMenuItems.map((item, i) => (
-                        <div key={`${item.label}-${i}`} onClick={item.onClick} className="chat-plus-menu-item flex flex-col items-center gap-1.5 cursor-pointer" {...(item.active ? { "data-active": "" } : {})}>
+                        <button type="button" key={`${item.label}-${i}`} onClick={item.onClick} className="chat-plus-menu-item cursor-pointer" {...(item.active ? { "data-active": "" } : {})}>
                             <div className="chat-plus-icon-box">
                                 {item.icon}
                             </div>
-                            <span className="ts-11 text-[var(--c-text)]">{item.label}</span>
-                        </div>
+                            <span className="chat-plus-menu-label">{item.label}</span>
+                        </button>
                     ))}
                 </div>
             )}
@@ -1328,6 +1411,14 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
     const startPosRef = useRef<{ x: number, y: number } | null>(null);
     const longPressTriggeredRef = useRef(false);
+    const swipeReplyRef = useRef<{
+        pointerId: number;
+        msgId: string;
+        startX: number;
+        startY: number;
+        element: HTMLElement;
+        dragging: boolean;
+    } | null>(null);
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const mountedRef = useRef(true);
@@ -1388,9 +1479,13 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         setContextMenuAnchor(null);
     };
 
-    const openMessageContextMenu = (msgId: string, anchor: ContextMenuAnchor) => {
+    const openMessageContextMenu = (msgId: string, anchor: ContextMenuAnchor, target?: HTMLElement | null) => {
+        const focusBubble = !session.isGroup && target?.dataset.msgId === msgId;
         setActiveOfflineTarget(null);
-        setContextMenuAnchor(anchor);
+        setContextMenuAnchor({
+            ...anchor,
+            ...(focusBubble ? { focusBubble: true } : {}),
+        });
         setActiveMessageId(msgId);
     };
 
@@ -1398,6 +1493,29 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         setActiveMessageId(null);
         setContextMenuAnchor(anchor);
         setActiveOfflineTarget(target);
+    };
+
+    const beginQuoteReply = (message: ChatMessage) => {
+        setQuotingMessage(message);
+        closeContextMenu();
+        requestAnimationFrame(() => chatTextInputRef.current?.focus());
+    };
+
+    const handleTapback = (message: ChatMessage, tapback: MessageTapback) => {
+        const storedMessageId = getStoredActionMessageId(message);
+        const stored = loadChatMessages(session.id).find(item => item.id === storedMessageId);
+        if (!stored) return;
+        const nextMediaData = { ...stored.mediaData };
+        if (nextMediaData.tapback === tapback && nextMediaData.tapbackBy === "user") {
+            delete nextMediaData.tapback;
+            delete nextMediaData.tapbackBy;
+        } else {
+            nextMediaData.tapback = tapback;
+            nextMediaData.tapbackBy = "user";
+        }
+        updateMessageMediaData(storedMessageId, nextMediaData);
+        syncMessagesFromStorage();
+        closeContextMenu();
     };
 
     const getContextMenuInitialStyle = () => {
@@ -1745,7 +1863,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         const charIds = session.isGroup && session.participantIds
             ? session.participantIds
             : [session.contactId];
-        Promise.all(charIds.map(id => prewarmStickerCache(id))).then(() => {
+        Promise.allSettled(charIds.map(id => prewarmStickerCache(id))).then(() => {
             setStickerReady(true);
             needsInitialScrollRef.current = true;
             prevMsgCountRef.current = 0;
@@ -4735,15 +4853,89 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         startPosRef.current = anchor;
         longPressTriggeredRef.current = false;
 
+        const element = e.currentTarget as HTMLElement;
+        swipeReplyRef.current = !session.isGroup && element.dataset.msgId === msgId
+            ? {
+                pointerId: e.pointerId,
+                msgId,
+                startX: e.clientX,
+                startY: e.clientY,
+                element,
+                dragging: false,
+            }
+            : null;
+
         if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
         longPressTimerRef.current = setTimeout(() => {
             longPressTriggeredRef.current = true;
-            openMessageContextMenu(msgId, anchor);
+            openMessageContextMenu(msgId, anchor, element);
             longPressTimerRef.current = null;
         }, 500); // 500ms long press
     };
 
+    const resetSwipeReply = (animate = true) => {
+        const swipe = swipeReplyRef.current;
+        if (!swipe) return;
+        const { element } = swipe;
+        try {
+            if (element.hasPointerCapture(swipe.pointerId)) element.releasePointerCapture(swipe.pointerId);
+        } catch { /* pointer capture may already be released by the browser */ }
+        if (animate) element.style.transition = "transform 220ms cubic-bezier(.2,.8,.2,1)";
+        element.style.transform = "translate3d(0,0,0)";
+        element.removeAttribute("data-swiping-reply");
+        element.removeAttribute("data-swipe-ready");
+        window.setTimeout(() => {
+            if (!element.isConnected || element.hasAttribute("data-swiping-reply")) return;
+            element.style.removeProperty("transition");
+            element.style.removeProperty("transform");
+        }, animate ? 230 : 0);
+        swipeReplyRef.current = null;
+    };
+
+    const handleMessagePointerMove = (e: React.PointerEvent) => {
+        const swipe = swipeReplyRef.current;
+        if (!swipe || swipe.pointerId !== e.pointerId) return;
+        const dx = e.clientX - swipe.startX;
+        const dy = e.clientY - swipe.startY;
+
+        if (!swipe.dragging && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) {
+            handleMessagePointerCancel();
+            return;
+        }
+        if (dx <= 0) {
+            if (Math.abs(dx) > 10) handleMessagePointerCancel();
+            return;
+        }
+        if (dx < 7 || dx < Math.abs(dy) * 1.15) return;
+
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+        swipe.dragging = true;
+        try {
+            if (!swipe.element.hasPointerCapture(e.pointerId)) swipe.element.setPointerCapture(e.pointerId);
+        } catch { /* older webviews can reject pointer capture */ }
+        e.preventDefault();
+        const offset = Math.min(72, (dx - 4) * 0.78);
+        swipe.element.style.transition = "none";
+        swipe.element.style.transform = `translate3d(${offset}px,0,0)`;
+        swipe.element.toggleAttribute("data-swiping-reply", true);
+        swipe.element.toggleAttribute("data-swipe-ready", offset >= 52);
+    };
+
     const handleMessagePointerUp = (e: React.PointerEvent) => {
+        const swipe = swipeReplyRef.current;
+        const shouldReply = Boolean(
+            swipe
+            && swipe.pointerId === e.pointerId
+            && swipe.dragging
+            && Math.min(72, Math.max(0, e.clientX - swipe.startX - 4) * 0.78) >= 52
+        );
+        const replyMessage = shouldReply && swipe
+            ? messages.find(message => message.id === swipe.msgId) || null
+            : null;
+        resetSwipeReply();
         startPosRef.current = null;
         if (longPressTimerRef.current) {
             clearTimeout(longPressTimerRef.current);
@@ -4755,9 +4947,15 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             e.preventDefault();
             longPressTriggeredRef.current = false;
         }
+        if (replyMessage) {
+            e.stopPropagation();
+            e.preventDefault();
+            beginQuoteReply(replyMessage);
+        }
     };
 
     const handleMessagePointerCancel = () => {
+        resetSwipeReply();
         startPosRef.current = null;
         longPressTriggeredRef.current = false;
         if (longPressTimerRef.current) {
@@ -4877,14 +5075,28 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     /** Reusable context menu for user/assistant bubbles */
     const renderBubbleContextMenu = (m: ChatMessage, options?: { allowMultiSelect?: boolean }) => {
         const storedMessageId = getStoredActionMessageId(m);
-        const menu = (
-            <div
-                onPointerDown={e => e.stopPropagation()}
-                ref={positionFloatingContextMenu}
-                style={getContextMenuInitialStyle()}
-                className="ctx-menu chat-floating-ctx-menu flex flex-col items-center gap-[6px] py-[4px] px-0"
-                data-role={m.role}>
-                <div className="flex">
+        const tapbackPicker = !session.isGroup ? (
+            <div className="imessage-tapback-picker" role="group" aria-label="回应消息">
+                {IMESSAGE_TAPBACKS.map(item => (
+                    <button
+                        type="button"
+                        key={item.id}
+                        className="imessage-tapback-option"
+                        data-tapback={item.id}
+                        {...(getTapbackGlyph(m.mediaData?.tapback) === item.glyph && m.mediaData?.tapbackBy === "user" ? { "data-selected": "" } : {})}
+                        onClick={() => handleTapback(m, item.id)}
+                        aria-label={item.label}
+                        title={item.label}
+                    >
+                        <span aria-hidden="true">{item.glyph}</span>
+                    </button>
+                ))}
+            </div>
+        ) : null;
+        const pluginActions = getChatPluginRuntime().getMessageActions(m);
+        const actionIndex = (
+            <>
+                <div className="flex imessage-context-actions">
                     <button onClick={() => {
                         const text = m.content;
                         const fallbackCopy = () => {
@@ -4903,47 +5115,76 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                             fallbackCopy();
                         }
                         setActiveMessageId(null);
-                    }} className="ctx-menu-btn">复制</button>
+                    }} className="ctx-menu-btn"><Copy className="imessage-context-icon" aria-hidden="true" /><span>复制</span></button>
                     <button onClick={() => (m.role === "assistant" ? handleEditResponseStart(m) : handleEditMessageStart(m))} className="ctx-menu-btn">
-                        {m.role === "assistant" && (m.rawResponseText || m.editableResponseText) ? "编辑回复" : "编辑"}
+                        <Pencil className="imessage-context-icon" aria-hidden="true" />
+                        <span>{m.role === "assistant" && (m.rawResponseText || m.editableResponseText) ? "编辑回复" : "编辑"}</span>
                     </button>
                     {m.mediaType === "audio" && m.mediaData?.label && (
-                        <button onClick={() => { setVoiceTextIds(prev => { const next = new Set(prev); if (next.has(m.id)) next.delete(m.id); else next.add(m.id); return next; }); setActiveMessageId(null); }} className="ctx-menu-btn">转文字</button>
+                        <button onClick={() => { setVoiceTextIds(prev => { const next = new Set(prev); if (next.has(m.id)) next.delete(m.id); else next.add(m.id); return next; }); setActiveMessageId(null); }} className="ctx-menu-btn"><FileText className="imessage-context-icon" aria-hidden="true" /><span>转文字</span></button>
                     )}
                     {m.role === "user" && (
-                        <button onClick={() => handleRetractMessage(storedMessageId)} className="ctx-menu-btn">撤回消息</button>
+                        <button onClick={() => handleRetractMessage(storedMessageId)} className="ctx-menu-btn"><Undo2 className="imessage-context-icon" aria-hidden="true" /><span>撤回消息</span></button>
                     )}
+                </div>
+                {pluginActions.length > 0 && (
+                    <div className="flex imessage-context-actions">
+                        {pluginActions.map(action => (
+                            <button
+                                key={`${action.pluginId}:${action.id}`}
+                                className="ctx-menu-btn"
+                                onClick={() => {
+                                    getChatPluginRuntime().runMessageAction(action, m);
+                                    setActiveMessageId(null);
+                                }}
+                            ><Blocks className="imessage-context-icon" aria-hidden="true" /><span>{action.label}</span></button>
+                        ))}
+                    </div>
+                )}
+                {options?.allowMultiSelect !== false && (
+                    <div className="flex imessage-context-actions">
+                        <button onClick={() => startMultiSelectFromMessage(m)} className="ctx-menu-btn"><ListChecks className="imessage-context-icon" aria-hidden="true" /><span>多选</span></button>
+                    </div>
+                )}
+                <div className="flex imessage-context-actions" data-menu-danger-group="">
                     {m.role === "assistant" && (
-                        <button onClick={() => handleRetry(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger">重试以下</button>
+                        <button onClick={() => handleRetry(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger"><RotateCcw className="imessage-context-icon" aria-hidden="true" /><span>重试以下</span></button>
                     )}
+                    <button onClick={() => handleDeleteMessage(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger"><Trash2 className="imessage-context-icon" aria-hidden="true" /><span>删除</span></button>
+                    <button onClick={() => handleDeleteMessagesFrom(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger"><ListX className="imessage-context-icon" aria-hidden="true" /><span>删除以下</span></button>
                 </div>
-                <div className="flex">
-                    <button onClick={() => { setQuotingMessage(m); setActiveMessageId(null); }} className="ctx-menu-btn">引用</button>
-                    {options?.allowMultiSelect !== false && (
-                        <button onClick={() => startMultiSelectFromMessage(m)} className="ctx-menu-btn">多选</button>
-                    )}
-                    <button onClick={() => handleDeleteMessage(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger">删除</button>
-                    <button onClick={() => handleDeleteMessagesFrom(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger">删除以下</button>
-                </div>
-                {(() => {
-                    // 聊天插件注册的消息操作菜单项
-                    const pluginActions = getChatPluginRuntime().getMessageActions(m);
-                    if (pluginActions.length === 0) return null;
-                    return (
-                        <div className="flex">
-                            {pluginActions.map(action => (
-                                <button
-                                    key={`${action.pluginId}:${action.id}`}
-                                    className="ctx-menu-btn"
-                                    onClick={() => {
-                                        getChatPluginRuntime().runMessageAction(action, m);
-                                        setActiveMessageId(null);
-                                    }}
-                                >{action.label}</button>
-                            ))}
-                        </div>
-                    );
-                })()}
+            </>
+        );
+        if (!session.isGroup && contextMenuAnchor?.focusBubble) {
+            const focusMenu = (
+                <>
+                    <div
+                        className="imessage-context-tapbar"
+                        data-role={m.role}
+                        onPointerDown={e => e.stopPropagation()}
+                    >
+                        {tapbackPicker}
+                    </div>
+                    <div
+                        className="ctx-menu imessage-context-index"
+                        data-role={m.role}
+                        onPointerDown={e => e.stopPropagation()}
+                    >
+                        {actionIndex}
+                    </div>
+                </>
+            );
+            return focusMenu;
+        }
+        const menu = (
+            <div
+                onPointerDown={e => e.stopPropagation()}
+                ref={positionFloatingContextMenu}
+                style={getContextMenuInitialStyle()}
+                className="ctx-menu chat-floating-ctx-menu flex flex-col items-center gap-[6px] py-[4px] px-0"
+                data-role={m.role}>
+                {tapbackPicker}
+                {actionIndex}
                 <div data-menu-triangle className="ctx-menu-triangle absolute -top-[6px] w-0 h-0" />
             </div>
         );
@@ -5428,7 +5669,30 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     } : undefined;
 
     return (
-        <div ref={wrapperRef} className={`session-${session.id} chat-room-wrapper page-shell inset-0 flex flex-col z-20`} style={chatRoomBackgroundStyle} {...(bgLoading ? { "data-loading": "" } : {})} {...(bgImageResolved ? { "data-has-bg-image": "" } : {})} {...(showSettings ? { "data-settings-open": "" } : {})}>
+        <div
+            ref={wrapperRef}
+            className={`session-${session.id} chat-room-wrapper page-shell inset-0 flex flex-col z-20`}
+            style={chatRoomBackgroundStyle}
+            onPointerDown={(e) => {
+                const target = e.target as HTMLElement;
+                if (!session.isGroup && quotingMessage && !target.closest(".chat-input-bar")) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setQuotingMessage(null);
+                    return;
+                }
+                if (!contextMenuAnchor?.focusBubble || !activeMessageId) return;
+                if (target.closest(".imessage-context-tapbar, .imessage-context-index, [data-msg-id][data-active]")) return;
+                e.preventDefault();
+                e.stopPropagation();
+                closeContextMenu();
+            }}
+            {...(!session.isGroup ? { "data-imessage-private": "" } : {})}
+            {...(!session.isGroup && quotingMessage ? { "data-imessage-quote-compose": "" } : {})}
+            {...(bgLoading ? { "data-loading": "" } : {})}
+            {...(bgImageResolved ? { "data-has-bg-image": "" } : {})}
+            {...(showSettings ? { "data-settings-open": "" } : {})}
+        >
             {/* Custom CSS Injection for this session — scoped to prevent leaking */}
             {liveCSS && (
                 <SessionCustomCSS css={liveCSS} scope={`.session-${session.id}`} />
@@ -5439,27 +5703,61 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             {/* Header */}
             <header className="page-header chat-room-main-pane" data-ui="header">
                 <div className="page-header-safe-area" />
-                <div className="page-header-content">
-                    <button className="page-back-btn" type="button" onClick={onBack} aria-label="返回">
-                        <ChevronLeft size={24} strokeWidth={1.5} />
-                    </button>
-                    <span className="page-title" style={{ position: 'relative' }}>
-                        {offlineMode ? "线下 · " : ""}
-                        {session.isGroup
-                            ? `${session.groupName || "群聊"}(${(session.participantIds?.length || 0) + (session.isSpectator ? 0 : 1)})`
-                            : (session.alias || character?.name || `User_${session.contactId.slice(-4)}`)}
-                        {(isGenerating || isOfflineGenerating) && (
-                            <span className="chat-typing-indicator">
-                                {offlineMode ? "线下生成中" : "对方正在输入"}<span className="chat-typing-dots"><i/><i/><i/></span>
-                            </span>
-                        )}
-                    </span>
-                    <span className="page-header-right">
-                        <button className="page-back-btn" type="button" onClick={() => setShowSettings(true)} aria-label="更多">
-                            <MoreHorizontal size={22} strokeWidth={1.5} />
+                {!session.isGroup ? (
+                    <div className="page-header-content imessage-private-header">
+                        <button className="imessage-header-button imessage-header-back" type="button" onClick={onBack} aria-label="返回">
+                            <ChevronLeft size={29} strokeWidth={2.15} />
                         </button>
-                    </span>
-                </div>
+                        <button className="imessage-contact-card" type="button" onClick={() => setShowSettings(true)} aria-label="联系人详情">
+                            <span className="imessage-contact-avatar">
+                                {character?.avatar ? <img src={character.avatar} alt="" /> : <ChatFallbackAvatar />}
+                            </span>
+                            <span className="imessage-contact-name">
+                                {session.alias || character?.name || `User_${session.contactId.slice(-4)}`}
+                                <span className="imessage-contact-chevron" aria-hidden="true">›</span>
+                            </span>
+                            {(isGenerating || isOfflineGenerating) && (
+                                <span className="imessage-contact-status">
+                                    {offlineMode ? "线下生成中" : "正在输入"}<span className="chat-typing-dots"><i/><i/><i/></span>
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            className="imessage-header-button imessage-header-video"
+                            type="button"
+                            onClick={() => {
+                                cancelFollowUp(session.id);
+                                setCallInitiator("user");
+                                setShowVideoCall(true);
+                            }}
+                            aria-label="视频通话"
+                        >
+                            <svg viewBox="352 26 44 44" aria-hidden="true">
+                                <path fill="currentColor" d="M365.583 56.8887C364.255 56.8887 363.223 56.5373 362.487 55.8345C361.756 55.1317 361.391 54.1273 361.391 52.8213V43.2422C361.391 41.9307 361.767 40.9152 362.52 40.1958C363.273 39.4764 364.294 39.1167 365.583 39.1167H376.872C378.2 39.1167 379.229 39.4764 379.96 40.1958C380.696 40.9152 381.064 41.9279 381.064 43.2339V52.7715C381.064 54.0775 380.696 55.0902 379.96 55.8096C379.229 56.529 378.2 56.8887 376.872 56.8887H365.583ZM365.89 55.2202H376.557C377.425 55.2202 378.095 54.9906 378.565 54.5312C379.041 54.0775 379.279 53.3996 379.279 52.4976V43.5161C379.279 42.6141 379.044 41.9334 378.574 41.4741C378.103 41.0148 377.434 40.7852 376.565 40.7852H365.89C365.021 40.7852 364.352 41.012 363.881 41.4658C363.411 41.9196 363.176 42.603 363.176 43.5161V52.4976C363.176 53.3996 363.411 54.0775 363.881 54.5312C364.352 54.9906 365.021 55.2202 365.89 55.2202ZM380.74 45.0767L385.057 41.4492C385.3 41.2555 385.541 41.0978 385.779 40.9761C386.022 40.8488 386.266 40.7852 386.509 40.7852C386.969 40.7852 387.339 40.9373 387.622 41.2417C387.904 41.5461 388.045 41.95 388.045 42.4536V53.6016C388.045 54.0996 387.904 54.5008 387.622 54.8052C387.339 55.1095 386.969 55.2617 386.509 55.2617C386.266 55.2617 386.022 55.2008 385.779 55.0791C385.541 54.9574 385.3 54.7969 385.057 54.5977L380.74 50.9785V48.978L385.795 53.0869C385.856 53.1312 385.912 53.1699 385.961 53.2031C386.011 53.2363 386.064 53.2529 386.119 53.2529C386.274 53.2529 386.352 53.1506 386.352 52.9458V43.1011C386.352 42.8963 386.274 42.7939 386.119 42.7939C386.064 42.7939 386.011 42.8105 385.961 42.8438C385.912 42.8714 385.856 42.9102 385.795 42.96L380.74 47.0688V45.0767Z" />
+                            </svg>
+                        </button>
+                    </div>
+                ) : (
+                    <div className="page-header-content">
+                        <button className="page-back-btn" type="button" onClick={onBack} aria-label="返回">
+                            <ChevronLeft size={24} strokeWidth={1.5} />
+                        </button>
+                        <span className="page-title" style={{ position: 'relative' }}>
+                            {offlineMode ? "线下 · " : ""}
+                            {`${session.groupName || "群聊"}(${(session.participantIds?.length || 0) + (session.isSpectator ? 0 : 1)})`}
+                            {(isGenerating || isOfflineGenerating) && (
+                                <span className="chat-typing-indicator">
+                                    {offlineMode ? "线下生成中" : "对方正在输入"}<span className="chat-typing-dots"><i/><i/><i/></span>
+                                </span>
+                            )}
+                        </span>
+                        <span className="page-header-right">
+                            <button className="page-back-btn" type="button" onClick={() => setShowSettings(true)} aria-label="更多">
+                                <MoreHorizontal size={22} strokeWidth={1.5} />
+                            </button>
+                        </span>
+                    </div>
+                )}
             </header>
             <ChatPluginSlot
                 name="chat.header"
@@ -6014,22 +6312,23 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                 onPointerDown: (e: React.PointerEvent) => { e.stopPropagation(); handleMessagePointerDown(e, msg.id); },
                                                 onPointerUp: (e: React.PointerEvent) => handleMessagePointerUp(e),
                                                 onPointerCancel: handleMessagePointerCancel,
-                                                onPointerLeave: handleMessagePointerCancel,
-                                                onPointerMove: (e: React.PointerEvent) => {
-                                                    if (startPosRef.current) {
-                                                        const dx = Math.abs(e.clientX - startPosRef.current.x);
-                                                        const dy = Math.abs(e.clientY - startPosRef.current.y);
-                                                        if (dx > 10 || dy > 10) handleMessagePointerCancel();
-                                                    }
-                                                },
-                                                onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); openMessageContextMenu(msg.id, { x: e.clientX, y: e.clientY }); },
+                                                onPointerMove: handleMessagePointerMove,
+                                                onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); openMessageContextMenu(msg.id, { x: e.clientX, y: e.clientY }, e.currentTarget as HTMLElement); },
                                             } : {})}
                                             className={`chat-bubble-role-${msg.role} ${isMediaBubble ? "chat-bubble-media" : ""} ${isStandaloneHtmlPreview ? "chat-bubble-html-preview" : ""} ${renderMsg.mediaType === "music_share" ? "chat-bubble-music-share" : ""} ${renderMsg.mediaType === "gift" || renderMsg.mediaType === "image" || isStandaloneHtmlPreview ? "rounded-none" : "rounded-md"} break-words relative cursor-pointer select-none`}
                                             style={isStandaloneHtmlPreview ? STANDALONE_CARD_BUBBLE_STYLE : undefined}
                                             data-ui={msg.role === "user" ? "bubble-user" : "bubble-bot"}
                                             data-msg-id={msg.id}
+                                            data-media-type={renderMsg.mediaType || "text"}
                                             {...(activeMessageId === msg.id ? { "data-active": "" } : {})}
                                             >
+                                            {!session.isGroup && (
+                                                <span className="imessage-swipe-reply-cue" aria-hidden="true">
+                                                    <svg viewBox="0 0 24 24" focusable="false">
+                                                        <path fill="currentColor" fillRule="evenodd" d="M10 2a1 1 0 0 0-1.79-.614l-7 9a1 1 0 0 0 0 1.228l7 9A1 1 0 0 0 10 20v-3.99c5.379.112 7.963 1.133 9.261 2.243c1.234 1.055 1.46 2.296 1.695 3.596l.061.335a1 1 0 0 0 1.981-.122c.171-2.748-.086-6.73-2.027-10.061C19.087 8.768 15.695 6.282 10 6.022z" clipRule="evenodd" />
+                                                    </svg>
+                                                </span>
+                                            )}
                                             {/* Message Actions Popup */}
                                             {activeMessageId === msg.id && renderBubbleContextMenu(msg)}
 
@@ -6054,6 +6353,12 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                 onActionSelect={(text) => chatTextInputRef.current?.appendText(text)}
                                                 defaultTranslationExpanded={session.collapseBilingualTranslation !== false ? false : true}
                                             />
+                                            {!session.isGroup && renderMsg.mediaType !== "quote" && renderMsg.mediaData?.tapback && (
+                                                <IMessageTapbackBadge
+                                                    tapback={renderMsg.mediaData.tapback}
+                                                    tapbackBy={renderMsg.mediaData.tapbackBy || "user"}
+                                                />
+                                            )}
                                         </div>
                                         </div>}
                                         {msg.role !== "user" && !isSilentThought && !isEmptyBubble && hasFoldedPanel && (

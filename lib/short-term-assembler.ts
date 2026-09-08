@@ -259,6 +259,11 @@ export function loadNativeTimeline(
                 else if (msg.mediaType === "location") content = `[位置:${msg.mediaData?.label || ""}]`;
             }
 
+            if (msg.mediaData?.tapback) {
+                const actor = msg.mediaData.tapbackBy === "assistant" ? charName : userName;
+                content = `${content}${content.trim() ? "\n" : ""}[Tapback:${actor}对这条消息回应了${msg.mediaData.tapback}]`;
+            }
+
             if (!content.trim()) continue;
 
             entries.push({

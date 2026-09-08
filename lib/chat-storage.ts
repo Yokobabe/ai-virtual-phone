@@ -125,6 +125,9 @@ export type ChatMessage = {
         quoteMessageId?: string;  // 引用消息 ID
         quotePreview?: string;    // 引用消息预览文本
         quoteRole?: ChatMessageRole; // 引用消息的 role
+        /** Unicode emoji; rendered with the device's native emoji font. */
+        tapback?: string;
+        tapbackBy?: "user" | "assistant";
         stickerUrl?: string;      // 表情包图片路径
         diceFace?: number;        // 骰子点数（1-6），气泡翻滚后定格并与全屏动效一致
         pokeSender?: string;      // 拍一拍发起人名字

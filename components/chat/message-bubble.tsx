@@ -27,6 +27,7 @@ import { formatShoppingPaymentRequestHistory } from "@/lib/shopping-payment-requ
 import { toCustomAppIconId } from "@/lib/custom-app-types";
 import { ChatPluginSlot } from "@/components/chat/chat-plugin-slot";
 import { CHAT_PLUGIN_SLOTS_CHANGED_EVENT, getChatPluginRuntime } from "@/lib/chat-plugin-runtime";
+import { IMessageTapbackBadge } from "./imessage-tapback-badge";
 
 interface MessageBubbleProps {
     msg: ChatMessage;
@@ -1556,13 +1557,24 @@ function StickerBubble({ msg, characterId }: { msg: ChatMessage; characterId?: s
 function QuoteBubble({ msg, displayContent, defaultTranslationExpanded = false }: { msg: ChatMessage; displayContent?: string; defaultTranslationExpanded?: boolean }) {
     const d = msg.mediaData;
     return (
-        <div className="chat-quote-message max-w-full">
+        <div className={`chat-quote-message chat-quote-message-${msg.role} max-w-full`}>
+            <span className="chat-quote-connector" aria-hidden="true" />
             {d?.quotePreview && (
                 <div className="chat-quote-preview bg-black/[0.06] border-l-[3px] border-l-black/15 px-2.5 py-1.5 ts-12 text-[var(--c-icon)] mb-1.5 rounded-r-[6px] truncate max-w-full">
                     {d.quotePreview}
                 </div>
             )}
-            {msg.content && <TextBubble content={displayContent ?? msg.content} defaultTranslationExpanded={defaultTranslationExpanded} />}
+            {msg.content && (
+                <div className="chat-quote-reply">
+                    <TextBubble content={displayContent ?? msg.content} defaultTranslationExpanded={defaultTranslationExpanded} />
+                    {d?.tapback && (
+                        <IMessageTapbackBadge
+                            tapback={d.tapback}
+                            tapbackBy={d.tapbackBy || "user"}
+                        />
+                    )}
+                </div>
+            )}
         </div>
     );
 }
