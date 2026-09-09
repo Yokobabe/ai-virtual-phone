@@ -28,6 +28,7 @@ import { toCustomAppIconId } from "@/lib/custom-app-types";
 import { ChatPluginSlot } from "@/components/chat/chat-plugin-slot";
 import { CHAT_PLUGIN_SLOTS_CHANGED_EVENT, getChatPluginRuntime } from "@/lib/chat-plugin-runtime";
 import { IMessageTapbackBadge } from "./imessage-tapback-badge";
+import { ApplePayBrand } from "./apple-pay-brand";
 
 interface MessageBubbleProps {
     msg: ChatMessage;
@@ -693,6 +694,15 @@ function RedPacketBubble({ msg, charName, userName, groupSize, onShowDetail }: {
 
 // ── Transfer ─────────────────────────────
 
+function formatApplePayAmount(value: unknown): string {
+    const amount = Number(value ?? 0);
+    if (!Number.isFinite(amount)) return "0";
+    return amount.toLocaleString("zh-CN", {
+        minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+        maximumFractionDigits: 2,
+    });
+}
+
 function TransferBubble({ msg, charName, userName, onShowDetail }: {
     msg: ChatMessage; charName?: string; userName?: string;
     onShowDetail?: (msg: ChatMessage) => void;
@@ -704,29 +714,43 @@ function TransferBubble({ msg, charName, userName, onShowDetail }: {
     const bgClass = isDeclined
         ? "bg-declined-gradient"
         : isReceived ? "bg-opened-gradient" : "bg-transfer-gradient";
+    const amountText = formatApplePayAmount(d?.amount);
+    const statusText = isReceived ? "已收款" : isDeclined ? "已拒绝" : "";
 
     return (
         <div
             className="chat-transfer-card w-[240px] rounded-xl overflow-hidden cursor-pointer"
             onClick={() => onShowDetail?.(msg)}
         >
-            <div className={`chat-transfer-body p-4 flex items-center gap-3 ${bgClass}`}>
-                <div className="ts-28 shrink-0">💰</div>
-                <div className="flex-1">
-                    <div className="text-white ts-24 font-bold">¥{d?.amount?.toFixed(2)}</div>
-                    <div className="ts-13 mt-0.5 ui-text-white-85">{d?.label || "转账"}</div>
+            <div className="chat-transfer-legacy">
+                <div className={`chat-transfer-body p-4 flex items-center gap-3 ${bgClass}`}>
+                    <div className="ts-28 shrink-0">💰</div>
+                    <div className="flex-1">
+                        <div className="text-white ts-24 font-bold">¥{d?.amount?.toFixed(2)}</div>
+                        <div className="ts-13 mt-0.5 ui-text-white-85">{d?.label || "转账"}</div>
+                    </div>
+                </div>
+                {d?.recipientName && (
+                    <div className={`px-4 py-1 ts-12 ui-text-white-70 ${bgClass}`}>转给 {d.recipientName}</div>
+                )}
+                <div
+                    className="ui-media-footer px-4 py-2 ts-12 flex justify-between items-center"
+                    {...(isDeclined ? { "data-status": "declined" } : {})}
+                >
+                    <span>微信转账</span>
+                    {isReceived && <span>已收款</span>}
+                    {isDeclined && <span>已退回</span>}
                 </div>
             </div>
-            {d?.recipientName && (
-                <div className={`px-4 py-1 ts-12 ui-text-white-70 ${bgClass}`}>转给 {d.recipientName}</div>
-            )}
-            <div
-                className="ui-media-footer px-4 py-2 ts-12 flex justify-between items-center"
-                {...(isDeclined ? { "data-status": "declined" } : {})}
-            >
-                <span>微信转账</span>
-                {isReceived && <span>已收款</span>}
-                {isDeclined && <span>已退回</span>}
+            <div className="imessage-transfer-card hidden" aria-label={`Apple Pay 转账 ¥${amountText}`}>
+                <div className="imessage-transfer-main">
+                    <ApplePayBrand />
+                    <div className="imessage-transfer-amount">¥{amountText}</div>
+                </div>
+                <div className="imessage-transfer-footer">
+                    <span className="imessage-transfer-note">{d?.label || "转账"}</span>
+                    {statusText && <span className="imessage-transfer-status">{statusText}</span>}
+                </div>
             </div>
         </div>
     );
@@ -1734,16 +1758,23 @@ export function MediaDetailModal({ msg, userName, groupSize, onAccept, onClose }
     const paymentItemsText = d?.paymentRequestItemsText || (d?.paymentRequestItems || [])
         .map(item => `${item.title}/${item.detail}/${item.priceLabel}/${item.quantityLabel}`)
         .join("; ");
-    const modalAmountText = typeof d?.amount === "number" && Number.isFinite(d.amount)
-        ? d.amount.toFixed(2)
-        : String(d?.paymentRequestAmountLabel || "0.00");
+    const modalAmountText = isTransfer
+        ? formatApplePayAmount(d?.amount)
+        : typeof d?.amount === "number" && Number.isFinite(d.amount)
+            ? d.amount.toFixed(2)
+            : String(d?.paymentRequestAmountLabel || "0.00");
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="media-modal" onClick={(e) => e.stopPropagation()}>
+        <div className={`modal-overlay${isTransfer ? " imessage-transfer-modal-overlay" : ""}`} onClick={onClose}>
+            <div className={`media-modal${isTransfer ? " media-modal-transfer" : ""}`} onClick={(e) => e.stopPropagation()}>
                 {/* Header with gradient */}
                 <div className={`media-modal-header ${gradientClass}`}>
-                    <div className="media-modal-emoji">{isRedPacket ? "🧧" : isTransfer ? "💰" : "🧾"}</div>
+                    {isTransfer ? (
+                        <>
+                            <div className="media-modal-emoji media-modal-transfer-legacy">💰</div>
+                            <ApplePayBrand className="imessage-transfer-detail-brand hidden" />
+                        </>
+                    ) : <div className="media-modal-emoji">{isRedPacket ? "🧧" : "🧾"}</div>}
                     <div className="media-modal-amount">¥{modalAmountText}</div>
                     <div className="media-modal-label">
                         {isRedPacket ? (d?.label || "恭喜发财，大吉大利") : isTransfer ? (d?.label || "转账") : "代付请求"}

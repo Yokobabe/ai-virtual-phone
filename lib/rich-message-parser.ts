@@ -198,6 +198,15 @@ const RICH_PATTERNS: {
         }),
     },
     {
+        // Real iMessage Tapback action: attaches to the latest eligible user message.
+        regex: new RegExp(`\\[Tapback${C}([^\\]]+)\\]`, "i"),
+        build: (m) => ({
+            content: "",
+            mediaType: "tapback_action" as const,
+            mediaData: { tapback: m[1]?.trim() || "" },
+        }),
+    },
+    {
         regex: new RegExp(`\\[表情包${C}([^\\]]+)\\]`),
         build: (m) => {
             const name = m[1].trim();

@@ -89,7 +89,15 @@ import { extractTextToolDirectiveText } from "@/lib/text-tool-protocol";
 import { emitChatPluginEvent, getChatPluginHookBus, runChatPluginTransform } from "@/lib/chat-plugin-hooks";
 import { CHAT_PLUGIN_TOAST_EVENT, getChatPluginRuntime } from "@/lib/chat-plugin-runtime";
 import { ChatPluginSlot } from "@/components/chat/chat-plugin-slot";
-import { getTapbackGlyph, IMESSAGE_TAPBACKS, type MessageTapback } from "@/lib/chat-tapback";
+import {
+    applyAssistantTapback,
+    getTapbackGlyph,
+    IMESSAGE_TAPBACK_APPLIED_EVENT,
+    IMESSAGE_TAPBACKS_UPDATED_EVENT,
+    loadIMessageTapbacks,
+    type IMessageTapbackCandidate,
+    type MessageTapback,
+} from "@/lib/chat-tapback";
 
 // ── Call system message detection ──────────────────────────
 // Call messages are stored with user/assistant role for correct prompt alternation,
@@ -99,7 +107,7 @@ function isCallSysMsg(msg: ChatMessage): boolean {
     return CALL_SYS_RE.test(msg.content);
 }
 /** Returns the effective UI role: call messages render as "system" regardless of stored role */
-const ACTION_MEDIA_TYPES = new Set(["poke", "accept_red_packet", "decline_red_packet", "accept_transfer", "decline_transfer", "accept_payment_request", "decline_payment_request", "group_admin_notice"]);
+const ACTION_MEDIA_TYPES = new Set(["poke", "tapback_action", "accept_red_packet", "decline_red_packet", "accept_transfer", "decline_transfer", "accept_payment_request", "decline_payment_request", "group_admin_notice"]);
 // 拍一拍/群管理通知/通话留痕渲染成灰色系统小字，没有 💭 面板入口——
 // 状态栏/内心独白/状态值挂上去会被显示层吞掉，挂载时必须跳过它们
 function canCarryFoldedPanel(part: { content?: string; mediaType?: ChatMessage["mediaType"] }): boolean {
@@ -980,22 +988,26 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
             )}
 
             {showEmojiPanel && (
-                <EmojiPanel
-                    onSelect={(emoji) => appendText(emoji, { focus: false })}
-                    onEffectSend={(text) => {
-                        if (inputLocked || isGenerating) return;
-                        onSendText(text);
-                        onClosePanels();
-                    }}
-                />
+                <div className="chat-emoji-panel-wrap">
+                    <EmojiPanel
+                        onSelect={(emoji) => appendText(emoji, { focus: false })}
+                        onEffectSend={(text) => {
+                            if (inputLocked || isGenerating) return;
+                            onSendText(text);
+                            onClosePanels();
+                        }}
+                    />
+                </div>
             )}
 
             {showStickerPanel && (
-                <StickerPanel
-                    onSend={onSendSticker}
-                    characterId={characterId}
-                    characterIds={stickerCharacterIds}
-                />
+                <div className="chat-emoji-panel-wrap chat-sticker-panel">
+                    <StickerPanel
+                        onSend={onSendSticker}
+                        characterId={characterId}
+                        characterIds={stickerCharacterIds}
+                    />
+                </div>
             )}
         </div>
     );
@@ -1202,10 +1214,12 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const [cloudDeletePending, setCloudDeletePending] = useState<{ count: number } | null>(null);
     const [showPlusMenu, setShowPlusMenu] = useState(false);
     const [customPlusActions, setCustomPlusActions] = useState<RegisteredCustomAppChatPlusAction[]>(() => loadCustomAppChatPlusActions());
+    const [tapbackCandidates, setTapbackCandidates] = useState<IMessageTapbackCandidate[]>(() => loadIMessageTapbacks());
     const [activeCustomChatPlus, setActiveCustomChatPlus] = useState<ActiveCustomChatPlus | null>(null);
     const [showSettings, setShowSettings] = useState(false);
     const [showVoiceCall, setShowVoiceCall] = useState(false);
     const [showVideoCall, setShowVideoCall] = useState(false);
+    const [showHeaderCallMenu, setShowHeaderCallMenu] = useState(false);
     const [callInitiator, setCallInitiator] = useState<"user" | "character">("user");
     const [callInitiatorName, setCallInitiatorName] = useState<string>("");
     const [userIdentity, setUserIdentity] = useState<UserIdentity | null>(null);
@@ -1284,6 +1298,12 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
     // 全屏特效：命中触发词的新消息播放表情雨/礼花（微信同款）
     const [activeScreenEffect, setActiveScreenEffect] = useState<ActiveScreenEffect | null>(null);
+
+    useEffect(() => {
+        const refreshTapbacks = () => setTapbackCandidates(loadIMessageTapbacks());
+        window.addEventListener(IMESSAGE_TAPBACKS_UPDATED_EVENT, refreshTapbacks);
+        return () => window.removeEventListener(IMESSAGE_TAPBACKS_UPDATED_EVENT, refreshTapbacks);
+    }, []);
     const screenFxSeenRef = useRef<Set<string>>(new Set());
     const screenFxMountedAtRef = useRef(Date.now());
 
@@ -1362,6 +1382,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     // Message Actions state
     const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
     const [contextMenuAnchor, setContextMenuAnchor] = useState<ContextMenuAnchor | null>(null);
+    const [contextFocusShift, setContextFocusShift] = useState(0);
     const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
     const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
     const [showConfirmMultiDelete, setShowConfirmMultiDelete] = useState(false);
@@ -1473,14 +1494,25 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         applyStoredMessageWindow(loadChatMessages(session.id));
     }, [applyStoredMessageWindow, session.id]);
 
+    useEffect(() => {
+        const syncAppliedTapback = (event: Event) => {
+            const detail = (event as CustomEvent<{ sessionId?: string }>).detail;
+            if (detail?.sessionId === session.id) syncMessagesFromStorage();
+        };
+        window.addEventListener(IMESSAGE_TAPBACK_APPLIED_EVENT, syncAppliedTapback);
+        return () => window.removeEventListener(IMESSAGE_TAPBACK_APPLIED_EVENT, syncAppliedTapback);
+    }, [session.id, syncMessagesFromStorage]);
+
     const closeContextMenu = () => {
         setActiveMessageId(null);
         setActiveOfflineTarget(null);
         setContextMenuAnchor(null);
+        setContextFocusShift(0);
     };
 
     const openMessageContextMenu = (msgId: string, anchor: ContextMenuAnchor, target?: HTMLElement | null) => {
         const focusBubble = !session.isGroup && target?.dataset.msgId === msgId;
+        setContextFocusShift(0);
         setActiveOfflineTarget(null);
         setContextMenuAnchor({
             ...anchor,
@@ -1488,6 +1520,53 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         });
         setActiveMessageId(msgId);
     };
+
+    useLayoutEffect(() => {
+        if (!activeMessageId || !contextMenuAnchor?.focusBubble || !wrapperRef.current) {
+            return;
+        }
+
+        const root = wrapperRef.current;
+        const frame = window.requestAnimationFrame(() => {
+            const bubble = Array.from(root.querySelectorAll<HTMLElement>("[data-msg-id][data-active]"))
+                .find(element => element.dataset.msgId === activeMessageId);
+            const row = bubble?.closest<HTMLElement>(".chat-msg-wrapper");
+            const tapbar = bubble?.querySelector<HTMLElement>(".imessage-context-tapbar");
+            const index = bubble?.querySelector<HTMLElement>(".imessage-context-index");
+            if (!bubble || !row || !tapbar || !index) return;
+
+            const rootRect = root.getBoundingClientRect();
+            const bubbleRect = bubble.getBoundingClientRect();
+            const tapbarRect = tapbar.getBoundingClientRect();
+            const indexRect = index.getBoundingClientRect();
+            const groupTop = Math.min(tapbarRect.top, bubbleRect.top, indexRect.top);
+            const groupBottom = Math.max(tapbarRect.bottom, bubbleRect.bottom, indexRect.bottom);
+            const safeTop = rootRect.top + 18;
+            const composer = root.querySelector<HTMLElement>(":scope > .chat-input-bar");
+            const composerTop = composer?.getBoundingClientRect().top ?? rootRect.bottom;
+            const safeBottom = Math.min(rootRect.bottom, composerTop) - 18;
+            const minimumShift = safeTop - groupTop;
+            const maximumShift = safeBottom - groupBottom;
+
+            // Keep an already-valid bubble exactly where it is. Only move the
+            // whole bubble/menu stack by the smallest amount needed to reveal
+            // the tapbar above or the complete action index below.
+            let nextShift = 0;
+            if (minimumShift > 0 && maximumShift >= minimumShift) {
+                nextShift = minimumShift;
+            } else if (maximumShift < 0 && minimumShift <= maximumShift) {
+                nextShift = maximumShift;
+            } else if (minimumShift > maximumShift) {
+                // Extremely tall content cannot fit both constraints at once;
+                // keep the tapbar accessible and let the index use its own scroll.
+                nextShift = minimumShift;
+            }
+            nextShift = Math.round(nextShift);
+            setContextFocusShift(nextShift);
+        });
+
+        return () => window.cancelAnimationFrame(frame);
+    }, [activeMessageId, contextMenuAnchor?.focusBubble]);
 
     const openOfflineContextMenu = (target: OfflineActionTarget, anchor: ContextMenuAnchor) => {
         setActiveMessageId(null);
@@ -2940,6 +3019,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         // Detect call triggers and AI media actions, filter them out
         let triggerCall: "voice" | "video" | undefined;
         let hasDecline = false;
+        let hasTapbackAction = false;
         const charN = character?.name || "对方";
         const userN = userIdentity?.name || "你";
         const filteredParts: typeof parts = [];
@@ -2952,6 +3032,14 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             throwIfGenerationStopped(options);
             if (p.mediaType === "voice_call") { triggerCall = "voice"; continue; }
             if (p.mediaType === "video_call") { triggerCall = "video"; continue; }
+            if (p.mediaType === "tapback_action") {
+                const updatedTarget = applyAssistantTapback(session.id, p.mediaData?.tapback);
+                if (updatedTarget) {
+                    hasTapbackAction = true;
+                    setMessages(prev => prev.map(message => message.id === updatedTarget.id ? updatedTarget : message));
+                }
+                continue;
+            }
             if (p.mediaType === "accept_red_packet" || p.mediaType === "decline_red_packet"
                 || p.mediaType === "accept_transfer" || p.mediaType === "decline_transfer"
                 || p.mediaType === "accept_payment_request" || p.mediaType === "decline_payment_request") {
@@ -3006,7 +3094,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 });
                 setMessages(prev => [...prev, aiMsg]);
             }
-            return { hasVisible: false, stateValues, triggerCall, hasDecline };
+            return { hasVisible: hasTapbackAction, stateValues, triggerCall, hasDecline };
         }
 
         // Build rich-media drafts first, then publish them in the same order as the UI display.
@@ -5077,7 +5165,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         const storedMessageId = getStoredActionMessageId(m);
         const tapbackPicker = !session.isGroup ? (
             <div className="imessage-tapback-picker" role="group" aria-label="回应消息">
-                {IMESSAGE_TAPBACKS.map(item => (
+                {tapbackCandidates.map(item => (
                     <button
                         type="button"
                         key={item.id}
@@ -5454,6 +5542,64 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         return { groups, memberSet };
     }, [projectedMessages]);
 
+    const imessageTailMessageIds = useMemo(() => {
+        const tailIds = new Set<string>();
+        if (session.isGroup) return tailIds;
+
+        let runRole: "user" | "assistant" | null = null;
+        let runSender = "";
+        let previousCreatedAt: string | null = null;
+        let lastTextMessageId: string | null = null;
+
+        const finishRun = () => {
+            if (lastTextMessageId) tailIds.add(lastTextMessageId);
+            runRole = null;
+            runSender = "";
+            previousCreatedAt = null;
+            lastTextMessageId = null;
+        };
+
+        projectedMessages.forEach((message, index) => {
+            if (voiceCallGroups.memberSet.has(index)) {
+                finishRun();
+                return;
+            }
+
+            const displayContent = getMessageDisplayContent(message);
+            if (isHiddenChatFlowMessage(message, displayContent)) return;
+
+            const role = uiRole(message);
+            if ((role !== "user" && role !== "assistant") || message.isRetracted) {
+                finishRun();
+                return;
+            }
+
+            const sender = role === "assistant"
+                ? (message.senderCharacterId || session.contactId)
+                : "user";
+            const startsNewRun = runRole === null
+                || runRole !== role
+                || runSender !== sender
+                || (previousCreatedAt !== null && shouldShowTimestamp(message.createdAt, previousCreatedAt));
+
+            if (startsNewRun) {
+                finishRun();
+                runRole = role;
+                runSender = sender;
+            }
+
+            previousCreatedAt = message.createdAt;
+            const hasVisibleText = !!getChatFlowVisibleContent(message, displayContent);
+            const isTextBubble = hasVisibleText
+                && !isStandaloneHtmlPreviewContent(displayContent)
+                && (!message.mediaType || message.mediaType === "quote");
+            if (isTextBubble) lastTextMessageId = message.id;
+        });
+
+        finishRun();
+        return tailIds;
+    }, [getMessageDisplayContent, projectedMessages, session.contactId, session.isGroup, voiceCallGroups.memberSet]);
+
     const getSelectableStoredMessageId = useCallback((msg: RenderChatMessage): string | null => {
         const id = msg.displaySourceId || msg.id;
         if (!id || id.startsWith("vc-") || isTransientMessage(id)) return null;
@@ -5675,6 +5821,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             style={chatRoomBackgroundStyle}
             onPointerDown={(e) => {
                 const target = e.target as HTMLElement;
+                if (showHeaderCallMenu && !target.closest(".imessage-header-call-control")) {
+                    setShowHeaderCallMenu(false);
+                }
                 if (!session.isGroup && quotingMessage && !target.closest(".chat-input-bar")) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -5689,6 +5838,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             }}
             {...(!session.isGroup ? { "data-imessage-private": "" } : {})}
             {...(!session.isGroup && quotingMessage ? { "data-imessage-quote-compose": "" } : {})}
+            {...(!session.isGroup && activeMessageId && contextMenuAnchor?.focusBubble ? { "data-imessage-context-open": "" } : {})}
             {...(bgLoading ? { "data-loading": "" } : {})}
             {...(bgImageResolved ? { "data-has-bg-image": "" } : {})}
             {...(showSettings ? { "data-settings-open": "" } : {})}
@@ -5716,26 +5866,57 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 {session.alias || character?.name || `User_${session.contactId.slice(-4)}`}
                                 <span className="imessage-contact-chevron" aria-hidden="true">›</span>
                             </span>
-                            {(isGenerating || isOfflineGenerating) && (
-                                <span className="imessage-contact-status">
-                                    {offlineMode ? "线下生成中" : "正在输入"}<span className="chat-typing-dots"><i/><i/><i/></span>
-                                </span>
+                        </button>
+                        <div className="imessage-header-call-control">
+                            <button
+                                className="imessage-header-button imessage-header-video"
+                                type="button"
+                                onClick={() => setShowHeaderCallMenu(open => !open)}
+                                aria-label="选择通话方式"
+                                aria-haspopup="menu"
+                                aria-expanded={showHeaderCallMenu}
+                            >
+                                <svg viewBox="352 26 44 44" aria-hidden="true">
+                                    <path fill="currentColor" d="M365.583 56.8887C364.255 56.8887 363.223 56.5373 362.487 55.8345C361.756 55.1317 361.391 54.1273 361.391 52.8213V43.2422C361.391 41.9307 361.767 40.9152 362.52 40.1958C363.273 39.4764 364.294 39.1167 365.583 39.1167H376.872C378.2 39.1167 379.229 39.4764 379.96 40.1958C380.696 40.9152 381.064 41.9279 381.064 43.2339V52.7715C381.064 54.0775 380.696 55.0902 379.96 55.8096C379.229 56.529 378.2 56.8887 376.872 56.8887H365.583ZM365.89 55.2202H376.557C377.425 55.2202 378.095 54.9906 378.565 54.5312C379.041 54.0775 379.279 53.3996 379.279 52.4976V43.5161C379.279 42.6141 379.044 41.9334 378.574 41.4741C378.103 41.0148 377.434 40.7852 376.565 40.7852H365.89C365.021 40.7852 364.352 41.012 363.881 41.4658C363.411 41.9196 363.176 42.603 363.176 43.5161V52.4976C363.176 53.3996 363.411 54.0775 363.881 54.5312C364.352 54.9906 365.021 55.2202 365.89 55.2202ZM380.74 45.0767L385.057 41.4492C385.3 41.2555 385.541 41.0978 385.779 40.9761C386.022 40.8488 386.266 40.7852 386.509 40.7852C386.969 40.7852 387.339 40.9373 387.622 41.2417C387.904 41.5461 388.045 41.95 388.045 42.4536V53.6016C388.045 54.0996 387.904 54.5008 387.622 54.8052C387.339 55.1095 386.969 55.2617 386.509 55.2617C386.266 55.2617 386.022 55.2008 385.779 55.0791C385.541 54.9574 385.3 54.7969 385.057 54.5977L380.74 50.9785V48.978L385.795 53.0869C385.856 53.1312 385.912 53.1699 385.961 53.2031C386.011 53.2363 386.064 53.2529 386.119 53.2529C386.274 53.2529 386.352 53.1506 386.352 52.9458V43.1011C386.352 42.8963 386.274 42.7939 386.119 42.7939C386.064 42.7939 386.011 42.8105 385.961 42.8438C385.912 42.8714 385.856 42.9102 385.795 42.96L380.74 47.0688V45.0767Z" />
+                                </svg>
+                            </button>
+                            {showHeaderCallMenu && (
+                                <div className="imessage-header-call-menu" role="menu" aria-label="通话方式">
+                                    <button
+                                        type="button"
+                                        className="imessage-header-call-option"
+                                        role="menuitem"
+                                        aria-label="语音通话"
+                                        title="语音通话"
+                                        onClick={() => {
+                                            cancelFollowUp(session.id);
+                                            setShowHeaderCallMenu(false);
+                                            setCallInitiator("user");
+                                            setShowVoiceCall(true);
+                                        }}
+                                    >
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path fill="currentColor" d="M6.62 10.79a15.46 15.46 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1.02Z" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="imessage-header-call-option"
+                                        role="menuitem"
+                                        aria-label="视频通话"
+                                        title="视频通话"
+                                        onClick={() => {
+                                            cancelFollowUp(session.id);
+                                            setShowHeaderCallMenu(false);
+                                            setCallInitiator("user");
+                                            setShowVideoCall(true);
+                                        }}
+                                    >
+                                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="12" height="12" rx="3" /><path d="m15 10 5-3v10l-5-3Z" /></svg>
+                                    </button>
+                                </div>
                             )}
-                        </button>
-                        <button
-                            className="imessage-header-button imessage-header-video"
-                            type="button"
-                            onClick={() => {
-                                cancelFollowUp(session.id);
-                                setCallInitiator("user");
-                                setShowVideoCall(true);
-                            }}
-                            aria-label="视频通话"
-                        >
-                            <svg viewBox="352 26 44 44" aria-hidden="true">
-                                <path fill="currentColor" d="M365.583 56.8887C364.255 56.8887 363.223 56.5373 362.487 55.8345C361.756 55.1317 361.391 54.1273 361.391 52.8213V43.2422C361.391 41.9307 361.767 40.9152 362.52 40.1958C363.273 39.4764 364.294 39.1167 365.583 39.1167H376.872C378.2 39.1167 379.229 39.4764 379.96 40.1958C380.696 40.9152 381.064 41.9279 381.064 43.2339V52.7715C381.064 54.0775 380.696 55.0902 379.96 55.8096C379.229 56.529 378.2 56.8887 376.872 56.8887H365.583ZM365.89 55.2202H376.557C377.425 55.2202 378.095 54.9906 378.565 54.5312C379.041 54.0775 379.279 53.3996 379.279 52.4976V43.5161C379.279 42.6141 379.044 41.9334 378.574 41.4741C378.103 41.0148 377.434 40.7852 376.565 40.7852H365.89C365.021 40.7852 364.352 41.012 363.881 41.4658C363.411 41.9196 363.176 42.603 363.176 43.5161V52.4976C363.176 53.3996 363.411 54.0775 363.881 54.5312C364.352 54.9906 365.021 55.2202 365.89 55.2202ZM380.74 45.0767L385.057 41.4492C385.3 41.2555 385.541 41.0978 385.779 40.9761C386.022 40.8488 386.266 40.7852 386.509 40.7852C386.969 40.7852 387.339 40.9373 387.622 41.2417C387.904 41.5461 388.045 41.95 388.045 42.4536V53.6016C388.045 54.0996 387.904 54.5008 387.622 54.8052C387.339 55.1095 386.969 55.2617 386.509 55.2617C386.266 55.2617 386.022 55.2008 385.779 55.0791C385.541 54.9574 385.3 54.7969 385.057 54.5977L380.74 50.9785V48.978L385.795 53.0869C385.856 53.1312 385.912 53.1699 385.961 53.2031C386.011 53.2363 386.064 53.2529 386.119 53.2529C386.274 53.2529 386.352 53.1506 386.352 52.9458V43.1011C386.352 42.8963 386.274 42.7939 386.119 42.7939C386.064 42.7939 386.011 42.8105 385.961 42.8438C385.912 42.8714 385.856 42.9102 385.795 42.96L380.74 47.0688V45.0767Z" />
-                            </svg>
-                        </button>
+                        </div>
                     </div>
                 ) : (
                     <div className="page-header-content">
@@ -6165,8 +6346,12 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 id={`message-${msg.id}`}
                                 className="chat-msg-wrapper"
                                 data-role={uiRole(msg)}
+                                style={activeMessageId === msg.id && contextMenuAnchor?.focusBubble
+                                    ? { transform: `translate3d(0, ${contextFocusShift}px, 0)` }
+                                    : undefined}
                                 {...(isEmptyBubble && renderMsg.reasoningText ? { "data-reasoning-empty": "" } : {})}
                                 {...(isConsecutive ? { "data-consecutive": "" } : {})}
+                                {...(imessageTailMessageIds.has(msg.id) ? { "data-imessage-tail": "" } : {})}
                                 {...(activeMessageId === msg.id ? { "data-active": "" } : {})}
                                 {...(highlightMessageId === msg.id ? { "data-highlight": "" } : {})}
                                 {...multiSelectWrapperProps}
@@ -6478,7 +6663,12 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                             streamPreview.texts.map((segText, j) => {
                                 const isTyping = j === (streamPreview.texts?.length ?? 0) - 1;
                                 return (
-                                    <div key={`stream-seg-${j}`} className="chat-msg-wrapper" data-role="assistant">
+                                    <div
+                                        key={`stream-seg-${j}`}
+                                        className="chat-msg-wrapper"
+                                        data-role="assistant"
+                                        {...(isTyping ? { "data-imessage-tail": "" } : {})}
+                                    >
                                         <div className="chat-msg-avatar flex flex-col items-center gap-1 shrink-0">
                                             <div className="w-[40px] h-[40px] rounded-[20px] bg-[var(--c-input)] overflow-hidden">
                                                 {character?.avatar ? <img src={character.avatar} className="w-full h-full object-cover" alt="" /> : <ChatFallbackAvatar />}
@@ -6495,6 +6685,20 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 );
                             })
                         ) : null}
+                    </div>
+                )}
+                {!offlineMode && !session.isGroup && isGenerating && !(streamPreview?.texts?.length) && (
+                    <div
+                        className="chat-msg-wrapper imessage-typing-row"
+                        data-role="assistant"
+                        role="status"
+                        aria-label="正在输入"
+                    >
+                        <div className="chat-msg-content-wrap flex flex-col min-w-0 max-w-[70%]">
+                            <div className="imessage-typing-bubble">
+                                <span className="chat-typing-dots" aria-hidden="true"><i/><i/><i/></span>
+                            </div>
+                        </div>
                     </div>
                 )}
                 {/* Scroll anchor: browser keeps this in view when content above changes height */}

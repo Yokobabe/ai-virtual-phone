@@ -64,6 +64,9 @@ export function cleanStreamText(raw: string, options?: { stripXmlTags?: readonly
     // 富媒体完整标签显示为附件占位；尚未闭合时也隐藏协议正文。
     text = text.replace(MEDIA_DIRECTIVE_RE, "📎 ");
     text = text.replace(INCOMPLETE_MEDIA_DIRECTIVE_RE, "📎 ");
+    // Tapback is a side effect on an existing message, never a preview bubble.
+    text = text.replace(/\[Tapback\s*[:：][^\]\r\n]*\]/gi, "");
+    text = text.replace(/\[Tapback\s*[:：][^\]\r\n]*$/gi, "");
     // 引用壳只隐藏标签，保留后面的实际回复。
     text = text.replace(/\[引用\s*[:：][^\]\r\n]*\]/g, "");
     text = text.replace(/\[引用\s*[:：][^\]\r\n]*$/g, "");

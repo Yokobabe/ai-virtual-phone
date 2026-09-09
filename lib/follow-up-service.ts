@@ -55,6 +55,7 @@ import {
     saveMenstrualPeriodCareTrigger,
     type MenstrualPeriodCareEvent,
 } from "./menstrual-storage";
+import { applyAssistantTapback } from "./chat-tapback";
 
 // ── Constants ──────────────────────────────────────────────
 const MAX_FOLLOW_UPS = 10;
@@ -904,6 +905,7 @@ export async function parseAndSaveResponse(
 
     // Detect call triggers and AI media actions, filter them out (not stored as messages)
     let triggerCall: "voice" | "video" | undefined;
+    let hasTapbackAction = false;
     const charName = resolveFollowUpSenderName(sessionId);
 
     // 快捷动作配对消息：tool_call 存标记原文（组装器不跳过，历史上下文与模型当初
@@ -928,6 +930,12 @@ export async function parseAndSaveResponse(
     for (const p of parts) {
         if (p.mediaType === "voice_call") { triggerCall = "voice"; continue; }
         if (p.mediaType === "video_call") { triggerCall = "video"; continue; }
+        if (p.mediaType === "tapback_action") {
+            if (sess && !sess.isGroup && applyAssistantTapback(sessionId, p.mediaData?.tapback)) {
+                hasTapbackAction = true;
+            }
+            continue;
+        }
         // 「丢弃角色输出的无效表情包」开关（主动消息路径）
         if (p.mediaType === "sticker" && sess?.discardInvalidStickers === true) {
             const senderIds = sess.isGroup ? (sess.participantIds ?? []) : [sess.contactId];
@@ -1006,7 +1014,11 @@ export async function parseAndSaveResponse(
         if (triggerCall && typeof window !== "undefined") {
             window.dispatchEvent(new CustomEvent("ai-call-trigger", { detail: { sessionId, type: triggerCall } }));
         }
-        return { hasVisible: false, newCount: MAX_FOLLOW_UPS, stateValues };
+        return {
+            hasVisible: hasTapbackAction,
+            newCount: hasTapbackAction ? currentCount + 1 : MAX_FOLLOW_UPS,
+            stateValues,
+        };
     }
 
     const savedMessages: ChatMessage[] = [];

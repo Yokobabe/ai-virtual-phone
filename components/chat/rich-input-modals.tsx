@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { CallSttWarningDialog, hideCallSttWarningPermanently, isCallSttWarningHidden } from "./call-stt-warning-dialog";
 import { isAndroidBrowser } from "./voice-input-platform";
+import { ApplePayBrand } from "./apple-pay-brand";
 
 // ── Photo Input Modal ─────────────────────────────
 
@@ -29,10 +30,10 @@ export function PhotoInputModal({ onSend, onClose }: PhotoInputModalProps) {
     const canSend = !!imageDataUrl;
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-overlay imessage-rich-input-overlay" onClick={onClose}>
             <div
                 onClick={e => e.stopPropagation()}
-                className="modal-dialog"
+                className="modal-dialog imessage-rich-input-dialog"
             >
                 <div className="ts-16 font-semibold text-center text-[var(--c-text)]">发送照片</div>
                 <div
@@ -108,25 +109,26 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
     };
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
+        <div className={`modal-overlay imessage-rich-input-overlay${isRedPacket ? "" : " imessage-transfer-compose-overlay"}`} onClick={onClose}>
             <div
                 onClick={e => e.stopPropagation()}
-                className="w-[300px] bg-[var(--c-card)] rounded-2xl overflow-hidden"
+                className={`w-[300px] bg-[var(--c-card)] rounded-2xl overflow-hidden imessage-rich-input-dialog imessage-money-compose-dialog${isRedPacket ? "" : " imessage-transfer-compose-dialog"}`}
             >
                 {/* Brand-colored header -- kept as inline style */}
                 <div
-                    className="p-5 flex flex-col items-center gap-2"
+                    className="p-5 flex flex-col items-center gap-2 imessage-money-compose-header"
                     style={{ background: color }}
                 >
-                    <div className="ts-28">{isRedPacket ? "🧧" : "💰"}</div>
-                    <div className="text-white ts-16 font-semibold">{title}</div>
+                    <div className="ts-28 imessage-money-compose-legacy">{isRedPacket ? "🧧" : "💰"}</div>
+                    <div className="text-white ts-16 font-semibold imessage-money-compose-legacy">{title}</div>
+                    {!isRedPacket && <ApplePayBrand className="imessage-transfer-compose-brand hidden" />}
                 </div>
-                <div className="p-5 flex flex-col gap-3.5">
-                    <div>
+                <div className="p-5 flex flex-col gap-3.5 imessage-money-compose-body">
+                    <div className="imessage-money-compose-amount-block">
                         <div className="ts-12 text-[var(--c-icon)] mb-1.5">金额</div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 imessage-money-compose-amount-row">
                             <span
-                                className="ts-24 font-bold"
+                                className="ts-24 font-bold imessage-money-compose-currency"
                                 style={{ color }}
                             >¥</span>
                             <input
@@ -135,7 +137,7 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
                                 placeholder="0.00"
                                 type="text"
                                 inputMode="decimal"
-                                className="flex-1 py-2 border-none ts-28 font-bold outline-none text-center bg-transparent"
+                                className="flex-1 py-2 border-none ts-28 font-bold outline-none text-center bg-transparent imessage-money-compose-amount-input"
                                 style={{ borderBottom: `2px solid ${color}` }}
                                         />
                         </div>
@@ -153,7 +155,7 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
                             />
                         </div>
                     )}
-                    <div>
+                    <div className="imessage-money-compose-note-block">
                         <div className="ts-12 text-[var(--c-icon)] mb-1.5">
                             {isRedPacket ? "留言" : "备注"}
                         </div>
@@ -161,18 +163,18 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
                             value={label}
                             onChange={e => setLabel(e.target.value)}
                             placeholder={defaultLabel || "添加备注"}
-                            className="ui-input w-full"
+                            className="ui-input w-full imessage-money-compose-note-input"
                         />
                     </div>
-                    <div className="flex gap-3 mt-1">
+                    <div className="flex gap-3 mt-1 imessage-rich-input-actions">
                         <button
                             onClick={onClose}
-                            className="ui-btn ui-btn-ghost ui-btn-bordered-ghost flex-1"
+                            className="ui-btn ui-btn-ghost ui-btn-bordered-ghost flex-1 imessage-rich-input-cancel"
                         >取消</button>
                         <button
                             onClick={handleSend}
                             disabled={!parseFloat(amount)}
-                            className="flex-1 py-2.5 rounded-lg border-none text-white ts-14 font-semibold"
+                            className="flex-1 py-2.5 rounded-lg border-none text-white ts-14 font-semibold imessage-rich-input-primary"
                             style={{
                                 background: parseFloat(amount) ? color : "var(--c-icon)",
                                 cursor: parseFloat(amount) ? "pointer" : "default",
@@ -196,10 +198,10 @@ export function LocationInputModal({ onSend, onClose }: LocationInputModalProps)
     const [loc, setLoc] = useState("");
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-overlay imessage-rich-input-overlay" onClick={onClose}>
             <div
                 onClick={e => e.stopPropagation()}
-                className="modal-dialog"
+                className="modal-dialog imessage-rich-input-dialog"
             >
                 <div className="ts-16 font-semibold text-center text-[var(--c-text)]">分享位置</div>
                 <div
@@ -242,8 +244,8 @@ export function TextPhotoModal({ onSend, onClose }: TextPhotoModalProps) {
     const [text, setText] = useState("");
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div onClick={e => e.stopPropagation()} className="modal-dialog">
+        <div className="modal-overlay imessage-rich-input-overlay" onClick={onClose}>
+            <div onClick={e => e.stopPropagation()} className="modal-dialog imessage-rich-input-dialog">
                 <div className="ts-16 font-semibold text-center text-[var(--c-text)]">文字图片</div>
                 <div className="w-full h-[100px] rounded-xl flex items-center justify-center ui-placeholder-gradient">
                     <span className="ts-13 text-[var(--c-text)] opacity-60 px-4 text-center leading-relaxed">
@@ -288,8 +290,8 @@ export function SystemInstructionModal({ onSend, onClose }: SystemInstructionMod
     };
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div onClick={e => e.stopPropagation()} className="modal-dialog">
+        <div className="modal-overlay imessage-rich-input-overlay" onClick={onClose}>
+            <div onClick={e => e.stopPropagation()} className="modal-dialog imessage-rich-input-dialog">
                 <div className="ts-16 font-semibold text-center text-[var(--c-text)]">系统指令注入</div>
                 <label className="w-full flex flex-col gap-2">
                     <span className="menu-label">指令内容</span>
@@ -459,8 +461,8 @@ export function VoiceRecordModal({ characterId, onSend, onClose }: VoiceRecordMo
     const canSend = inputMode === "text" ? !!manualText.trim() : state === "done" && !!finalText.trim();
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div onClick={e => e.stopPropagation()} className="modal-dialog relative">
+        <div className="modal-overlay imessage-rich-input-overlay" onClick={onClose}>
+            <div onClick={e => e.stopPropagation()} className="modal-dialog relative imessage-rich-input-dialog">
                 {!androidTextInputOnly && (
                     <button
                         type="button"
@@ -489,19 +491,19 @@ export function VoiceRecordModal({ characterId, onSend, onClose }: VoiceRecordMo
                             rows={3}
                         />
                     ) : state === "idle" && (
-                        <button onClick={startRecording} className="w-[64px] h-[64px] rounded-full bg-[var(--c-success)] flex items-center justify-center">
+                        <button onClick={startRecording} className="w-[64px] h-[64px] rounded-full bg-[var(--c-success)] flex items-center justify-center imessage-voice-record-start">
                             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                             </svg>
                         </button>
                     )}
                     {state === "recording" && (
-                        <button onClick={stopRecording} className="w-[64px] h-[64px] rounded-full bg-[var(--c-danger)] flex items-center justify-center" style={{ animation: "voicecall-pulse 1.5s ease-in-out infinite" }}>
+                        <button onClick={stopRecording} className="w-[64px] h-[64px] rounded-full bg-[var(--c-danger)] flex items-center justify-center imessage-voice-record-stop" style={{ animation: "voicecall-pulse 1.5s ease-in-out infinite" }}>
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
                         </button>
                     )}
                     {state === "processing" && (
-                        <div className="w-[64px] h-[64px] rounded-full bg-[var(--c-input)] flex items-center justify-center">
+                        <div className="w-[64px] h-[64px] rounded-full bg-[var(--c-input)] flex items-center justify-center imessage-voice-record-processing">
                             <svg width="24" height="24" viewBox="0 0 24 24" className="animate-spin" fill="none" stroke="var(--c-icon)" strokeWidth="2"><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" /></svg>
                         </div>
                     )}
