@@ -931,6 +931,7 @@ export async function parseAndSaveResponse(
         if (p.mediaType === "voice_call") { triggerCall = "voice"; continue; }
         if (p.mediaType === "video_call") { triggerCall = "video"; continue; }
         if (p.mediaType === "tapback_action") {
+            if (hasTapbackAction) continue;
             if (sess && !sess.isGroup && applyAssistantTapback(sessionId, p.mediaData?.tapback)) {
                 hasTapbackAction = true;
             }

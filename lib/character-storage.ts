@@ -4,6 +4,7 @@ import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 
 /** Thrown when a character card contains fields unsupported by the current schema */
 export const CHAR_BLOCKED_FIELDS = "CHAR_BLOCKED_FIELDS";
+export const CHARACTERS_UPDATED_EVENT = "chat-characters-updated";
 
 const STORAGE_KEY = "ai_phone_characters_v1";
 const BG_ITEMS_STORAGE_KEY = "ai_phone_bg_items_v1";
@@ -81,6 +82,7 @@ export function saveCharacters(chars: Character[]): void {
   if (typeof window === "undefined") return;
   kvSet(STORAGE_KEY, JSON.stringify(chars));
   _charsCache = null;
+  window.dispatchEvent(new Event(CHARACTERS_UPDATED_EVENT));
 }
 
 export function loadBackgroundItems(): CanvasBgItem[] {

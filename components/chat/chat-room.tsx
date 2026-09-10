@@ -76,6 +76,8 @@ import {
 } from "@/lib/generated-image-retry";
 import { scrollElementWithinContainer } from "@/lib/dom-scroll";
 import { ChatFallbackAvatar } from "./chat-fallback-avatar";
+import { GroupAvatar } from "./group-avatar";
+import { GroupSenderName } from "./group-sender-name";
 import { ChatScreenEffectOverlay, type ActiveScreenEffect } from "./chat-screen-effect";
 import {
     formatChatDiceResultMessage,
@@ -674,6 +676,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     onSendSticker,
 }, ref) {
     const [inputText, setInputText] = useState("");
+    const [inputFocused, setInputFocused] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
     // 表情包搜索联想：ESC/失焦置 true 隐藏，输入变化重新开启
     const [suggestClosed, setSuggestClosed] = useState(false);
@@ -711,18 +714,21 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
         focus: () => textareaRef.current?.focus(),
     }), [appendText]);
 
+    const sendDraft = (autoReply?: boolean) => {
+        const trimmed = inputText.trim();
+        if (!trimmed || !onSendText(trimmed, { autoReply })) return;
+        setInputText("");
+        resetTextareaHeight();
+        onClosePanels();
+    };
+
     const handleSubmit = () => {
         if (inputLocked) return;
         if (isGenerating) {
             onStopGeneration();
             return;
         }
-        const trimmed = inputText.trim();
-        if (!trimmed) return;
-        if (!onSendText(trimmed)) return;
-        setInputText("");
-        resetTextareaHeight();
-        onClosePanels();
+        sendDraft();
     };
 
     const handleAIReply = () => {
@@ -748,14 +754,14 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     );
     const plusMenuItems = [
         ...(!isGroup ? [{ icon: imessageMenuIcon("offline-mode.jpg"), label: "线下模式", onClick: onToggleOfflineMode }] : []),
-        { icon: !isGroup ? imessageMenuIcon("photo-wall.jpg") : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>, label: "照片墙", onClick: () => onOpenRichModal("photo") },
-        { icon: !isGroup ? imessageMenuIcon("text-image.jpg") : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="7" y1="8" x2="17" y2="8" /><line x1="7" y1="12" x2="14" y2="12" /><line x1="7" y1="16" x2="11" y2="16" /></svg>, label: !isGroup ? "文字图" : "文字图片", onClick: () => onOpenRichModal("text_photo") },
-        { icon: !isGroup ? imessageMenuIcon("system-instruction.jpg") : <AlertCircle size={22} strokeWidth={1.5} color="var(--c-text)" />, label: "系统指令", onClick: () => onOpenRichModal("system_instruction") },
-        { icon: !isGroup ? imessageMenuIcon("red-packet.jpg") : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>, label: "红包", onClick: () => onOpenRichModal("red_packet") },
-        { icon: !isGroup ? imessageMenuIcon("gift.jpg") : <Gift size={22} strokeWidth={1.5} color="var(--c-text)" />, label: "礼物", onClick: () => onOpenRichModal("gift") },
-        { icon: !isGroup ? imessageMenuIcon("location.jpg") : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>, label: "位置", onClick: () => onOpenRichModal("location") },
-        { icon: !isGroup ? imessageMenuIcon("transfer.jpg") : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><text x="12" y="16" textAnchor="middle" fontSize="12" fill="var(--c-text)" stroke="none">¥</text></svg>, label: "转账", onClick: () => onOpenRichModal(isGroup ? "transfer_target" : "transfer") },
-        { icon: !isGroup ? imessageMenuIcon("theater-mode.jpg") : <Clapperboard size={22} strokeWidth={1.5} color={theaterMode ? "var(--c-icon-active)" : "var(--c-text)"} />, label: "番外指令模式", active: theaterMode, onClick: onToggleTheaterMode },
+        { icon: imessageMenuIcon("photo-wall.jpg"), label: "照片墙", onClick: () => onOpenRichModal("photo") },
+        { icon: imessageMenuIcon("text-image.jpg"), label: !isGroup ? "文字图" : "文字图片", onClick: () => onOpenRichModal("text_photo") },
+        { icon: imessageMenuIcon("system-instruction.jpg"), label: "系统指令", onClick: () => onOpenRichModal("system_instruction") },
+        { icon: imessageMenuIcon("red-packet.jpg"), label: "红包", onClick: () => onOpenRichModal("red_packet") },
+        { icon: imessageMenuIcon("gift.jpg"), label: "礼物", onClick: () => onOpenRichModal("gift") },
+        { icon: imessageMenuIcon("location.jpg"), label: "位置", onClick: () => onOpenRichModal("location") },
+        { icon: imessageMenuIcon("transfer.jpg"), label: "转账", onClick: () => onOpenRichModal(isGroup ? "transfer_target" : "transfer") },
+        { icon: imessageMenuIcon("theater-mode.jpg"), label: "番外指令模式", active: theaterMode, onClick: onToggleTheaterMode },
         ...(isGroup ? [{ icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>, label: "视频通话", onClick: onStartVideoCall }] : []),
         ...(isGroup ? [
             { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" /></svg>, label: "语音通话", onClick: onStartVoiceCall },
@@ -774,8 +780,9 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
         <div
             className="chat-input-bar chat-room-main-pane flex flex-col"
             data-ui="input"
-            {...(!isGroup ? { "data-imessage-private": "" } : {})}
+            data-imessage-private=""
             {...(inputText.trim() ? { "data-has-text": "" } : {})}
+            {...(inputFocused || inputText.trim() || isGenerating || (isGroup && inputLocked) ? { "data-show-send": "" } : {})}
         >
             {theaterMode && (
                 <div className="chat-theater-mode-strip" role="status">
@@ -823,7 +830,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                     onClose={() => setSuggestClosed(true)}
                 />
             )}
-            {!isGroup && (
+            {(
                 <div className="imessage-composer-subject">
                     <span className="imessage-composer-subject-label">主题</span>
                     <div className="imessage-composer-shortcuts">
@@ -855,10 +862,11 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                     {!isGenerating && (
                         <button
                             type="button"
-                            onClick={handleAIReply}
+                            onClick={() => { if (!inputLocked && !isGenerating) sendDraft(false); }}
+                            disabled={inputLocked || isGenerating || !inputText.trim()}
                             className="imessage-composer-shortcut imessage-composer-ai-reply"
-                            aria-label="让TA回复"
-                            title={!inputLocked && inputText.trim() ? "发送输入框内容并让TA回复" : "让TA回复"}
+                            aria-label="仅发送消息"
+                            title="仅发送消息，不触发回复"
                         >
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0Z" /></svg>
                         </button>
@@ -876,6 +884,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                     e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
                 }}
                 onFocus={(e) => {
+                    setInputFocused(true);
                     if (panelOpen) {
                         e.target.blur();
                         onClosePanels();
@@ -884,7 +893,10 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                     }
                     setSuggestClosed(false);
                 }}
-                onBlur={() => setSuggestClosed(true)}
+                onBlur={() => {
+                    setInputFocused(false);
+                    setSuggestClosed(true);
+                }}
                 onKeyDown={e => {
                     if (e.key === "Escape") {
                         setSuggestClosed(true);
@@ -900,7 +912,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                 disabled={inputLocked}
                 placeholder={inputLocked
                     ? (isSpectator ? "围观中，你不在这个群里" : `禁言中，剩余${Math.ceil(muteRemainingMs / 60000)}分钟`)
-                    : (theaterMode ? "写下番外指令..." : (!isGroup ? "iMessage 信息" : undefined))}
+                    : (theaterMode ? "写下番外指令..." : "iMessage 信息")}
             />
 
             <div className="chat-input-actions">
@@ -925,12 +937,14 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
                 </button>
                 <button
-                    onClick={handleSubmit}
-                    disabled={!isGenerating && (inputLocked || !inputText.trim())}
+                    onClick={!isGenerating ? handleAIReply : handleSubmit}
+                    onPointerDown={e => e.preventDefault()}
+                    disabled={!isGenerating && inputLocked && !isGroup}
                     style={inputLocked && !isGenerating ? { opacity: 0.35 } : undefined}
                     className="ui-bare-btn text-[var(--c-text)] chat-send-btn"
-                    aria-label={isGenerating ? "停止本轮生成" : "发送"}
-                    title={isGenerating ? "停止本轮生成" : "发送"}
+                    aria-label={isGenerating ? "停止本轮生成" : isGroup ? "让群成员回复" : "发送并让TA回复"}
+                    title={isGenerating ? "停止本轮生成" : isGroup ? "发送并让群成员回复；无文字时继续聊天" : inputText.trim() ? "发送并让TA回复" : "让TA回复"}
+                    data-generating={isGenerating || undefined}
                 >
                     {isGenerating ? (
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -941,7 +955,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
                     )}
                 </button>
-                {!isGroup && (
+                {(
                     <button
                         type="button"
                         className="ui-bare-btn text-[var(--c-text)] chat-voice-message-btn"
@@ -1511,7 +1525,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     };
 
     const openMessageContextMenu = (msgId: string, anchor: ContextMenuAnchor, target?: HTMLElement | null) => {
-        const focusBubble = !session.isGroup && target?.dataset.msgId === msgId;
+        // Opening a menu ends the current swipe; its bubble is no longer a reply gesture target.
+        resetSwipeReply(false);
+        const focusBubble = target?.dataset.msgId === msgId;
         setContextFocusShift(0);
         setActiveOfflineTarget(null);
         setContextMenuAnchor({
@@ -1756,6 +1772,21 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     }, [session.id, syncMessagesFromStorage]);
 
 
+    const [groupIdentityRevision, setGroupIdentityRevision] = useState(0);
+    useEffect(() => {
+        if (!session.isGroup) return;
+        const refresh = () => setGroupIdentityRevision(value => value + 1);
+        window.addEventListener("chat-characters-updated", refresh);
+        window.addEventListener("focus", refresh);
+        return () => {
+            window.removeEventListener("chat-characters-updated", refresh);
+            window.removeEventListener("focus", refresh);
+        };
+    }, [session.isGroup]);
+    const groupPrivateAliases = new Map(session.isGroup
+        ? loadChatSessions().filter(s => !s.isGroup && s.alias?.trim()).map(s => [s.contactId, s.alias!.trim()])
+        : []);
+
     // Group chat: map of characterId → Character for quick lookup
     const groupCharMap = useMemo(() => {
         if (!session.isGroup) return new Map<string, Character>();
@@ -1766,7 +1797,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             if (c) map.set(id, c);
         }
         return map;
-    }, [session.isGroup, session.participantIds]);
+    }, [session.isGroup, session.participantIds, groupIdentityRevision]);
 
     // Flat array of group characters for components that need it
     const groupCharacters = useMemo(() => [...groupCharMap.values()], [groupCharMap]);
@@ -3033,6 +3064,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             if (p.mediaType === "voice_call") { triggerCall = "voice"; continue; }
             if (p.mediaType === "video_call") { triggerCall = "video"; continue; }
             if (p.mediaType === "tapback_action") {
+                if (hasTapbackAction) continue;
                 const updatedTarget = applyAssistantTapback(session.id, p.mediaData?.tapback);
                 if (updatedTarget) {
                     hasTapbackAction = true;
@@ -4186,7 +4218,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 });
                 setMessages(prev => [...prev, diceAside]);
             }
-            setPendingGenerate(true);
+            // The explicit send-only shortcut also bypasses keyboard-dismiss auto reply.
+            // Enter keeps the user's existing automatic-reply preference.
+            setPendingGenerate(options?.autoReply !== false);
             // 按回复键发送：消息落库后立即触发模型回复（无论插件是否异步改写，
             // 都在消息真正写入后触发，避免回复基于旧上下文）
             if (options?.autoReply) void triggerAIResponse();
@@ -4931,6 +4965,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
     const handleMessagePointerDown = (e: React.PointerEvent, msgId: string) => {
         if (isMultiSelectMode) return;
+        if (activeMessageId || activeOfflineTarget) {
+            handleMessagePointerCancel();
+            return;
+        }
         // Prevent right click from triggering the timer, as it has its own context menu handler
         if (e.pointerType === 'mouse' && e.button !== 0) return;
 
@@ -4942,7 +4980,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         longPressTriggeredRef.current = false;
 
         const element = e.currentTarget as HTMLElement;
-        swipeReplyRef.current = !session.isGroup && element.dataset.msgId === msgId
+        swipeReplyRef.current = element.dataset.msgId === msgId
             ? {
                 pointerId: e.pointerId,
                 msgId,
@@ -4981,6 +5019,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     };
 
     const handleMessagePointerMove = (e: React.PointerEvent) => {
+        if (activeMessageId || activeOfflineTarget || longPressTriggeredRef.current) {
+            resetSwipeReply(false);
+            return;
+        }
         const swipe = swipeReplyRef.current;
         if (!swipe || swipe.pointerId !== e.pointerId) return;
         const dx = e.clientX - swipe.startX;
@@ -5009,16 +5051,19 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         swipe.element.style.transition = "none";
         swipe.element.style.transform = `translate3d(${offset}px,0,0)`;
         swipe.element.toggleAttribute("data-swiping-reply", true);
-        swipe.element.toggleAttribute("data-swipe-ready", offset >= 52);
+        swipe.element.toggleAttribute("data-swipe-ready", dx >= 32);
     };
 
     const handleMessagePointerUp = (e: React.PointerEvent) => {
         const swipe = swipeReplyRef.current;
         const shouldReply = Boolean(
             swipe
+            && !activeMessageId
+            && !activeOfflineTarget
+            && !longPressTriggeredRef.current
             && swipe.pointerId === e.pointerId
             && swipe.dragging
-            && Math.min(72, Math.max(0, e.clientX - swipe.startX - 4) * 0.78) >= 52
+            && e.clientX - swipe.startX >= 32
         );
         const replyMessage = shouldReply && swipe
             ? messages.find(message => message.id === swipe.msgId) || null
@@ -5163,7 +5208,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     /** Reusable context menu for user/assistant bubbles */
     const renderBubbleContextMenu = (m: ChatMessage, options?: { allowMultiSelect?: boolean }) => {
         const storedMessageId = getStoredActionMessageId(m);
-        const tapbackPicker = !session.isGroup ? (
+        const tapbackPicker = (
             <div className="imessage-tapback-picker" role="group" aria-label="回应消息">
                 {tapbackCandidates.map(item => (
                     <button
@@ -5180,7 +5225,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     </button>
                 ))}
             </div>
-        ) : null;
+        );
         const pluginActions = getChatPluginRuntime().getMessageActions(m);
         const actionIndex = (
             <>
@@ -5243,7 +5288,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 </div>
             </>
         );
-        if (!session.isGroup && contextMenuAnchor?.focusBubble) {
+        if (contextMenuAnchor?.focusBubble) {
             const focusMenu = (
                 <>
                     <div
@@ -5544,7 +5589,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
     const imessageTailMessageIds = useMemo(() => {
         const tailIds = new Set<string>();
-        if (session.isGroup) return tailIds;
+        const firstIds = new Set<string>();
+        const lastIds = new Set<string>();
+        let lastMessageId: string | null = null;
 
         let runRole: "user" | "assistant" | null = null;
         let runSender = "";
@@ -5553,6 +5600,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
         const finishRun = () => {
             if (lastTextMessageId) tailIds.add(lastTextMessageId);
+            if (lastMessageId) lastIds.add(lastMessageId);
+            lastMessageId = null;
             runRole = null;
             runSender = "";
             previousCreatedAt = null;
@@ -5575,7 +5624,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             }
 
             const sender = role === "assistant"
-                ? (message.senderCharacterId || session.contactId)
+                ? (message.senderCharacterId || (session.isGroup ? message.senderName : "") || session.contactId)
                 : "user";
             const startsNewRun = runRole === null
                 || runRole !== role
@@ -5586,8 +5635,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 finishRun();
                 runRole = role;
                 runSender = sender;
+                firstIds.add(message.id);
             }
 
+            lastMessageId = message.id;
             previousCreatedAt = message.createdAt;
             const hasVisibleText = !!getChatFlowVisibleContent(message, displayContent);
             const isTextBubble = hasVisibleText
@@ -5597,7 +5648,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         });
 
         finishRun();
-        return tailIds;
+        return { tailIds, firstIds, lastIds };
     }, [getMessageDisplayContent, projectedMessages, session.contactId, session.isGroup, voiceCallGroups.memberSet]);
 
     const getSelectableStoredMessageId = useCallback((msg: RenderChatMessage): string | null => {
@@ -5824,7 +5875,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 if (showHeaderCallMenu && !target.closest(".imessage-header-call-control")) {
                     setShowHeaderCallMenu(false);
                 }
-                if (!session.isGroup && quotingMessage && !target.closest(".chat-input-bar")) {
+                if (quotingMessage && !target.closest(".chat-input-bar")) {
                     e.preventDefault();
                     e.stopPropagation();
                     setQuotingMessage(null);
@@ -5836,9 +5887,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 e.stopPropagation();
                 closeContextMenu();
             }}
-            {...(!session.isGroup ? { "data-imessage-private": "" } : {})}
-            {...(!session.isGroup && quotingMessage ? { "data-imessage-quote-compose": "" } : {})}
-            {...(!session.isGroup && activeMessageId && contextMenuAnchor?.focusBubble ? { "data-imessage-context-open": "" } : {})}
+            data-imessage-private=""
+            {...(session.isGroup ? { "data-imessage-group": "" } : {})}
+            {...(quotingMessage ? { "data-imessage-quote-compose": "" } : {})}
+            {...(activeMessageId && contextMenuAnchor?.focusBubble ? { "data-imessage-context-open": "" } : {})}
             {...(bgLoading ? { "data-loading": "" } : {})}
             {...(bgImageResolved ? { "data-has-bg-image": "" } : {})}
             {...(showSettings ? { "data-settings-open": "" } : {})}
@@ -5919,24 +5971,23 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                         </div>
                     </div>
                 ) : (
-                    <div className="page-header-content">
-                        <button className="page-back-btn" type="button" onClick={onBack} aria-label="返回">
-                            <ChevronLeft size={24} strokeWidth={1.5} />
+                    <div className="page-header-content imessage-private-header">
+                        <button className="imessage-header-button imessage-header-back" type="button" onClick={onBack} aria-label="返回">
+                            <ChevronLeft size={29} strokeWidth={2.15} />
                         </button>
-                        <span className="page-title" style={{ position: 'relative' }}>
-                            {offlineMode ? "线下 · " : ""}
-                            {`${session.groupName || "群聊"}(${(session.participantIds?.length || 0) + (session.isSpectator ? 0 : 1)})`}
-                            {(isGenerating || isOfflineGenerating) && (
-                                <span className="chat-typing-indicator">
-                                    {offlineMode ? "线下生成中" : "对方正在输入"}<span className="chat-typing-dots"><i/><i/><i/></span>
-                                </span>
-                            )}
-                        </span>
-                        <span className="page-header-right">
-                            <button className="page-back-btn" type="button" onClick={() => setShowSettings(true)} aria-label="更多">
-                                <MoreHorizontal size={22} strokeWidth={1.5} />
+                        <button className="imessage-contact-card" type="button" onClick={() => setShowSettings(true)} aria-label="群聊设置">
+                            <span className="imessage-contact-avatar"><GroupAvatar src={session.groupAvatar} members={[...(!session.isSpectator && userIdentity ? [{ avatar: userIdentity.avatarUrl }] : []), ...groupCharacters]} /></span>
+                            <span className="imessage-contact-name">{session.groupName || "群聊"}<span className="imessage-contact-chevron" aria-hidden="true">›</span></span>
+                        </button>
+                        <div className="imessage-header-call-control">
+                            <button className="imessage-header-button imessage-header-video" type="button" onClick={() => setShowHeaderCallMenu(open => !open)} aria-label="选择群通话方式" aria-expanded={showHeaderCallMenu}>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="6" width="12" height="12" rx="3" /><path d="m15 10 5-3v10l-5-3Z" /></svg>
                             </button>
-                        </span>
+                            {showHeaderCallMenu && <div className="imessage-header-call-menu" role="menu" aria-label="群通话方式">
+                                <button className="imessage-header-call-option" type="button" role="menuitem" aria-label="群语音通话" onClick={() => { cancelFollowUp(session.id); setShowHeaderCallMenu(false); setCallInitiator("user"); setShowVoiceCall(true); }}><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6.62 10.79a15.46 15.46 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1.02Z" /></svg></button>
+                                <button className="imessage-header-call-option" type="button" role="menuitem" aria-label="群视频通话" onClick={() => { cancelFollowUp(session.id); setShowHeaderCallMenu(false); setCallInitiator("user"); setShowVideoCall(true); }}><svg viewBox="0 0 24 24"><rect x="3" y="6" width="12" height="12" rx="3" /><path d="m15 10 5-3v10l-5-3Z" /></svg></button>
+                            </div>}
+                        </div>
                     </div>
                 )}
             </header>
@@ -6239,7 +6290,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                 <div key={gMsg.id} className={`flex ${gMsg.role === "user" ? "justify-end" : "justify-start"}`}>
                                                     <div className="flex flex-col min-w-0 max-w-[75%]">
                                                         {session.isGroup && gMsg.role !== "user" && (
-                                                            <span className="chat-group-sender-name">{gMsg.senderName || ""}{renderGroupRoleBadge(gMsg.senderCharacterId)}</span>
+                                                            <GroupSenderName avatar={groupCharMap.get(gMsg.senderCharacterId || "")?.avatar}>{gMsg.senderName || ""}{renderGroupRoleBadge(gMsg.senderCharacterId)}</GroupSenderName>
                                                         )}
                                                         <div
                                                             onPointerDown={(e) => { e.stopPropagation(); handleMessagePointerDown(e, gMsg.id); }}
@@ -6304,6 +6355,19 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     const isMediaBubble = (renderMsg.mediaType && CHAT_MEDIA_BUBBLE_TYPES.has(renderMsg.mediaType)) || isStandaloneHtmlPreview;
                     // Empty bubble: no visible content AND no visual media AND no folded panel.
                     const isEmptyBubble = !isVisualMedia && !visibleContent && uiRole(msg) !== "system" && !hasFoldedPanel;
+                    const thoughtToggle = (msg.role !== "user" && !isSilentThought && !isEmptyBubble && hasFoldedPanel && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setExpandedThinkingId(prev => prev === msg.id ? null : msg.id); }}
+                                                className="chat-monologue-heart bg-none border-none cursor-pointer p-1 ts-14 leading-none self-end shrink-0 -ml-2"
+                                                {...(expandedMonologueId === msg.id ? { "data-active": "" } : {})}
+                                                title="查看折叠状态"
+                                                aria-label="查看折叠状态"
+                                            >
+                                                <svg viewBox="0 0 16 16" width="14" height="14" style={{display:"block"}}>
+                                                    <path d="M8 14s-6-4-6-8c0-2.5 1.5-4 3.5-4 1 0 2 .5 2.5 1.5C8.5 2.5 9.5 2 10.5 2 12.5 2 14 3.5 14 6c0 4-6 8-6 8z" fill="currentColor"/>
+                                                </svg>
+                                            </button>
+                                        ));
                     const selectableStoredId = getSelectableStoredMessageId(msg);
                     const isMultiSelectable = isMultiSelectMode && !!selectableStoredId && !hiddenEmpty;
                     const isMultiSelected = !!selectableStoredId && selectedMessageIds.has(selectableStoredId);
@@ -6351,7 +6415,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                     : undefined}
                                 {...(isEmptyBubble && renderMsg.reasoningText ? { "data-reasoning-empty": "" } : {})}
                                 {...(isConsecutive ? { "data-consecutive": "" } : {})}
-                                {...(imessageTailMessageIds.has(msg.id) ? { "data-imessage-tail": "" } : {})}
+                                {...(session.isGroup && uiRole(msg) === "assistant" && prevVisibleMsg && uiRole(prevVisibleMsg) === "assistant" && (prevVisibleMsg.senderCharacterId || prevVisibleMsg.senderName) !== (msg.senderCharacterId || msg.senderName) ? { "data-group-speaker-change": "" } : {})}
+                                {...(imessageTailMessageIds.tailIds.has(msg.id) ? { "data-imessage-tail": "" } : {})}
+                                {...(imessageTailMessageIds.lastIds.has(msg.id) ? { "data-group-last": "" } : {})}
                                 {...(activeMessageId === msg.id ? { "data-active": "" } : {})}
                                 {...(highlightMessageId === msg.id ? { "data-highlight": "" } : {})}
                                 {...multiSelectWrapperProps}
@@ -6489,8 +6555,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                             className={`chat-msg-content-wrap flex flex-col min-w-0 max-w-[70%] ${isStandaloneHtmlPreview ? "chat-msg-content-wrap-html" : ""}`}
                                             {...(isStandaloneHtmlPreview ? { "data-html": "true" } : {})}
                                         >
-                                            {session.isGroup && msg.role !== "user" && (
-                                                <span className="chat-group-sender-name">{msg.senderName || ""}{renderGroupRoleBadge(msg.senderCharacterId)}</span>
+                                            {session.isGroup && msg.role !== "user" && imessageTailMessageIds.firstIds.has(msg.id) && (
+                                                <GroupSenderName avatar={groupCharMap.get(msg.senderCharacterId || "")?.avatar}>{groupPrivateAliases.get(msg.senderCharacterId || "") || groupCharMap.get(msg.senderCharacterId || "")?.name || msg.senderName || "群成员"}</GroupSenderName>
                                             )}
                                             <div
                                             {...(editingMessageId !== msg.id ? {
@@ -6507,7 +6573,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                             data-media-type={renderMsg.mediaType || "text"}
                                             {...(activeMessageId === msg.id ? { "data-active": "" } : {})}
                                             >
-                                            {!session.isGroup && (
+                                            {(
                                                 <span className="imessage-swipe-reply-cue" aria-hidden="true">
                                                     <svg viewBox="0 0 24 24" focusable="false">
                                                         <path fill="currentColor" fillRule="evenodd" d="M10 2a1 1 0 0 0-1.79-.614l-7 9a1 1 0 0 0 0 1.228l7 9A1 1 0 0 0 10 20v-3.99c5.379.112 7.963 1.133 9.261 2.243c1.234 1.055 1.46 2.296 1.695 3.596l.061.335a1 1 0 0 0 1.981-.122c.171-2.748-.086-6.73-2.027-10.061C19.087 8.768 15.695 6.282 10 6.022z" clipRule="evenodd" />
@@ -6519,6 +6585,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
                                             <MessageBubble
                                                 msg={renderMsg}
+                                                replyAccessory={renderMsg.mediaType === "quote" ? thoughtToggle : undefined}
                                                 displayContent={msg.displayProjected ? undefined : bubbleDisplayContent}
                                                 charName={character?.name}
                                                 userName={userIdentity?.name || "你"}
@@ -6538,7 +6605,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                 onActionSelect={(text) => chatTextInputRef.current?.appendText(text)}
                                                 defaultTranslationExpanded={session.collapseBilingualTranslation !== false ? false : true}
                                             />
-                                            {!session.isGroup && renderMsg.mediaType !== "quote" && renderMsg.mediaData?.tapback && (
+                                            {renderMsg.mediaType !== "quote" && renderMsg.mediaData?.tapback && (
                                                 <IMessageTapbackBadge
                                                     tapback={renderMsg.mediaData.tapback}
                                                     tapbackBy={renderMsg.mediaData.tapbackBy || "user"}
@@ -6546,19 +6613,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                             )}
                                         </div>
                                         </div>}
-                                        {msg.role !== "user" && !isSilentThought && !isEmptyBubble && hasFoldedPanel && (
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); setExpandedThinkingId(prev => prev === msg.id ? null : msg.id); }}
-                                                className="chat-monologue-heart bg-none border-none cursor-pointer p-1 ts-14 leading-none self-end shrink-0 -ml-2"
-                                                {...(expandedMonologueId === msg.id ? { "data-active": "" } : {})}
-                                                title="查看折叠状态"
-                                                aria-label="查看折叠状态"
-                                            >
-                                                <svg viewBox="0 0 16 16" width="14" height="14" style={{display:"block"}}>
-                                                    <path d="M8 14s-6-4-6-8c0-2.5 1.5-4 3.5-4 1 0 2 .5 2.5 1.5C8.5 2.5 9.5 2 10.5 2 12.5 2 14 3.5 14 6c0 4-6 8-6 8z" fill="currentColor"/>
-                                                </svg>
-                                            </button>
-                                        )}
+                                        {renderMsg.mediaType !== "quote" && thoughtToggle}
                                         {msg.role === "user" && !isEmptyBubble && (
                                             <div className="chat-msg-avatar w-[40px] h-[40px] rounded-[20px] bg-[var(--c-page-body-bg)] shrink-0 flex items-center justify-center overflow-hidden">
                                                 {userIdentity?.avatarUrl ? (
@@ -6641,14 +6696,14 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 return part.texts.map((segText, j) => {
                                     const isTyping = isLastPart && j === part.texts.length - 1;
                                     return (
-                                        <div key={`stream-${part.characterId}-${i}-${j}`} className="chat-msg-wrapper" data-role="assistant">
+                                        <div key={`stream-${part.characterId}-${i}-${j}`} className="chat-msg-wrapper" data-role="assistant" data-consecutive={j > 0 ? "" : undefined} data-group-speaker-change={j === 0 && i > 0 && streamPreview.parts?.[i - 1]?.characterId !== part.characterId ? "" : undefined} data-group-last={j === part.texts.length - 1 ? "" : undefined} data-imessage-tail={j === part.texts.length - 1 ? "" : undefined}>
                                             <div className="chat-msg-avatar flex flex-col items-center gap-1 shrink-0">
                                                 <div className="w-[40px] h-[40px] rounded-[20px] bg-[var(--c-input)] overflow-hidden">
                                                     {senderChar?.avatar ? <img src={senderChar.avatar} className="w-full h-full object-cover" alt="" /> : <ChatFallbackAvatar />}
                                                 </div>
                                             </div>
                                             <div className="chat-msg-content-wrap flex flex-col min-w-0 max-w-[70%]">
-                                                <span className="chat-group-sender-name">{part.characterName}</span>
+                                                {j === 0 && <GroupSenderName avatar={senderChar?.avatar}>{groupPrivateAliases.get(part.characterId) || senderChar?.name || part.characterName}</GroupSenderName>}
                                                 <div className="chat-bubble-role-assistant chat-stream-bubble break-words rounded-md px-3 py-2">
                                                     {/* 流式预览用轻量 pre-wrap 渲染：避免每帧跑 markdown/双语解析导致闪烁卡顿 */}
                                                     <div className="chat-stream-text whitespace-pre-wrap break-words">{segText}</div>
@@ -6687,7 +6742,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                         ) : null}
                     </div>
                 )}
-                {!offlineMode && !session.isGroup && isGenerating && !(streamPreview?.texts?.length) && (
+                {!offlineMode && isGenerating && !(streamPreview?.texts?.length) && !(streamPreview?.parts?.length) && (
                     <div
                         className="chat-msg-wrapper imessage-typing-row"
                         data-role="assistant"

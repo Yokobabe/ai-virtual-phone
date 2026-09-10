@@ -7,16 +7,18 @@ import { resolveUserIdentity } from "@/lib/settings-storage";
 import { Character } from "@/lib/character-types";
 import { Input } from "@/components/ui/form";
 import { ChatFallbackAvatar } from "./chat-fallback-avatar";
+import { GroupAvatarPicker } from "./group-avatar";
 
 type GroupCreateModalProps = {
     onClose: () => void;
-    onCreate: (groupName: string, participantIds: string[], isSpectator: boolean) => void;
+    onCreate: (groupName: string, participantIds: string[], isSpectator: boolean, groupAvatar?: string) => void;
 };
 
 export function GroupCreateModal({ onClose, onCreate }: GroupCreateModalProps) {
     const [step, setStep] = useState<"pick" | "name">("pick");
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [groupName, setGroupName] = useState("");
+    const [groupAvatar, setGroupAvatar] = useState("");
     const [isSpectator, setIsSpectator] = useState(false);
 
     const contacts = loadChatContacts();
@@ -38,7 +40,8 @@ export function GroupCreateModal({ onClose, onCreate }: GroupCreateModalProps) {
         .map(id => chars.find(c => c.id === id))
         .filter(Boolean) as Character[];
 
-    const userName = resolveUserIdentity(undefined, "group_chat")?.name || "我";
+    const userIdentity = resolveUserIdentity(undefined, "group_chat");
+    const userName = userIdentity?.name || "我";
     const defaultName = isSpectator
         ? selectedChars.map(c => c.name).join("、")
         : [...selectedChars.map(c => c.name), userName].join("、");
@@ -112,6 +115,7 @@ export function GroupCreateModal({ onClose, onCreate }: GroupCreateModalProps) {
                                 </div>
                             ))}
                         </div>
+                        <GroupAvatarPicker value={groupAvatar} members={[...(!isSpectator && userIdentity ? [{ avatar: userIdentity.avatarUrl }] : []), ...selectedChars]} onChange={setGroupAvatar} />
                         <label
                             className="flex items-start gap-2 w-full cursor-pointer select-none"
                             onClick={() => setIsSpectator(prev => !prev)}
@@ -135,7 +139,7 @@ export function GroupCreateModal({ onClose, onCreate }: GroupCreateModalProps) {
                                 返回
                             </button>
                             <button
-                                onClick={() => onCreate(groupName.trim() || defaultName, [...selectedIds], isSpectator)}
+                                onClick={() => onCreate(groupName.trim() || defaultName, [...selectedIds], isSpectator, groupAvatar)}
                                 className="ui-btn ui-btn-success flex-1"
                             >
                                 创建

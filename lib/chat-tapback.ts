@@ -43,6 +43,13 @@ function normalizeCandidateGlyph(value: unknown): string {
     return typeof value === "string" ? value.trim().slice(0, 32) : "";
 }
 
+/** A single native emoji, including skin tones, flags and joined families. */
+export function isNativeTapbackEmoji(value: string): boolean {
+    if (!value || value.length > 32) return false;
+    const segments = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)];
+    return segments.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\uFE0F?\u20E3/u.test(value);
+}
+
 export function loadIMessageTapbacks(): IMessageTapbackCandidate[] {
     try {
         const parsed = JSON.parse(kvGet(IMESSAGE_TAPBACKS_STORAGE_KEY) || "[]") as unknown;
@@ -103,8 +110,7 @@ const NON_TAPBACK_TARGET_MEDIA = new Set<NonNullable<ChatMessage["mediaType"]>>(
 /** Apply a model-authored Tapback to the latest eligible user message. */
 export function applyAssistantTapback(sessionId: string, requestedTapback: string | undefined): ChatMessage | null {
     const requested = getTapbackGlyph(normalizeCandidateGlyph(requestedTapback));
-    const allowed = loadIMessageTapbacks().find(item => item.glyph === requested);
-    if (!allowed) return null;
+    if (!isNativeTapbackEmoji(requested)) return null;
 
     const target = [...loadChatMessages(sessionId)].reverse().find(message => (
         message.role === "user"
@@ -114,7 +120,7 @@ export function applyAssistantTapback(sessionId: string, requestedTapback: strin
     ));
     if (!target) return null;
 
-    const mediaData = { ...target.mediaData, tapback: allowed.glyph, tapbackBy: "assistant" as const };
+    const mediaData = { ...target.mediaData, tapback: requested, tapbackBy: "assistant" as const };
     updateMessageMediaData(target.id, mediaData);
     if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent(IMESSAGE_TAPBACK_APPLIED_EVENT, {
@@ -125,11 +131,10 @@ export function applyAssistantTapback(sessionId: string, requestedTapback: strin
 }
 
 export function buildIMessageTapbackPromptInstruction(): string {
-    const glyphs = loadIMessageTapbacks().map(item => item.glyph);
     return [
         "### iMessage Tapback（可选的真实动作）",
-        `你可以主动对用户最新一条可回应的消息添加 Tapback。候选仅限：${glyphs.join(" ")}。`,
-        "需要使用时输出独立标记 [Tapback:表情]，例如 [Tapback:❤️]；它会真实贴到用户消息上，不会显示成文字气泡。",
-        "Tapback 是可选动作，只在语境自然时使用；每轮最多一次，可以单独使用，也可以和正常文字回复同时使用。不要输出候选列表以外的表情。",
+        "正常交流通常直接回复文字即可，不需要附带 Tapback；它不是每轮任务，也不是固定的开场或结尾。用户给你 Tapback 不代表你必须回一个。",
+        "仅当你确实想对用户最新一条消息做简短的情绪反应时，才输出独立标记 [Tapback:单个emoji]。它会真实贴在该消息上。每轮最多一次，也可以完全不使用。",
+        "可使用任意一个标准 Unicode emoji，不受用户快捷候选栏限制。根据那条消息的具体语义、你的性格与当下情绪选择；不要机械沿用上一轮的表情，也不要为追求变化而强行轮换。",
     ].join("\n");
 }

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { CallSttWarningDialog, hideCallSttWarningPermanently, isCallSttWarningHidden } from "./call-stt-warning-dialog";
 import { isAndroidBrowser } from "./voice-input-platform";
 import { ApplePayBrand } from "./apple-pay-brand";
+import { LocationMap } from "./location-map";
 
 // ── Photo Input Modal ─────────────────────────────
 
@@ -204,12 +205,7 @@ export function LocationInputModal({ onSend, onClose }: LocationInputModalProps)
                 className="modal-dialog imessage-rich-input-dialog"
             >
                 <div className="ts-16 font-semibold text-center text-[var(--c-text)]">分享位置</div>
-                <div
-                    className="w-full h-[100px] rounded-xl flex items-center justify-center relative ui-map-gradient"
-                >
-                    <div className="ui-map-grid" />
-                    <div className="text-4xl relative z-1">📍</div>
-                </div>
+                <LocationMap />
                 <input
                     value={loc}
                     onChange={e => setLoc(e.target.value)}

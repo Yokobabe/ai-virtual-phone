@@ -184,6 +184,7 @@ import {
     DEFAULT_OFFLINE_CHAT_BILINGUAL_PROMPT,
 } from "@/lib/bilingual-prompt-defaults";
 import { ChatFallbackAvatar } from "./chat-fallback-avatar";
+import { GroupAvatarPicker } from "./group-avatar";
 import { MessageBubble, isStandaloneHtmlPreviewContent } from "./message-bubble";
 import { ScreenEffectSettingsModal } from "./screen-effect-settings-modal";
 
@@ -846,6 +847,9 @@ export function ChatSettingsPanel({
                             <ChevronRight size={16} />
                         </div>
                     </button>
+                    {session.isGroup && <div className="menu-item">
+                        <GroupAvatarPicker value={session.groupAvatar} members={[...(!session.isSpectator && userIdentity ? [{ avatar: userIdentity.avatarUrl }] : []), ...groupChars.filter((c): c is NonNullable<typeof c> => !!c)]} onChange={groupAvatar => updateSession({ groupAvatar })} />
+                    </div>}
                     <button className="menu-item" onClick={openSearchPanel}>
                         <ChatInfoIcon icon={Search} color={BINDING_ACCENTS.api} />
                         <div className="menu-label-group"><span className="menu-label">查找聊天记录</span></div>
@@ -1571,7 +1575,7 @@ export function ChatSettingsPanel({
                         <PageShell title="Tapback 候选" onBack={() => setEditingTapbacks(false)}>
                             <div className="theme-section-page">
                                 <p className="ts-13 text-[var(--c-text)] mb-4 leading-relaxed">
-                                    这里的 6 个候选会同时提供给你和角色。直接输入手机自带 emoji 即可，显示时会使用当前设备的原生表情字体。
+                                    这里的 6 个候选用于你的快捷回应。角色可以按语境使用候选以外的 emoji。直接输入手机自带 emoji 即可，显示时会使用当前设备的原生表情字体。
                                 </p>
                                 <div className="rounded-[28px] bg-[var(--c-input)] px-4 py-3 flex items-center justify-between gap-2 mb-4">
                                     {tapbackDraft.map((glyph, index) => (

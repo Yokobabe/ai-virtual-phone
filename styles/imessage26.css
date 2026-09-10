@@ -1,4 +1,4 @@
-/* Private-chat-only iMessage 26 presentation. Group chat intentionally untouched. */
+/* Shared iMessage presentation. The legacy private attribute is also applied to groups. */
 .chat-room-wrapper[data-imessage-private] {
   --im26-blue: #38acfc;
   --im26-blue-pressed: #159af2;
@@ -213,6 +213,12 @@
   background: transparent;
   transform: translateX(-50%);
   cursor: pointer;
+  /* The centering box is wider than the visible avatar and nameplate. */
+  pointer-events: none;
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-contact-card > :is(.imessage-contact-avatar, .imessage-contact-name) {
+  pointer-events: auto;
 }
 
 .chat-room-wrapper[data-imessage-private] .imessage-contact-avatar {
@@ -325,6 +331,91 @@
 
 .chat-room-wrapper[data-imessage-private] .chat-msg-avatar {
   display: none !important;
+}
+
+/* Group identity: one name at the beginning, one avatar at the end of a run. */
+.chat-app .chat-room-wrapper[data-imessage-private][data-imessage-group] > .page-body {
+  padding-left: 8px;
+}
+.chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-role="assistant"] {
+  padding-left: 33px;
+  position: relative;
+}
+.chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-role="assistant"][data-group-last] > .chat-msg-avatar {
+  display: flex !important;
+  position: absolute;
+  left: 0;
+  bottom: var(--group-avatar-bottom, 0px);
+}
+.chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-role="assistant"] > .chat-msg-avatar > div {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+.chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-role="assistant"] .chat-msg-content-wrap {
+  max-width: min(100%, calc((100% + 33px) * .8)) !important;
+}
+.chat-room-wrapper[data-imessage-group] .chat-group-sender-name {
+  display: block;
+  color: #8e8e93;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0 0 1px;
+  padding: 0 0 0 12px;
+  overflow-wrap: anywhere;
+}
+.chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-group-speaker-change] {
+  margin-top: 16px;
+}
+.chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-imessage-tail]:has(.chat-bubble-role-assistant:not(.chat-bubble-media)),
+.chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-imessage-tail]:has(.chat-quote-reply) {
+  --group-avatar-bottom: -7px;
+}
+.group-avatar-picker { width: 100%; color: var(--c-text-title, #111); }
+/* Compact group density; preserve the larger separation between speakers. */
+.chat-room-wrapper[data-imessage-group] .chat-stream-preview { gap: 0; }
+.chat-room-wrapper[data-imessage-group] .chat-stream-preview > .chat-msg-wrapper:not(:last-child) { margin-bottom: 16px; }
+.chat-room-wrapper[data-imessage-group] .chat-stream-preview > .chat-msg-wrapper:has(+ .chat-msg-wrapper[data-consecutive]) { margin-bottom: 4px; }
+.chat-room-wrapper[data-imessage-group] .page-body > div:has(+ div > .chat-msg-wrapper[data-consecutive]) {
+  margin-bottom: 4px;
+}
+/* A text tail extends 7px outside its box. Preserve the 4px visual gap when
+   another message in the same run follows it (for example a red packet). */
+.chat-room-wrapper[data-imessage-group] .page-body > div:has(> .chat-msg-wrapper[data-imessage-tail]):has(+ div > .chat-msg-wrapper[data-consecutive]) {
+  margin-bottom: 11px;
+}
+.chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-role="assistant"] .chat-msg-content-wrap:not(:has(.chat-bubble-media)) {
+  max-width: min(100%, calc((100% + 33px) * .72)) !important;
+}
+.chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-role="user"] .chat-msg-content-wrap:not(:has(.chat-bubble-media)) {
+  max-width: 72% !important;
+}
+.chat-room-wrapper[data-imessage-group][data-imessage-private] :is(.chat-bubble-role-user, .chat-bubble-role-assistant):not(.chat-bubble-media):not([data-media-type="quote"]),
+.chat-room-wrapper[data-imessage-group][data-imessage-private] .chat-quote-reply {
+  padding: 8px 12px;
+  min-height: 34px;
+  min-width: 30px;
+  border-radius: 18px;
+  font-size: calc(13px * var(--app-text-scale, 1));
+  line-height: 1.38;
+}
+.chat-room-wrapper[data-imessage-group][data-imessage-private] .chat-msg-wrapper .chat-msg-content-wrap:has([data-media-type="quote"]) {
+  width: 100%;
+  max-width: 100% !important;
+}
+.group-avatar-setting-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.group-avatar-setting-row .menu-label { font-weight: 600; }
+.group-avatar-options { display: grid; gap: 10px; margin-top: 16px; }
+.group-avatar-methods, .group-avatar-url { display: flex; gap: 8px; }
+.group-avatar-methods > button { flex: 1; }
+.group-avatar-options .ui-btn { border-radius: 18px; color: var(--c-text-title, #111); background: rgba(142,142,147,.08); font-size: 13px; font-weight: 500; }
+.group-avatar-url .ui-input { flex: 1; min-width: 0; border-radius: 18px; font-size: 13px; }
+.chat-room-wrapper[data-imessage-group] .imessage-header-video svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
 }
 
 .chat-room-wrapper[data-imessage-private] .chat-msg-content-wrap {
@@ -910,7 +1001,8 @@
   bottom: 8px;
   z-index: 0;
   width: 32px;
-  border-color: rgba(60, 60, 67, .12);
+  border-color: rgb(60, 60, 67);
+  opacity: .12;
   border-style: solid;
   border-width: 4px 0 4px 4px;
   border-radius: 24px 0 0 24px;
@@ -934,7 +1026,7 @@
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: rgba(60, 60, 67, .12);
+  background: rgb(60, 60, 67);
 }
 
 .chat-room-wrapper[data-imessage-private] .chat-quote-message-user .chat-quote-connector::before {
@@ -974,10 +1066,11 @@
 /* Compact Apple Pay transfer card. The legacy transfer rendering remains
    available outside private iMessage chats. */
 .chat-room-wrapper[data-imessage-private] .chat-transfer-card {
-  width: 240px !important;
+  width: 208px !important;
+  max-width: 100%;
   overflow: hidden !important;
-  border: .75px solid rgba(60, 60, 67, .18);
-  border-radius: 22px !important;
+  border: 1px solid rgba(60, 60, 67, .18);
+  border-radius: 20px !important;
   color: var(--im26-ink);
   background: rgba(250, 250, 252, .94);
   box-shadow: 0 10px 26px rgba(45, 50, 58, .10), inset 0 1px 0 rgba(255, 255, 255, .98);
@@ -991,14 +1084,14 @@
 
 .chat-room-wrapper[data-imessage-private] .imessage-transfer-card {
   display: grid !important;
-  grid-template-rows: 104px minmax(46px, auto);
+  grid-template-rows: 104px 40px;
   width: 100%;
 }
 
 .chat-room-wrapper[data-imessage-private] .imessage-transfer-main {
   display: flex;
   flex-direction: column;
-  padding: 15px 17px 13px;
+  padding: 13px 12px;
 }
 
 .chat-room-wrapper[data-imessage-private] .imessage-apple-pay-brand {
@@ -1037,7 +1130,7 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  padding: 12px 17px;
+  padding: 10px 12px;
   border-top: .5px solid rgba(60, 60, 67, .16);
   color: var(--im26-secondary);
   font-size: calc(11px * var(--app-text-scale, 1));
@@ -1418,6 +1511,12 @@
   width: 12px !important;
   height: 12px !important;
 }
+.chat-room-wrapper[data-imessage-private] .chat-quote-reply-accessory {
+  position: absolute;
+  left: 100%;
+  bottom: 0;
+  z-index: 2;
+}
 
 .chat-room-wrapper[data-imessage-private] .chat-monologue-heart[data-active] {
   color: var(--im26-blue);
@@ -1642,7 +1741,7 @@
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='5 4 6 8'%3E%3Cpath d='M8 11a.5.5 0 0 0 .5-.5V6.707l1.146 1.147a.5.5 0 0 0 .708-.708l-2-2a.5.5 0 0 0-.708 0l-2 2a.5.5 0 1 0 .708.708L7.5 6.707V10.5a.5.5 0 0 0 .5.5' fill='black'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
 }
 
-.chat-room-wrapper[data-imessage-private] .chat-input-bar[data-has-text] .chat-send-btn {
+.chat-room-wrapper[data-imessage-private] .chat-input-bar[data-show-send] .chat-send-btn {
   display: grid !important;
 }
 
@@ -1660,8 +1759,16 @@
   height: 20px;
 }
 
-.chat-room-wrapper[data-imessage-private] .chat-input-bar[data-has-text] .chat-voice-message-btn {
+.chat-room-wrapper[data-imessage-private] .chat-input-bar[data-show-send] .chat-voice-message-btn {
   display: none !important;
+}
+
+.chat-room-wrapper[data-imessage-private] .chat-send-btn[data-generating]::before {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  -webkit-mask: none;
+  mask: none;
 }
 
 /* ── iMessage quote-composing focus ───────────────────────

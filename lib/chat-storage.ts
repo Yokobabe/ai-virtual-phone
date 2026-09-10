@@ -64,6 +64,7 @@ export type ChatSession = {
     // Group chat fields
     isGroup?: boolean;
     groupName?: string;
+    groupAvatar?: string;
     participantIds?: string[]; // characterId array
     groupVideoBackgrounds?: Record<string, string>; // characterId|"self" → image ID
     // Group admin fields ("self" = the user)
@@ -1074,7 +1075,7 @@ export function createOrGetSession(contactId: string): ChatSession {
     return newSession;
 }
 
-export function createGroupSession(groupName: string, participantIds: string[], options?: { isSpectator?: boolean }): ChatSession {
+export function createGroupSession(groupName: string, participantIds: string[], options?: { isSpectator?: boolean; groupAvatar?: string }): ChatSession {
     const sessions = loadChatSessions();
     const isSpectator = options?.isSpectator === true;
     const newSession: ChatSession = {
@@ -1088,6 +1089,7 @@ export function createGroupSession(groupName: string, participantIds: string[], 
         visionImagePromptLimit: DEFAULT_VISION_IMAGE_PROMPT_LIMIT,
         isGroup: true,
         groupName,
+        groupAvatar: options?.groupAvatar,
         participantIds,
         // 围观群用户不在群内，群主落在第一位成员头上
         groupOwnerId: isSpectator ? participantIds[0] : "self",

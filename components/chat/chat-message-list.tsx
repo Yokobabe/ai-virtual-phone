@@ -631,8 +631,8 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
             {showGroupCreate && (
                 <GroupCreateModal
                     onClose={() => setShowGroupCreate(false)}
-                    onCreate={(groupName, participantIds, isSpectator) => {
-                        const newSession = createGroupSession(groupName, participantIds, { isSpectator });
+                    onCreate={(groupName, participantIds, isSpectator, groupAvatar) => {
+                        const newSession = createGroupSession(groupName, participantIds, { isSpectator, groupAvatar });
                         const userName = resolveUserIdentity()?.name ?? "用户";
                         const allChars = loadCharacters();
                         const memberNames = participantIds
@@ -764,7 +764,7 @@ function SessionItem({ session, onSelect, isPinned }: { session: ChatSession, on
     const userIdentity = isGroup ? resolveUserIdentity(undefined, "group_chat") : null;
     const groupAvatarItems = isGroup
         ? [
-            ...(userIdentity ? [{ id: "self", name: userIdentity.name || "我", avatar: userIdentity.avatarUrl || "" }] : []),
+            ...(!session.isSpectator && userIdentity ? [{ id: "self", name: userIdentity.name || "我", avatar: userIdentity.avatarUrl || "" }] : []),
             ...((session.participantIds || [])
                 .map(id => chars.find(c => c.id === id))
                 .filter(Boolean) as Character[])
@@ -777,7 +777,9 @@ function SessionItem({ session, onSelect, isPinned }: { session: ChatSession, on
             className={`minimal-list-item${isPinned ? ' chat-pinned' : ''}`}
             onClick={onSelect}
         >
-            {isGroup ? (
+            {isGroup && session.groupAvatar ? (
+                <div className="minimal-avatar-wrapper"><img src={session.groupAvatar} alt="群聊头像" className="w-full h-full object-cover rounded-full" /></div>
+            ) : isGroup ? (
                 <div className="minimal-avatar-wrapper grid grid-cols-2 grid-rows-2 gap-[1px] p-[2px] bg-[var(--c-card-border)] rounded-full overflow-hidden">
                     {groupAvatarItems.map((c) => (
                         <div key={c.id} className="overflow-hidden rounded-[3px] bg-[var(--c-page-body-bg)]">

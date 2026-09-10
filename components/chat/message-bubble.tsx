@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo, type ReactNode } from "react";
 import { findCustomStickerByName, resolveCustomStickerUrl } from "@/lib/custom-sticker-storage";
 import { isMediaStoreRef, loadMediaObjectUrl } from "@/lib/media-cache-storage";
 import { getChatImageFromIndexedDB } from "@/lib/chat-asset-storage";
@@ -29,8 +29,10 @@ import { ChatPluginSlot } from "@/components/chat/chat-plugin-slot";
 import { CHAT_PLUGIN_SLOTS_CHANGED_EVENT, getChatPluginRuntime } from "@/lib/chat-plugin-runtime";
 import { IMessageTapbackBadge } from "./imessage-tapback-badge";
 import { ApplePayBrand } from "./apple-pay-brand";
+import { LocationCard } from "./location-map";
 
 interface MessageBubbleProps {
+    replyAccessory?: ReactNode;
     msg: ChatMessage;
     onUpdate?: (updated: ChatMessage) => void;
     charName?: string;
@@ -86,7 +88,7 @@ function PluginKindBubble({ msg, kind }: { msg: ChatMessage; kind: string }) {
  * Renders a message bubble based on its mediaType.
  * Falls back to ReactMarkdown for plain text messages.
  */
-export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, charName, userName, onSystemMessage, groupSize, onShowDetail, characterId, onMusicPlay, onActionSelect, displayContent, defaultTranslationExpanded = false }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, charName, userName, onSystemMessage, groupSize, onShowDetail, characterId, onMusicPlay, onActionSelect, displayContent, replyAccessory, defaultTranslationExpanded = false }: MessageBubbleProps) {
     switch (msg.mediaType) {
         case "red_packet":
             return <RedPacketBubble msg={msg} charName={charName} userName={userName} groupSize={groupSize} onShowDetail={onShowDetail} />;
@@ -111,7 +113,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, charNa
         case "dice":
             return <DiceBubble msg={msg} />;
         case "quote":
-            return <QuoteBubble msg={msg} displayContent={displayContent} defaultTranslationExpanded={defaultTranslationExpanded} />;
+            return <QuoteBubble msg={msg} displayContent={displayContent} replyAccessory={replyAccessory} defaultTranslationExpanded={defaultTranslationExpanded} />;
         case "music_share":
             return <MusicShareBubble msg={msg} onPlay={onMusicPlay} />;
         case "media_file":
@@ -1402,31 +1404,7 @@ function ImageBubble({
 // ── Location ─────────────────────────────
 
 function LocationBubble({ msg }: { msg: ChatMessage }) {
-    const d = msg.mediaData;
-    return (
-        <div
-            className="chat-location-card w-[220px] rounded-xl overflow-hidden"
-        >
-            <div
-                className="chat-location-map w-full h-[100px] flex items-center justify-center relative ui-map-gradient"
-            >
-                {/* Grid pattern for map feel */}
-                <div
-                    className="absolute inset-0 opacity-15 ui-map-grid"
-                />
-                <div className="ts-36 relative z-[1]">📍</div>
-            </div>
-            <div className="chat-location-label px-3 py-2.5 bg-[var(--c-input)] flex items-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--c-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                    <circle cx="12" cy="10" r="3" />
-                </svg>
-                <span className="ts-13 text-[var(--c-text)] font-medium">
-                    {d?.label || "位置"}
-                </span>
-            </div>
-        </div>
-    );
+    return <LocationCard label={msg.mediaData?.label || "位置"} />;
 }
 
 // ── Poke ─────────────────────────────
@@ -1513,6 +1491,59 @@ export async function prewarmStickerCache(characterId: string): Promise<void> {
     }
 }
 
+function AlignedStickerImage({ src, label }: { src: string; label: string }) {
+    const imageRef = useRef<HTMLImageElement>(null);
+    useEffect(() => {
+        const image = imageRef.current;
+        const row = image?.closest<HTMLElement>("[data-imessage-group] .chat-msg-wrapper");
+        if (!image || !row) return;
+        let visibleBottom = 1;
+        const measure = () => {
+            if (!image.naturalWidth || !image.naturalHeight) return;
+            const rect = image.getBoundingClientRect();
+            const scale = Math.min(rect.width / image.naturalWidth, rect.height / image.naturalHeight);
+            const paintedHeight = image.naturalHeight * scale;
+            const bottom = rect.top + (rect.height - paintedHeight) / 2 + paintedHeight * visibleBottom;
+            row.style.setProperty("--group-avatar-bottom", `${row.getBoundingClientRect().bottom - bottom}px`);
+        };
+        const loaded = () => {
+            // Ignore transparent padding, not just the square object-contain box.
+            try {
+                const canvas = document.createElement("canvas");
+                const scale = Math.min(1, 1024 / Math.max(image.naturalWidth, image.naturalHeight));
+                canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+                canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+                const context = canvas.getContext("2d", { willReadFrequently: true });
+                if (context) {
+                    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+                    outer: for (let y = canvas.height - 1; y >= 0; y--) {
+                        for (let x = 0; x < canvas.width; x++) {
+                            if (pixels[(y * canvas.width + x) * 4 + 3] > 0) {
+                                visibleBottom = (y + 1) / canvas.height;
+                                break outer;
+                            }
+                        }
+                    }
+                }
+            } catch { /* Cross-origin images still align to their painted image bounds. */ }
+            measure();
+        };
+        image.addEventListener("load", loaded);
+        row.addEventListener("animationend", measure);
+        const observer = new ResizeObserver(measure);
+        observer.observe(row); observer.observe(image);
+        if (image.complete && image.naturalWidth) loaded();
+        return () => {
+            image.removeEventListener("load", loaded);
+            row.removeEventListener("animationend", measure);
+            observer.disconnect();
+            row.style.removeProperty("--group-avatar-bottom");
+        };
+    }, [src]);
+    return <img ref={imageRef} src={src} alt={label || "表情包"} className="w-[120px] h-[120px] object-contain" style={{ WebkitTouchCallout: 'none', userSelect: 'none', pointerEvents: 'none' }} />;
+}
+
 function StickerBubble({ msg, characterId }: { msg: ChatMessage; characterId?: string }) {
     const d = msg.mediaData;
     const label = d?.label || "";
@@ -1550,12 +1581,7 @@ function StickerBubble({ msg, characterId }: { msg: ChatMessage; characterId?: s
     if (imgUrl) {
         return (
             <div className="chat-sticker chat-sticker-image sticker-bounce p-1">
-                <img
-                    src={imgUrl}
-                    alt={label || "表情包"}
-                    className="w-[120px] h-[120px] object-contain"
-                    style={{ WebkitTouchCallout: 'none', userSelect: 'none', pointerEvents: 'none' }}
-                />
+                <AlignedStickerImage src={imgUrl} label={label} />
             </div>
         );
     }
@@ -1578,7 +1604,7 @@ function StickerBubble({ msg, characterId }: { msg: ChatMessage; characterId?: s
 
 // ── Quote ─────────────────────────────
 
-function QuoteBubble({ msg, displayContent, defaultTranslationExpanded = false }: { msg: ChatMessage; displayContent?: string; defaultTranslationExpanded?: boolean }) {
+function QuoteBubble({ msg, displayContent, replyAccessory, defaultTranslationExpanded = false }: { msg: ChatMessage; displayContent?: string; replyAccessory?: ReactNode; defaultTranslationExpanded?: boolean }) {
     const d = msg.mediaData;
     return (
         <div className={`chat-quote-message chat-quote-message-${msg.role} max-w-full`}>
@@ -1590,6 +1616,7 @@ function QuoteBubble({ msg, displayContent, defaultTranslationExpanded = false }
             )}
             {msg.content && (
                 <div className="chat-quote-reply">
+                    {replyAccessory && <span className="chat-quote-reply-accessory" onPointerDown={event => event.stopPropagation()} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }}>{replyAccessory}</span>}
                     <TextBubble content={displayContent ?? msg.content} defaultTranslationExpanded={defaultTranslationExpanded} />
                     {d?.tapback && (
                         <IMessageTapbackBadge
