@@ -1,4 +1,35 @@
+/* Sent quote excerpts are outlined; the composer preview remains a filled bubble. */
+.chat-room-wrapper.chat-room-wrapper[data-imessage-private] .chat-quote-preview {
+ --quote-readable-ink:#55555d;
+ background:transparent !important;
+ color:var(--quote-readable-ink) !important;
+ border:1px solid color-mix(in srgb,var(--quote-source-bg,#e9e9eb) 65%,var(--quote-readable-ink)) !important;
+ box-shadow:none !important;
+ filter:none !important;
+ -webkit-backdrop-filter:none !important;
+ backdrop-filter:none !important;
+ white-space:pre-wrap !important;
+}
+.chat-room-wrapper.chat-room-wrapper[data-imessage-private]:is([data-chat-dark],[data-dark-wallpaper]) .chat-quote-preview {
+ --quote-readable-ink:#f0f0f5;
+ border-color:color-mix(in srgb,var(--quote-source-bg,#353539) 40%,var(--quote-readable-ink)) !important;
+}
+.chat-room-wrapper.chat-room-wrapper[data-imessage-private] .chat-quote-preview::before,
+.chat-room-wrapper.chat-room-wrapper[data-imessage-private] .chat-quote-preview::after {
+ content:none !important;
+}
 /* Messages home: flat list content and floating glass controls. */
+/* Composite preview body and tail together so their pigment and alpha cannot diverge. */
+.chat-room-wrapper.chat-room-wrapper[data-imessage-private] .imessage-quote-compose-bubble {
+ background:transparent !important; border:0;
+ color:var(--quote-source-ink,var(--im26-ink));
+}
+.chat-room-wrapper.chat-room-wrapper[data-imessage-private] .imessage-quote-compose-bubble::before { content:none; }
+.chat-room-wrapper.chat-room-wrapper[data-imessage-private] .imessage-quote-compose-bubble > .imessage-bubble-surface {
+ background:var(--quote-source-bg,var(--im26-incoming)); opacity:var(--quote-source-opacity,1);
+}
+.chat-room-wrapper[data-imessage-private] .imessage-quote-compose-bubble > .imessage-bubble-surface::before { content:""; }
+.chat-room-wrapper[data-imessage-private] .imessage-quote-compose-bubble[data-role="user"] > .imessage-bubble-surface::before { left:auto; right:7px; transform:none; }
 /* Composite an opaque body and tail before applying alpha once. */
 .imessage-bubble-surface { display:none; }
 .chat-room-wrapper[data-imessage-private] :is(.chat-bubble-role-user,.chat-bubble-role-assistant,.chat-quote-reply):has(> .imessage-bubble-surface) { background:transparent !important; isolation:isolate; }

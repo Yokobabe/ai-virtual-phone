@@ -79,6 +79,7 @@ import { ChatFallbackAvatar } from "./chat-fallback-avatar";
 import { GroupAvatar } from "./group-avatar";
 import { GroupSenderName } from "./group-sender-name";
 import { useGroupBubbleTint } from "./use-group-bubble-tint";
+import { getQuotePreview } from "@/lib/chat-quote-preview";
 import { SortablePlusMenu } from "./sortable-plus-menu";
 import { useChatAppearance } from "./use-chat-appearance";
 import { HeaderVideoIcon } from "./header-video-icon";
@@ -630,6 +631,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     theaterMode: boolean;
     enterToSendEnabled: boolean;
     quotingMessage: ChatMessage | null;
+    quoteSourceStyle?: React.CSSProperties;
     showEmojiPanel: boolean;
     showStickerPanel: boolean;
     showPlusMenu: boolean;
@@ -661,6 +663,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     theaterMode,
     enterToSendEnabled,
     quotingMessage,
+    quoteSourceStyle,
     showEmojiPanel,
     showStickerPanel,
     showPlusMenu,
@@ -805,8 +808,9 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
             )}
             {quotingMessage && (
                 <div className="imessage-quote-compose-layer" data-quote-role={quotingMessage.role}>
-                    <div className="imessage-quote-compose-bubble" data-role={quotingMessage.role}>
-                        {quotingMessage.content || quotingMessage.mediaData?.label || "消息"}
+                    <div className="imessage-quote-compose-bubble" data-role={quotingMessage.role} style={quoteSourceStyle}>
+                        <span className="imessage-bubble-surface" aria-hidden="true" />
+                        {getQuotePreview(quotingMessage)}
                     </div>
                     <button
                         type="button"
@@ -1818,6 +1822,17 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const groupCharacters = useMemo(() => [...groupCharMap.values()], [groupCharMap]);
     const tintCharacters = useMemo(() => session.isGroup ? groupCharacters : character ? [character] : [], [session.isGroup, groupCharacters, character]);
     const groupBubbleTint = useGroupBubbleTint(tintCharacters, session.id, chatAppearance.dark);
+    const quoteStyle = (source?: ChatMessage): React.CSSProperties | undefined => {
+        if (!source) return undefined;
+        const tint = groupBubbleTint(source.senderCharacterId || session.contactId, source.role === "user") as Record<string, string | number>;
+        // Resolve on every render from the same live settings as normal bubbles.
+        // Use an opaque pigment for the outline; manual text/alpha belongs to the filled bubble only.
+        return {
+            "--quote-source-bg": tint["--bubble-surface-color"],
+            "--quote-source-ink": tint["--bubble-text-ink"],
+            "--quote-source-opacity": tint["--bubble-surface-opacity"],
+        } as React.CSSProperties;
+    };
     const groupCharacterNames = useMemo(() => groupCharacters.map(item => item.name).filter(Boolean).join("、"), [groupCharacters]);
 
     const activeRegexes = useMemo<RegexConfig[]>(() => {
@@ -4215,7 +4230,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         const isQuoting = !!quotingMessage;
         const quoteData = quotingMessage ? {
             quoteMessageId: quotingMessage.id,
-            quotePreview: quotingMessage.content.slice(0, 50),
+            quotePreview: getQuotePreview(quotingMessage),
             quoteRole: quotingMessage.role,
         } : undefined;
         setQuotingMessage(null);
@@ -6610,6 +6625,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                             <MessageBubble
                                                 msg={renderMsg}
                                                 replyAccessory={renderMsg.mediaType === "quote" ? thoughtToggle : undefined}
+                                                quoteSource={renderMsg.mediaType === "quote" ? messages.find(source => source.id === renderMsg.mediaData?.quoteMessageId) : undefined}
+                                                quoteSourceStyle={renderMsg.mediaType === "quote" ? quoteStyle(messages.find(source => source.id === renderMsg.mediaData?.quoteMessageId)) : undefined}
                                                 displayContent={msg.displayProjected ? undefined : bubbleDisplayContent}
                                                 charName={character?.name}
                                                 userName={userIdentity?.name || "你"}
@@ -6837,6 +6854,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 	                theaterMode={theaterMode}
 	                enterToSendEnabled={enterToSendEnabled}
 	                quotingMessage={quotingMessage}
+                    quoteSourceStyle={quoteStyle(quotingMessage || undefined)}
                 showEmojiPanel={showEmojiPanel}
                 showStickerPanel={showStickerPanel}
                 showPlusMenu={showPlusMenu}

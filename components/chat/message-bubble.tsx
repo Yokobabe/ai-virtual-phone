@@ -31,8 +31,11 @@ import { CHAT_PLUGIN_SLOTS_CHANGED_EVENT, getChatPluginRuntime } from "@/lib/cha
 import { IMessageTapbackBadge } from "./imessage-tapback-badge";
 import { ApplePayBrand } from "./apple-pay-brand";
 import { LocationCard } from "./location-map";
+import { getQuotePreview } from "@/lib/chat-quote-preview";
 
 interface MessageBubbleProps {
+    quoteSource?: ChatMessage;
+    quoteSourceStyle?: React.CSSProperties;
     replyAccessory?: ReactNode;
     msg: ChatMessage;
     onUpdate?: (updated: ChatMessage) => void;
@@ -89,7 +92,7 @@ function PluginKindBubble({ msg, kind }: { msg: ChatMessage; kind: string }) {
  * Renders a message bubble based on its mediaType.
  * Falls back to ReactMarkdown for plain text messages.
  */
-export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, charName, userName, onSystemMessage, groupSize, onShowDetail, characterId, onMusicPlay, onActionSelect, displayContent, replyAccessory, defaultTranslationExpanded = false }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, charName, userName, onSystemMessage, groupSize, onShowDetail, characterId, onMusicPlay, onActionSelect, displayContent, replyAccessory, quoteSource, quoteSourceStyle, defaultTranslationExpanded = false }: MessageBubbleProps) {
     switch (msg.mediaType) {
         case "red_packet":
             return <RedPacketBubble msg={msg} charName={charName} userName={userName} groupSize={groupSize} onShowDetail={onShowDetail} />;
@@ -114,7 +117,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, charNa
         case "dice":
             return <DiceBubble msg={msg} />;
         case "quote":
-            return <QuoteBubble msg={msg} displayContent={displayContent} replyAccessory={replyAccessory} defaultTranslationExpanded={defaultTranslationExpanded} />;
+            return <QuoteBubble msg={msg} displayContent={displayContent} replyAccessory={replyAccessory} quoteSource={quoteSource} quoteSourceStyle={quoteSourceStyle} defaultTranslationExpanded={defaultTranslationExpanded} />;
         case "music_share":
             return <MusicShareBubble msg={msg} onPlay={onMusicPlay} />;
         case "media_file":
@@ -1605,14 +1608,14 @@ function StickerBubble({ msg, characterId }: { msg: ChatMessage; characterId?: s
 
 // ── Quote ─────────────────────────────
 
-function QuoteBubble({ msg, displayContent, replyAccessory, defaultTranslationExpanded = false }: { msg: ChatMessage; displayContent?: string; replyAccessory?: ReactNode; defaultTranslationExpanded?: boolean }) {
+function QuoteBubble({ msg, displayContent, replyAccessory, quoteSource, quoteSourceStyle, defaultTranslationExpanded = false }: Pick<MessageBubbleProps, "msg" | "displayContent" | "replyAccessory" | "quoteSource" | "quoteSourceStyle" | "defaultTranslationExpanded">) {
     const d = msg.mediaData;
     return (
         <div className={`chat-quote-message chat-quote-message-${msg.role} max-w-full`}>
             <span className="chat-quote-connector" aria-hidden="true" />
-            {d?.quotePreview && (
-                <div className="chat-quote-preview bg-black/[0.06] border-l-[3px] border-l-black/15 px-2.5 py-1.5 ts-12 text-[var(--c-icon)] mb-1.5 rounded-r-[6px] truncate max-w-full">
-                    {d.quotePreview}
+            {(
+                <div style={quoteSourceStyle} className="chat-quote-preview bg-black/[0.06] border-l-[3px] border-l-black/15 px-2.5 py-1.5 ts-12 text-[var(--c-icon)] mb-1.5 rounded-r-[6px] truncate max-w-full">
+                    {quoteSource ? getQuotePreview(quoteSource) : d?.quotePreview?.trim() || "原消息暂不可用"}
                 </div>
             )}
             {msg.content && (
