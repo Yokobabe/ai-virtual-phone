@@ -89,7 +89,7 @@ import {
 } from "./bilingual-prompt-defaults";
 import { parseOfflineResponse, extractThinkingTag, type ParsedOfflineResponse } from "./chat-offline-storage";
 import { buildIMessageTapbackPromptInstruction } from "./chat-tapback";
-import { buildAvatarActionPrompt } from "./chat-avatar-action";
+import { buildAvatarActionPrompt, getAvatarVisionPromptLimit } from "./chat-avatar-action";
 import { throwIfAborted } from "./abort-utils";
 import { armShortcutContinuation, SHORTCUT_VISION_OFF_NOTE, type ShortcutContinuationHandle, type ShortcutContinuationStyle } from "./shortcut-continuation-client";
 
@@ -1853,7 +1853,7 @@ export async function buildChatPromptMessages(
     });
     const promptHistory = applyVisionImagePromptLimit(
         truncatedHistory.map(msg => ({ ...msg })),
-        session.visionImagePromptLimit,
+        getAvatarVisionPromptLimit(history, session.visionImagePromptLimit, config.enableImageRecognition === true && !isOfflineMode),
     );
 
     if (config.enableImageRecognition) {

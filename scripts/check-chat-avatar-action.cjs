@@ -9,10 +9,13 @@ function issue(enabled=true){return build('s1','c1',history,history.map(x=>({...
 history=[photo('今天拍的风景')];issue();assert.equal(apply('s1','c1','i1'),false);
 history=[photo()];issue(false);assert.equal(apply('s1','c1','i1'),false);
 issue();assert.equal(apply('s1','c1','invented'),false);assert.equal(apply('s1','c2','i1'),false);
-assert.equal(apply('s1','c1','i1'),true);assert.equal(chars[0].avatar,history[0].mediaUrl);assert.equal(chars[1].avatar,'other');assert.equal(notices.length,1);assert.equal(apply('s1','c1','i1'),false);
+assert.equal(apply('s1','c1','i1'),true);assert.equal(chars[0].avatar,history[0].mediaUrl);assert.equal(chars[1].avatar,'other');assert.equal(notices.filter(m=>m.content==='A 更换了头像').length,1);assert.equal(apply('s1','c1','i1'),false);
 history=[photo('不要换头像')];issue();assert.equal(apply('s1','c1','i1'),false);
 history=[photo()];build('s1','c1',history,[{...history[0],mediaUrl:undefined}],true);assert.equal(apply('s1','c1','i1'),false);
 issue();history[0].isRetracted=true;assert.equal(apply('s1','c1','i1'),false);
 history=[photo()];issue();history[0].mediaUrl='data:image/png;base64,BB==';assert.equal(apply('s1','c1','i1'),false);
 history=[{...photo(),sessionId:'g1',mediaUrl:'data:image/png;base64,CC=='}];build('g1','c2',history,history.map(x=>({...x})),true);assert.equal(apply('g1','c2','i1'),true);assert.equal(chars[1].avatar,history[0].mediaUrl);
 console.log('PASS: non-avatar photos, no vision, missing image, fabricated ID, cross-character, retraction, changed source, replay rejected; private/group self-avatar updates and notice.');
+// Fresh per-scenario stores ensure negative tests are not merely passing because
+// an earlier turn was consumed. Also covers repeated private/group-style turns.
+require('./check-chat-avatar-group-rounds.cjs');

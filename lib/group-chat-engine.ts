@@ -6,7 +6,7 @@ import { extractTextToolDirectiveText } from "./text-tool-protocol";
 import type { ApiConfig, PresetConfig, RegexConfig } from "./settings-types";
 import { loadCharacters } from "./character-storage";
 import { buildGroupTapbackPrompt } from "./chat-tapback";
-import { buildAvatarActionPrompt } from "./chat-avatar-action";
+import { buildAvatarActionPrompt, buildGroupAvatarContext, getAvatarVisionPromptLimit } from "./chat-avatar-action";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
 import { runChatPluginTransform } from "./chat-plugin-hooks";
 import { buildChatPluginPromptFragments } from "./chat-plugin-storage";
@@ -402,7 +402,7 @@ async function buildGroupChatPromptMessages(
     });
     const promptHistory = applyVisionImagePromptLimit(
         truncatedAnnotatedHistory.map(msg => ({ ...msg })),
-        session.visionImagePromptLimit,
+        getAvatarVisionPromptLimit(history, session.visionImagePromptLimit, config.enableImageRecognition === true && !isOfflineMode),
     );
     if (config.enableImageRecognition) {
         for (const msg of promptHistory) {
@@ -410,7 +410,8 @@ async function buildGroupChatPromptMessages(
         }
     }
 
-    const avatarInstructions = members.map(m => `${m.character.name}：${buildAvatarActionPrompt(session.id, m.character.id, history, promptHistory, config.enableImageRecognition === true && !isOfflineMode)}`).join("\n");
+    const sharedAvatarContext = buildGroupAvatarContext(session.id, history, promptHistory, config.enableImageRecognition === true && !isOfflineMode);
+    const avatarInstructions = sharedAvatarContext + "\n群聊换头像按成员独立执行，不是全群只能换一次。用户邀请多人时，每个人各自判断；决定换的成员必须在自己的 [角色名]: 发言段内分别输出 [Avatar:候选ID]。不能由一个人的指令代替其他人，也不能因为以前换过就省略本轮指令。\n" + members.map(m => `${m.character.name}：${buildAvatarActionPrompt(session.id, m.character.id, history, promptHistory, config.enableImageRecognition === true && !isOfflineMode)}`).join("\n");
     const stickerRows = members.map(m => {
         const names = loadCustomStickers(m.character.id).map(sticker => sticker.name).filter(Boolean);
         return `${m.character.name}：${names.length > 0 ? names.join("，") : "无"}`;
