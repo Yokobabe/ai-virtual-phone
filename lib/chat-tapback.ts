@@ -4,12 +4,28 @@ import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 export type MessageTapback = string;
 export type GroupTapback = { actorId: string; actorName: string; emoji: string };
 
+/** Untrusted/older backups must not crash the reaction menu or renderer. Last entry per actor wins. */
+export function normalizeGroupTapbacks(value: unknown): GroupTapback[] {
+    if (!Array.isArray(value)) return [];
+    const actors = new Map<string, GroupTapback>();
+    for (const item of value) {
+        if (!item || typeof item.actorId !== "string" || !item.actorId.trim() || typeof item.emoji !== "string") continue;
+        const emoji = getTapbackGlyph(item.emoji);
+        if (!isNativeTapbackEmoji(emoji)) continue;
+        const actorId = item.actorId.trim();
+        actors.set(actorId, { actorId, actorName: typeof item.actorName === "string" && item.actorName.trim() ? item.actorName : actorId === "self" ? "你" : "群成员", emoji });
+    }
+    return [...actors.values()];
+}
+
 export function getGroupTapbacks(message: ChatMessage): GroupTapback[] {
-    if (message.mediaData?.tapbacks) return message.mediaData.tapbacks;
+    if (Array.isArray(message.mediaData?.tapbacks)) return normalizeGroupTapbacks(message.mediaData.tapbacks);
     return message.mediaData?.tapback ? [{ actorId: message.mediaData.tapbackBy === "assistant" ? "legacy-assistant" : "self", actorName: message.mediaData.tapbackBy === "assistant" ? "角色" : "你", emoji: getTapbackGlyph(message.mediaData.tapback) }] : [];
 }
 
 export function setGroupTapback(sessionId: string, messageId: string, actor: { actorId: string; actorName: string }, emoji: string, toggle = false): ChatMessage | null {
+    emoji = getTapbackGlyph(emoji);
+    if (!actor.actorId?.trim()) return null;
     if (!isNativeTapbackEmoji(emoji)) return null;
     const message = loadChatMessages(sessionId).find(item => item.id === messageId && !item.isRetracted);
     if (!message) return null;
@@ -81,8 +97,8 @@ function normalizeCandidateGlyph(value: unknown): string {
 /** A single native emoji, including skin tones, flags and joined families. */
 export function isNativeTapbackEmoji(value: string): boolean {
     if (!value || value.length > 32) return false;
-    const segments = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)];
-    return segments.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\uFE0F?\u20E3/u.test(value);
+    // Match one emoji sequence without requiring Intl.Segmenter (missing on older mobile WebViews).
+    return /^(?:\p{Regional_Indicator}{2}|[0-9#*]\uFE0F?\u20E3|\p{Extended_Pictographic}\uFE0F?[\u{1F3FB}-\u{1F3FF}]?(?:[\u{E0020}-\u{E007E}]+\u{E007F})?(?:\u200D\p{Extended_Pictographic}\uFE0F?[\u{1F3FB}-\u{1F3FF}]?)*)$/u.test(value);
 }
 
 export function loadIMessageTapbacks(): IMessageTapbackCandidate[] {

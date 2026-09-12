@@ -18,6 +18,7 @@ import {
     getLatestCharacterStateValues,
 } from "./chat-storage";
 import type { ChatMessage, StateValue } from "./chat-storage";
+import { applyAvatarAction } from "./chat-avatar-action";
 import { generateChatCompletion, flattenCompletionResult } from "./chat-engine";
 import { armFollowUpBailout, armIdleReconnectBailout, cancelBailoutKey, cancelBailoutPrefix, cancelFollowUpBailout, startBailoutHeartbeat } from "./push-bailout-client";
 import { isWithinPushQuietHours } from "./push-client";
@@ -930,6 +931,11 @@ export async function parseAndSaveResponse(
     for (const p of parts) {
         if (p.mediaType === "voice_call") { triggerCall = "voice"; continue; }
         if (p.mediaType === "video_call") { triggerCall = "video"; continue; }
+        if (p.mediaType === "avatar_action") {
+            const actorId = sess?.isGroup ? options?.senderCharacterId : sess?.contactId;
+            if (actorId) applyAvatarAction(sessionId, actorId, p.mediaData?.avatarImageId);
+            continue;
+        }
         if (p.mediaType === "tapback_action") {
             if (hasTapbackAction) continue;
             if (sess && (sess.isGroup

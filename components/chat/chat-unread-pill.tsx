@@ -33,6 +33,6 @@ export function ChatUnreadPill({ sessionId, onBack }: { sessionId: string; onBac
     return <button ref={host} type="button" className="imessage-header-button imessage-header-back" data-has-unread={count > 0 || undefined} onClick={onBack} aria-label={count > 0 ? `返回，其他会话有 ${count} 条未读消息` : "返回"}>
         <ChevronLeft size={29} strokeWidth={2.15} />
         {count > 0 && <span className="chat-unread-pill">
-        <svg width={width} height="22" aria-hidden="true"><defs><mask id={maskId}><rect width="100%" height="100%" rx="11" fill="white"/><text x="50%" y="50%" dy=".35em" textAnchor="middle" fill="black" fontSize="12" fontWeight="600">{label}</text></mask></defs><rect width="100%" height="100%" rx="11" fill="currentColor" mask={`url(#${maskId})`}/></svg>
+        <svg width={width} height="22" aria-hidden="true"><defs><mask id={maskId}><rect width="100%" height="100%" rx="11" fill="white"/><text x="50%" y="50%" dy=".35em" textAnchor="middle" fill="black" fontSize="12" fontWeight="600">{label}</text></mask></defs><rect className="chat-unread-day" width="100%" height="100%" rx="11" fill="currentColor" mask={`url(#${maskId})`}/><g className="chat-unread-night"><rect width="100%" height="100%" rx="11" fill="#3a3a3c"/><text x="50%" y="50%" dy=".35em" textAnchor="middle" fill="#fff" fontSize="12" fontWeight="600">{label}</text></g></svg>
     </span>}</button>;
 }

@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMusicControlsOptional } from "@/lib/music-context";
+import { MusicMarquee } from "@/components/widgets/music-marquee";
 
 const DRAG_START_THRESHOLD = 6;
 const SWIPE_DISMISS_EDGE_X = 4;
@@ -160,9 +161,23 @@ export default function MusicFloat({ hidden }: { hidden?: boolean }) {
     }, [player, clampPos, dismissFloat]);
 
     const handlePointerUp = useCallback((e: React.PointerEvent) => finishPointer(e), [finishPointer]);
-    const handlePointerCancel = useCallback((e: React.PointerEvent) => finishPointer(e), [finishPointer]);
+    const handlePointerCancel = useCallback(() => {
+        dragRef.current.active = false;
+        dragRef.current.pointerId = null;
+    }, []);
 
-    if (!player || !player.currentTrack || hidden || player.floatDismissed) return null;
+    // Re-clamp after the expanded width settles, including on viewport resize.
+    useEffect(() => {
+        const element = floatRef.current;
+        if (!element) return;
+        const observer = new ResizeObserver(() => setPos(p => clampPos(p.x, p.y)));
+        observer.observe(element);
+        const parent = element.closest("[data-ui='phone-screen']");
+        if (parent) observer.observe(parent);
+        return () => observer.disconnect();
+    }, [clampPos, expanded, hidden, player?.floatEnabled, player?.floatDismissed, player?.currentTrack?.id]);
+
+    if (!player || !player.currentTrack || hidden || player.floatDismissed || !player.floatEnabled) return null;
 
     const track = player.currentTrack;
 
@@ -198,18 +213,18 @@ export default function MusicFloat({ hidden }: { hidden?: boolean }) {
 
                 {/* Track Info */}
                 <div className="music-float-info">
-                    <div className="music-float-title">{track.title}</div>
+                    <div className="music-float-title"><MusicMarquee text={track.title} /></div>
                     <div className="music-float-artist">{track.artist}</div>
                 </div>
 
                 {/* Compact Controls */}
                 <div className="music-float-controls">
-                    <button className="music-float-btn" onClick={(e) => { e.stopPropagation(); player.prev(); }}>
+                    <button tabIndex={expanded ? 0 : -1} aria-label="上一首" className="music-float-btn" onClick={(e) => { e.stopPropagation(); player.prev(); }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
                         </svg>
                     </button>
-                    <button className="music-float-btn music-float-btn-play" onClick={(e) => { e.stopPropagation(); player.togglePlay(); }}>
+                    <button tabIndex={expanded ? 0 : -1} aria-label={player.isPlaying ? "暂停" : "播放"} className="music-float-btn music-float-btn-play" onClick={(e) => { e.stopPropagation(); player.togglePlay(); }}>
                         {player.isPlaying ? (
                             <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M6 4h4v16H6zm8 0h4v16h-4z" />
@@ -220,12 +235,13 @@ export default function MusicFloat({ hidden }: { hidden?: boolean }) {
                             </svg>
                         )}
                     </button>
-                    <button className="music-float-btn" onClick={(e) => { e.stopPropagation(); player.next(); }}>
+                    <button tabIndex={expanded ? 0 : -1} aria-label="下一首" className="music-float-btn" onClick={(e) => { e.stopPropagation(); player.next(); }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M6 18l8.5-6L6 6v12zm8.5 0h2V6h-2v12z" />
                         </svg>
                     </button>
                 </div>
+                {expanded && <button className="music-float-btn music-float-hide" aria-label="关闭浮窗，继续播放" title="关闭浮窗，继续播放（可在音乐设置中开启）" onClick={() => player.setFloatEnabled(false)}>×</button>}
             </div>
         </div>
     );

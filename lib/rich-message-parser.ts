@@ -198,6 +198,10 @@ const RICH_PATTERNS: {
         }),
     },
     {
+        regex: new RegExp(`\\[Avatar${C}([^\\]]+)\\]`, "i"),
+        build: (m) => ({ content: "", mediaType: "avatar_action" as const, mediaData: { avatarImageId: m[1]?.trim() || "" } }),
+    },
+    {
         // Real iMessage Tapback action: attaches to the latest eligible user message.
         regex: new RegExp(`\\[Tapback${C}([^\\]]+)\\]`, "i"),
         build: (m) => ({

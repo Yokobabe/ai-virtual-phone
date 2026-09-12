@@ -1506,7 +1506,7 @@ export function ChatSettingsPanel({
 
             {/* Sub-page: Tapback candidates */}
             {editingTapbacks && (
-                <div style={{ position: "absolute", inset: 0, zIndex: 9999, background: "#ffffff" }}>
+                <div style={{ position: "absolute", inset: 0, zIndex: 9999, background: "var(--settings-bg)" }}>
                     <div style={{ position: "absolute", inset: 0, background: "var(--c-page-body-bg)" }}>
                         <PageShell title="Tapback 候选" onBack={() => setEditingTapbacks(false)}>
                             <div className="theme-section-page">
@@ -1574,7 +1574,7 @@ export function ChatSettingsPanel({
 
             {/* Sub-page: Custom CSS */}
             {editingCSS && (
-                <div style={{ position: "absolute", inset: 0, zIndex: 9999, background: "#ffffff" }}>
+                <div style={{ position: "absolute", inset: 0, zIndex: 9999, background: "var(--settings-bg)" }}>
                 <div style={{ position: "absolute", inset: 0, background: "var(--c-page-body-bg)" }}>
                     <PageShell title="自定义 CSS" onBack={() => setEditingCSS(false)}>
                         <div className="theme-section-page">
@@ -1612,7 +1612,7 @@ export function ChatSettingsPanel({
 
             {/* Sub-page: Search History */}
             {showSearch && (
-                <div style={{ position: "absolute", inset: 0, zIndex: 9999, background: "#ffffff" }}>
+                <div style={{ position: "absolute", inset: 0, zIndex: 9999, background: "var(--settings-bg)" }}>
                 <div style={{ position: "absolute", inset: 0, background: "var(--c-page-body-bg)" }}>
                     <PageShell title="查找聊天记录" onBack={closeSearchPanel}>
                         <div className="px-4 pt-2 pb-3 flex items-center gap-2">

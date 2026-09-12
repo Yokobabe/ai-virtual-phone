@@ -5,10 +5,11 @@
   --settings-button-edge: rgba(255,255,255,.9);
   --c-text-title: var(--settings-ink); --c-text: var(--settings-ink); --c-icon: var(--settings-secondary);
   --c-input: var(--settings-control); --c-page-body-bg: var(--settings-bg);
+  --c-panel:var(--settings-card); --c-border:var(--settings-line); --c-panel-border:var(--settings-line);
   background: var(--settings-bg); color: var(--settings-ink); font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  .imessage-settings-page { --settings-bg:#000; --settings-card:#1c1c1e; --settings-ink:#f5f5f7; --settings-secondary:#98989e; --settings-line:rgba(235,235,245,.15); --settings-control:#303034; --settings-button-edge:rgba(255,255,255,.22); }
+  .imessage-settings-page { color-scheme:dark; --settings-bg:#000; --settings-card:#1c1c1e; --settings-ink:#f5f5f7; --settings-secondary:#98989e; --settings-line:rgba(235,235,245,.15); --settings-control:#303034; --settings-button-edge:rgba(255,255,255,.22); }
 }
 .imessage-settings-page .page-header { background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; border: 0; }
 .imessage-settings-page .page-header::before,.imessage-settings-page .page-header::after { content:none !important; }

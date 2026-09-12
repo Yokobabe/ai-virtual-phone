@@ -95,3 +95,53 @@ tapback.setGroupTapback('group', 'group-user', { actorId: 'self', actorName: '�
 assert.equal(messages[0].mediaData.tapbacks.length, 2);
 assert.equal(tapback.applyGroupAssistantTapback('group', 'hello', alice), null);
 console.log('PASS: independent group actors, replacement and user-only removal.');
+
+// Old/malformed records and duplicate actors cannot crash rendering or overwrite other actors.
+assert.equal(tapback.normalizeGroupTapbacks({length:2}).length,0);
+assert.equal(tapback.normalizeGroupTapbacks([null,{actorId:'a',emoji:'❤️'},{actorId:'a',emoji:'😂'},{actorId:'b',emoji:'👍'}]).length,2);
+assert.equal(tapback.normalizeGroupTapbacks([{actorId:'a',emoji:'heart'}])[0].emoji,'❤️');
+
+// Execute the actual streamed group save loop: Tapback must never become a stored action bubble.
+const room = fs.readFileSync(path.join(__dirname,'../components/chat/chat-room.tsx'),'utf8');
+const loopStart = room.indexOf('const parts = stripInvalidStickerParts(rawParts, senderInfo.characterId);');
+const loopEnd = room.indexOf('if (!savedAnyPart',loopStart);
+const loop = ts.transpileModule(room.slice(loopStart,loopEnd),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+messages=[{id:'target',role:'user',content:'早安'}];
+for(const actor of [alice,bob]) {
+  vm.runInNewContext(loop,{
+    rawParts:[{content:'',mediaType:'tapback_action',mediaData:{tapback:actor===alice?'❤️':'😂'}}],
+    stripInvalidStickerParts:p=>p,senderInfo:{characterId:actor.actorId,characterName:actor.actorName},
+    session:{id:'group',participantIds:['alice','bob']},generationGuard:{},throwIfGenerationStopped:()=>{},
+    isGroupMuted:()=>false,applyGroupAssistantTapback:tapback.applyGroupAssistantTapback,syncMessagesFromStorage:()=>{},
+    buildAssistantMessageDraft:()=>{throw new Error('Tap action must not be saved as a message');},
+  });
+}
+assert.equal(messages[0].mediaData.tapbacks.length,2);
+const projectionStart=room.indexOf('const projectedMediaData =');
+const projectionEnd=room.indexOf('projected.push(',projectionStart);
+const projectionContext={part:{content:'displayed'},base:messages[0]};
+vm.runInNewContext(ts.transpileModule(room.slice(projectionStart,projectionEnd)+'\nglobalThis.result=mediaData;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,projectionContext);
+assert.equal(projectionContext.result.tapbacks.length,2);
+console.log('PASS: actual streamed group save loop executes multiple actors; display projection retains reactions; malformed records are safe.');
+
+// Screenshot regression: repeated speaker sections, including a standalone Tapback section.
+const groupSource=fs.readFileSync(path.join(__dirname,'../lib/group-chat-engine.ts'),'utf8');
+const groupFunction=groupSource.match(/export function parseGroupChatResponse\([\s\S]*?\n\}/)[0];
+const groupContext={exports:{},stripGroupFinancialActionsForMetadataRepair:text=>text};
+vm.runInNewContext(ts.transpileModule(groupFunction,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,groupContext);
+const parser=load('lib/rich-message-parser.ts',{
+ './state-value-parser':load('lib/state-value-parser.ts'),
+ './action-parser':{stripActionShells:text=>text},
+ './text-tool-protocol':{stripTextToolDirectives:text=>text},
+ './custom-app-chat-directives':{loadCustomAppChatDirectives:()=>[]},
+});
+const sections=groupContext.exports.parseGroupChatResponse('[Oneone]: 我来，第一个是我\n\n[Oneone]: [Tapback:😘]\n\n[Twoo]: 你插什么队\n\n[Twoo]: [Tapback:🥹]',new Map([['Oneone','one'],['Twoo','two']]));
+messages=[{id:'screenshot-user',role:'user',content:'大家早安'}];
+for(const section of sections){
+ for(const part of parser.parseAIResponse(section.responseText,[]).parts){
+  if(part.mediaType==='tapback_action') tapback.applyGroupAssistantTapback('group',part.mediaData.tapback,{actorId:section.characterId,actorName:section.characterName});
+ }
+}
+assert.equal(messages[0].mediaData.tapbacks.length,2);
+assert.equal(messages[0].mediaData.tapbacks.find(r=>r.actorId==='one').emoji,'😘');
+console.log('PASS: screenshot-style standalone per-character Tapback sections parse and persist two distinct reactions.');

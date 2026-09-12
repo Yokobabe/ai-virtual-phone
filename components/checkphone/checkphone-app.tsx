@@ -719,7 +719,6 @@ export function CheckPhoneApp({ onClose }: CheckPhoneAppProps) {
                             <div className="cp-w-music-disc"></div>
                             <div className="cp-w-tone-arm"></div>
                           </div>
-                          <span className="cp-widget-label">Widgets</span>
                         </div>
                         
                         {/* Core Vitals Widget - 2x2 */}

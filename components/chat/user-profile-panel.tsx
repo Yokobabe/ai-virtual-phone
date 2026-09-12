@@ -35,6 +35,7 @@ import { addChatContact, createOrGetSession } from "@/lib/chat-storage";
 import { kvGet, kvSet, kvRemove } from "@/lib/kv-db";
 import { formatWalletAmount, getWalletBalance, loadWalletState, WALLET_UPDATED_EVENT } from "@/lib/wallet-storage";
 import { ChatFallbackAvatar } from "./chat-fallback-avatar";
+import { ProfileCover } from "./profile-cover";
 import {
     Loader2,
     Bell,
@@ -318,11 +319,12 @@ export function UserProfilePanel({ onClose, className }: UserProfilePanelProps) 
                     display: none;
                 }
             `}</style>
-            <PageShell title="" onBack={onClose} className={`user-profile-page-root ${className || ""}`}>
-                <div className="relative z-[1] w-full max-w-2xl mx-auto flex flex-col pb-8">
+            <PageShell title="" onBack={onClose} className={`user-profile-page-root apple-social-page ${className || ""}`}>
+                <div className="apple-profile-content relative z-[1] w-full max-w-2xl mx-auto flex flex-col pb-8">
                     
                     {/* User Info & Stats Block */}
-                    <div className="flex items-center gap-5 px-6 pt-2 pb-4">
+                    <div className="apple-profile-identity flex items-center gap-5 px-6 pt-2 pb-4">
+                        <ProfileCover />
                         {/* Avatar */}
                         <div className="relative shrink-0">
                             <div className="w-[84px] h-[84px] rounded-full overflow-hidden bg-[var(--c-card)] border-2 border-white/50 shadow-sm flex items-center justify-center relative"
@@ -336,23 +338,20 @@ export function UserProfilePanel({ onClose, className }: UserProfilePanelProps) 
                         </div>
 
                         {/* Info & Stats */}
-                        <div className="flex flex-col flex-1 justify-center gap-2">
+                        <div className="flex flex-col flex-1 min-w-0 justify-center gap-2">
                             {/* Top Row: Name and Identity Badge */}
-                            <div className="flex items-center justify-between w-full mb-0.5">
+                            <div className="apple-profile-name-row">
                                 <div className="ts-22 font-bold text-[var(--c-text-title)] leading-none truncate">{identity?.name || "未设置身份"}</div>
-                                <div className="flex items-center gap-1.5 ts-11 font-medium bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full shrink-0 text-[var(--c-text)] opacity-80">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
-                                    手机在线
-                                </div>
                             </div>
+                            {identity && <div className="apple-profile-id">ID：{identity.id}</div>}
 
                             {/* Data Stats inline */}
                             <div className="flex items-center justify-between w-full ts-12 text-[var(--c-text-title)] font-medium mt-0.5">
-                                <span className="opacity-80">Chatting <span className="font-bold opacity-100">{userStats.chats}</span></span>
+                                <span className="opacity-80">聊天 <span className="font-bold opacity-100">{userStats.chats}</span></span>
                                 <span className="opacity-20 text-[calc(10px*var(--app-text-scale,1))] transform scale-y-125">|</span>
-                                <span className="opacity-80">Moments <span className="font-bold opacity-100">{userStats.moments}</span></span>
+                                <span className="opacity-80">动态 <span className="font-bold opacity-100">{userStats.moments}</span></span>
                                 <span className="opacity-20 text-[calc(10px*var(--app-text-scale,1))] transform scale-y-125">|</span>
-                                <span className="opacity-80">Visitors <span className="font-bold opacity-100">{userStats.visitors}</span></span>
+                                <span className="opacity-80">访客 <span className="font-bold opacity-100">{userStats.visitors}</span></span>
                             </div>
                         </div>
                     </div>
@@ -361,16 +360,15 @@ export function UserProfilePanel({ onClose, className }: UserProfilePanelProps) 
 
                     <button
                         type="button"
-                        className="mx-4 mb-4 rounded-2xl overflow-hidden text-left relative min-h-[132px] p-5 flex flex-col justify-between"
+                        className="apple-profile-wallet mx-4 mb-4 rounded-2xl overflow-hidden text-left relative min-h-[132px] p-5 flex flex-col justify-between"
                         onClick={() => { window.dispatchEvent(new CustomEvent("chat-hide-tabbar", { detail: true })); setShowWalletPanel(true); }}
-                        style={{ background: "#eaf5ff", boxShadow: "0 8px 24px rgba(0,0,0,0.025)", border: "1px solid rgba(255,255,255,0.72)", color: "#172033" }}
                     >
                         <div className="relative flex items-start justify-between gap-4">
                             <div>
-                                <div className="ts-11 font-semibold opacity-70 tracking-[0.18em] uppercase">Real Balance</div>
-                                <div className="ts-30 font-semibold mt-2" style={{ fontFamily: "Georgia, serif" }}>{walletSummary.totalLabel}</div>
+                                <div className="ts-13 font-medium opacity-70">钱包余额</div>
+                                <div className="ts-30 font-semibold mt-2 apple-wallet-amount">{walletSummary.totalLabel}</div>
                             </div>
-                            <span className="ts-11 font-semibold opacity-70 tracking-[0.18em] shrink-0" style={{ color: "#172033" }}>{walletSummary.cardCount}张银行卡</span>
+                            <span className="ts-11 font-medium opacity-70 shrink-0">{walletSummary.cardCount}张银行卡</span>
                         </div>
                         <div className="relative flex items-center justify-between gap-3">
                             <span className="ts-12 opacity-75">余额管理 · 银行卡与流水</span>

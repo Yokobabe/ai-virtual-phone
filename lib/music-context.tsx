@@ -22,6 +22,7 @@ export type MusicState = {
     volume: number;
     showFullPlayer: boolean;
     floatDismissed: boolean;
+    floatEnabled: boolean;
 };
 
 export type MusicActions = {
@@ -39,6 +40,7 @@ export type MusicActions = {
     setVolume: (vol: number) => void;
     stop: () => void;
     dismissFloat: () => void;
+    setFloatEnabled: (enabled: boolean) => void;
     openFullPlayer: () => void;
     closeFullPlayer: () => void;
 };
@@ -73,6 +75,8 @@ export function useMusicControlsOptional(): MusicControlsValue | null {
 // ── Queue persistence ──
 
 const QUEUE_STORAGE_KEY = "ai_phone_music_queue_v1";
+const FLOAT_STORAGE_KEY = "ai_phone_music_float_enabled_v1";
+registerKvMigration(FLOAT_STORAGE_KEY);
 registerKvMigration(QUEUE_STORAGE_KEY);
 const QUEUE_MAX_SIZE = 200;
 
@@ -105,6 +109,12 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const [volume, setVolumeState] = useState(0.8);
     const [showFullPlayer, setShowFullPlayer] = useState(false);
     const [floatDismissed, setFloatDismissed] = useState(false);
+    const [floatEnabled, setFloatEnabledState] = useState(() => kvGet(FLOAT_STORAGE_KEY) !== "false");
+    const setFloatEnabled = useCallback((enabled: boolean) => {
+        setFloatEnabledState(enabled);
+        setFloatDismissed(false);
+        kvSet(FLOAT_STORAGE_KEY, String(enabled));
+    }, []);
 
     // Persist queue on change.
     useEffect(() => {
@@ -324,7 +334,6 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const dismissFloat = useCallback(() => {
-        audioRef.current?.pause();
         setFloatDismissed(true);
     }, []);
 
@@ -447,11 +456,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     ]);
 
     const controlsValue = useMemo<MusicControlsValue>(() => ({
-        currentTrack, isPlaying, duration, playMode, queue, volume, showFullPlayer, floatDismissed,
+        currentTrack, isPlaying, duration, playMode, queue, volume, showFullPlayer, floatDismissed, floatEnabled, setFloatEnabled,
         playTrack, playUrl, pause, resume, togglePlay, next, prev, seek,
         setPlayMode, setQueue, removeFromQueue, setVolume, stop, dismissFloat, openFullPlayer, closeFullPlayer,
     }), [
-        currentTrack, isPlaying, duration, playMode, queue, volume, showFullPlayer, floatDismissed,
+        currentTrack, isPlaying, duration, playMode, queue, volume, showFullPlayer, floatDismissed, floatEnabled, setFloatEnabled,
         playTrack, playUrl, pause, resume, togglePlay, next, prev, seek,
         setQueue, removeFromQueue, setVolume, stop, dismissFloat, openFullPlayer, closeFullPlayer,
     ]);

@@ -248,8 +248,8 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
                     </span>
                 }
             >
-                <div className="px-5 pt-5 pb-3">
-                    <div className="flex items-center justify-between mb-4 mt-2">
+                <div className="px-5 pt-1 pb-3">
+                    <div className="flex items-center justify-between mb-4">
                         <span className="ts-28 font-bold text-[var(--c-text-title)]">{{ all: "信息", private: "私聊", group: "群聊", unread: "未读消息" }[listTab]}</span>
                     </div>
                     <div className="chat-search-bar">
@@ -323,7 +323,7 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
 
             {/* Add Friend Search Modal */}
             {isSearchModalOpen && (
-                <div style={{ position: 'absolute', inset: 0, zIndex: 9999, background: '#ffffff' }}>
+                <div style={{ position: 'absolute', inset: 0, zIndex: 9999, background: 'var(--c-page-body-bg)' }}>
                 <div style={{ position: 'absolute', inset: 0, background: 'var(--c-page-body-bg)' }}>
                 <PageShell title="添加朋友" onBack={() => setIsSearchModalOpen(false)}>
 
@@ -389,7 +389,7 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
                                                     onSelectMascot();
                                                 }}
                                             >
-                                                <div className="add-friend-avatar" style={{ width: 36, height: 36, borderRadius: 8, overflow: "hidden", flexShrink: 0, background: "#fff" }}>
+                                                <div className="add-friend-avatar" style={{ width: 36, height: 36, borderRadius: 8, overflow: "hidden", flexShrink: 0, background: "var(--c-card)" }}>
                                                     <img src={mascotAvatarUrl} className="w-full h-full object-contain p-[2px]" alt="" />
                                                 </div>
                                                 <div className="menu-label-group" style={{ minWidth: 0 }}>

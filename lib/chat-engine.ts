@@ -89,6 +89,7 @@ import {
 } from "./bilingual-prompt-defaults";
 import { parseOfflineResponse, extractThinkingTag, type ParsedOfflineResponse } from "./chat-offline-storage";
 import { buildIMessageTapbackPromptInstruction } from "./chat-tapback";
+import { buildAvatarActionPrompt } from "./chat-avatar-action";
 import { throwIfAborted } from "./abort-utils";
 import { armShortcutContinuation, SHORTCUT_VISION_OFF_NOTE, type ShortcutContinuationHandle, type ShortcutContinuationStyle } from "./shortcut-continuation-client";
 
@@ -1861,6 +1862,7 @@ export async function buildChatPromptMessages(
         }
     }
 
+    const avatarInstruction = buildAvatarActionPrompt(session.id, character.id, history, promptHistory, config.enableImageRecognition === true && !isOfflineMode);
     const [memResults, coreResults, musicLocal, musicCloud] = await Promise.all([
         retrieveMemoriesForPrompt(character.id, wbActivationContext, memConfig).catch(() => null),
         retrieveCoreMemoriesForPrompt(character.id, memConfig).catch(() => null),
@@ -1941,7 +1943,7 @@ export async function buildChatPromptMessages(
     if (resolvedAppId === "chat" && !session.isGroup && !isOfflineMode) {
         llmMessages.push({
             role: "system",
-            content: buildIMessageTapbackPromptInstruction(),
+            content: buildIMessageTapbackPromptInstruction() + "\n" + avatarInstruction,
         });
     }
     if (promptProfile?.output === "plain_text") {

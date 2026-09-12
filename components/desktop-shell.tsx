@@ -3,6 +3,7 @@
 import { Component, memo, useCallback, useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react";
 
 import { updateStatusBarTone } from "@/lib/bg-tone";
+import { EdgeSwipeBack } from "@/components/ui/edge-swipe-back";
 import { startDiaryEntryTimerService, stopDiaryEntryTimerService } from "@/lib/diary-entry-timer-service";
 import { startFollowUpService, stopFollowUpService } from "@/lib/follow-up-service";
 import { startMomentsService, stopMomentsService } from "@/lib/moments-engine";
@@ -3710,6 +3711,9 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
 
     // 初始检测（延迟让 app 渲染完毕）
     detect();
+    // Refresh the browser canvas before opening the software keyboard, too.
+    const onKeyboardFocus = () => { void updateStatusBarTone(shell, activeApp); };
+    shell.addEventListener("focusin", onKeyboardFocus);
 
     // 监听 workspace 内 DOM 变化（如：进入聊天室、切换子页面）
     // 修复：仅当进入 App 时才监听，防止桌面组件（如时钟秒针更新）疯狂触发画布亮度计算导致严重发烫
@@ -3718,13 +3722,17 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
       const workspace = shell.querySelector(".phone-workspace");
       if (workspace) {
         observer = new MutationObserver(detect);
-        observer.observe(workspace, { childList: true, subtree: true });
+        observer.observe(workspace, {
+          childList: true, subtree: true, attributes: true,
+          attributeFilter: ["data-chat-dark", "data-has-bg-image"],
+        });
       }
     }
 
     return () => {
       clearTimeout(debounceTimer);
       observer?.disconnect();
+      shell.removeEventListener("focusin", onKeyboardFocus);
     };
   }, [
     activeApp,
@@ -4160,6 +4168,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
               } as React.CSSProperties}
             >
               <div className="phone-wallpaper" style={wallpaperStyle} />
+              <EdgeSwipeBack />
 
               <header className="phone-status-bar">
                 <StatusClock />

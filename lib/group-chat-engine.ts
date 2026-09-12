@@ -6,6 +6,7 @@ import { extractTextToolDirectiveText } from "./text-tool-protocol";
 import type { ApiConfig, PresetConfig, RegexConfig } from "./settings-types";
 import { loadCharacters } from "./character-storage";
 import { buildGroupTapbackPrompt } from "./chat-tapback";
+import { buildAvatarActionPrompt } from "./chat-avatar-action";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
 import { runChatPluginTransform } from "./chat-plugin-hooks";
 import { buildChatPluginPromptFragments } from "./chat-plugin-storage";
@@ -409,6 +410,7 @@ async function buildGroupChatPromptMessages(
         }
     }
 
+    const avatarInstructions = members.map(m => `${m.character.name}：${buildAvatarActionPrompt(session.id, m.character.id, history, promptHistory, config.enableImageRecognition === true && !isOfflineMode)}`).join("\n");
     const stickerRows = members.map(m => {
         const names = loadCustomStickers(m.character.id).map(sticker => sticker.name).filter(Boolean);
         return `${m.character.name}：${names.length > 0 ? names.join("，") : "无"}`;
@@ -494,7 +496,7 @@ async function buildGroupChatPromptMessages(
         offlineSummaryTag: preset?.story_summary_tag?.trim() || "summary",
         nativeToolHistory: usesNativeActions,
     });
-    if (!isOfflineMode) llmMessages.push({ role: "system", content: buildGroupTapbackPrompt() });
+    if (!isOfflineMode) llmMessages.push({ role: "system", content: buildGroupTapbackPrompt() + "\n" + avatarInstructions });
     if (promptProfile?.output === "plain_text") {
         llmMessages.push({
             role: "system",

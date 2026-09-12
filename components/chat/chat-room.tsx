@@ -6,6 +6,8 @@ import { cleanStreamText, splitStreamPreviewSegments, stripLiteralTexts, stripXm
 import type { StateValue } from "@/lib/chat-storage";
 import { parseStateValues, mergeStateValues } from "@/lib/state-value-parser";
 import { parseAIResponse, type ParsedMessagePart } from "@/lib/rich-message-parser";
+import { applyAvatarAction } from "@/lib/chat-avatar-action";
+import { useChatCharacter } from "./use-chat-character";
 import { isKnownStickerLabel } from "@/lib/sticker-data";
 import { translateReasoningText } from "@/lib/reasoning-translate";
 import { MessageBubble, MediaDetailModal, prewarmStickerCache, BilingualTextBlock, isStandaloneHtmlPreviewContent, normalizeTextBubbleContent } from "./message-bubble";
@@ -117,7 +119,7 @@ function isCallSysMsg(msg: ChatMessage): boolean {
     return CALL_SYS_RE.test(msg.content);
 }
 /** Returns the effective UI role: call messages render as "system" regardless of stored role */
-const ACTION_MEDIA_TYPES = new Set(["poke", "tapback_action", "accept_red_packet", "decline_red_packet", "accept_transfer", "decline_transfer", "accept_payment_request", "decline_payment_request", "group_admin_notice"]);
+const ACTION_MEDIA_TYPES = new Set(["poke", "tapback_action", "avatar_action", "accept_red_packet", "decline_red_packet", "accept_transfer", "decline_transfer", "accept_payment_request", "decline_payment_request", "group_admin_notice"]);
 // 拍一拍/群管理通知/通话留痕渲染成灰色系统小字，没有 💭 面板入口——
 // 状态栏/内心独白/状态值挂上去会被显示层吞掉，挂载时必须跳过它们
 function canCarryFoldedPanel(part: { content?: string; mediaType?: ChatMessage["mediaType"] }): boolean {
@@ -1188,10 +1190,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [transientMessages, setTransientMessages] = useState<ChatMessage[]>([]);
     const [stickerReady, setStickerReady] = useState(false);
-    const [character, setCharacter] = useState<Character | null>(() => {
-        const chars = loadCharacters();
-        return chars.find(c => c.id === session.contactId) || null;
-    });
+    const character = useChatCharacter(session.contactId);
     const [isGenerating, setIsGenerating] = useState(false);
     const [offlineMode, setOfflineMode] = useState(false);
     const [theaterMode, setTheaterMode] = useState(() => kvGet(CHAT_THEATER_MODE_PREFIX + session.id) === "1");
@@ -1793,15 +1792,16 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
     const [groupIdentityRevision, setGroupIdentityRevision] = useState(0);
     useEffect(() => {
-        if (!session.isGroup) return;
-        const refresh = () => setGroupIdentityRevision(value => value + 1);
+        const refresh = () => {
+            setGroupIdentityRevision(value => value + 1);
+        };
         window.addEventListener("chat-characters-updated", refresh);
         window.addEventListener("focus", refresh);
         return () => {
             window.removeEventListener("chat-characters-updated", refresh);
             window.removeEventListener("focus", refresh);
         };
-    }, [session.isGroup]);
+    }, [session.isGroup, session.contactId]);
     const groupPrivateAliases = new Map(session.isGroup
         ? loadChatSessions().filter(s => !s.isGroup && s.alias?.trim()).map(s => [s.contactId, s.alias!.trim()])
         : []);
@@ -2681,6 +2681,11 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             let savedAnyPart = false;
             for (const part of parts) {
                 throwIfGenerationStopped(guard);
+                if (part.mediaType === "avatar_action") {
+                    applyAvatarAction(session.id, r.characterId, part.mediaData?.avatarImageId);
+                    syncMessagesFromStorage();
+                    continue;
+                }
                 if (part.mediaType === "tapback_action") {
                     if (!reactedCharacters.has(r.characterId) && applyGroupAssistantTapback(session.id, part.mediaData?.tapback, { actorId: r.characterId, actorName: r.characterName })) {
                         reactedCharacters.add(r.characterId);
@@ -3103,6 +3108,11 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             throwIfGenerationStopped(options);
             if (p.mediaType === "voice_call") { triggerCall = "voice"; continue; }
             if (p.mediaType === "video_call") { triggerCall = "video"; continue; }
+            if (p.mediaType === "avatar_action") {
+                applyAvatarAction(session.id, session.contactId, p.mediaData?.avatarImageId);
+                setMessages(loadChatMessages(session.id));
+                continue;
+            }
             if (p.mediaType === "tapback_action") {
                 if (hasTapbackAction) continue;
                 const updatedTarget = applyAssistantTapback(session.id, p.mediaData?.tapback);
@@ -3897,8 +3907,24 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                         const parts = stripInvalidStickerParts(rawParts, senderInfo.characterId);
                         let attachedState = false;
                         let savedAnyPart = false;
+                        let appliedTapback = false;
                         for (const part of parts) {
                             throwIfGenerationStopped(generationGuard);
+                            // Streamed tool rounds must execute the action rather than save an invisible bubble.
+                            if (part.mediaType === "avatar_action") {
+                                if (!isGroupMuted(session, senderInfo.characterId)) applyAvatarAction(session.id, senderInfo.characterId, part.mediaData?.avatarImageId);
+                                syncMessagesFromStorage();
+                                continue;
+                            }
+                            if (part.mediaType === "tapback_action") {
+                                if (!appliedTapback && session.participantIds?.includes(senderInfo.characterId)
+                                    && !isGroupMuted(session, senderInfo.characterId)
+                                    && applyGroupAssistantTapback(session.id, part.mediaData?.tapback, { actorId: senderInfo.characterId, actorName: senderInfo.characterName })) {
+                                    appliedTapback = true;
+                                    syncMessagesFromStorage();
+                                }
+                                continue;
+                            }
                             if (!part.content.trim() && !part.mediaType) continue;
                             const draft = buildAssistantMessageDraft(part, {
                                 sessionId: session.id,
@@ -5549,9 +5575,15 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 // 语音条的 mediaData 里存着播放必需的状态（synthesizedFromText/voiceDuration），
                 // 直接用重解析结果整体替换会把它们丢掉，导致气泡永远判定"待重合成"而点不响。
                 // 双方都是语音条时按存储值打底、重解析字段覆盖。
-                const mediaData = part.mediaType === "audio" && base.mediaType === "audio" && base.mediaData
+                const projectedMediaData = part.mediaType === "audio" && base.mediaType === "audio" && base.mediaData
                     ? { ...base.mediaData, ...part.mediaData }
                     : part.mediaData;
+                // Display regex parsing cannot replace persisted interaction state.
+                const mediaData = { ...projectedMediaData,
+                    tapback: base.mediaData?.tapback,
+                    tapbackBy: base.mediaData?.tapbackBy,
+                    tapbacks: base.mediaData?.tapbacks,
+                };
                 projected.push({
                     ...base,
                     id,

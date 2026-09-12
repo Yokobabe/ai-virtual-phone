@@ -418,12 +418,6 @@ export default function MusicApp({ onClose }: Props) {
             <div className="music-bottom-dock">
             {player.currentTrack && (
                 <div className="music-now-bar" onClick={player.openFullPlayer}>
-                    <div className="music-birds">
-                        <img src="/birds/小鸟1.png" className="music-bird bird-1" alt="bird" />
-                        <img src="/birds/小鸟2.png" className="music-bird bird-2" alt="bird" />
-                        <img src="/birds/小鸟3.png" className="music-bird bird-3" alt="bird" />
-                        <img src="/birds/小鸟4.png" className="music-bird bird-4" alt="bird" />
-                    </div>
                     <div className="music-now-bar-cover" {...(player.isPlaying ? { "data-playing": "" } : {})}>
                         {player.currentTrack.coverUrl ? (
                             <img src={player.currentTrack.coverUrl} alt="" />
@@ -1497,6 +1491,7 @@ function PlaylistsTab({ player, formatTime, onPlayNetease, onPlayAll, activePlay
 
 // ── Settings Tab ──
 function MusicSettingsTab({ onBack, onSaved }: { onBack: () => void; onSaved: () => void }) {
+    const player = useMusicControls();
     const [config, setConfig] = useState<MusicApiConfig>(() => loadMusicApiConfig());
     const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
     const [testing, setTesting] = useState(false);
@@ -1665,6 +1660,13 @@ function MusicSettingsTab({ onBack, onSaved }: { onBack: () => void; onSaved: ()
             </div>
 
             <div className="music-settings-body">
+                <div className="music-settings-section">
+                    <div className="music-settings-label">悬浮播放器</div>
+                    <div className="music-settings-hint">关闭后音乐继续播放，桌面组件仍可控制。选择自动保存。</div>
+                    <button className="music-settings-btn" role="switch" aria-label="悬浮播放器" aria-checked={player.floatEnabled} onClick={() => player.setFloatEnabled(!player.floatEnabled)}>
+                        {player.floatEnabled ? "已开启 · 点击关闭" : "已关闭 · 点击开启"}
+                    </button>
+                </div>
                 <div className="music-settings-section">
                     <div className="music-settings-label">网易云 API 地址</div>
                     <div className="music-settings-hint">默认使用公共服务，也可以改成自己的 NeteaseCloudMusicApi 地址</div>

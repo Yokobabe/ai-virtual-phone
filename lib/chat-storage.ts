@@ -102,6 +102,7 @@ export type ChatMessage = {
         | "red_packet" | "transfer" | "location"
         | "poke" | "sticker" | "quote" | "dice"
         | "tapback_action"
+        | "avatar_action"
         | "voice_call" | "video_call"
         | "accept_red_packet" | "decline_red_packet" | "accept_transfer" | "decline_transfer"
         | "payment_request" | "accept_payment_request" | "decline_payment_request"
@@ -131,6 +132,7 @@ export type ChatMessage = {
         quoteRole?: ChatMessageRole; // 引用消息的 role
         /** Unicode emoji; rendered with the device's native emoji font. */
         tapback?: string;
+        avatarImageId?: string;
         tapbackBy?: "user" | "assistant";
         tapbacks?: Array<{ actorId: string; actorName: string; emoji: string }>;
         stickerUrl?: string;      // 表情包图片路径
