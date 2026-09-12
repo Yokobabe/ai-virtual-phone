@@ -62,6 +62,7 @@ export function cleanStreamText(raw: string, options?: { stripXmlTags?: readonly
     const incompleteTool = text.match(TOOL_DIRECTIVE_START_RE);
     if (incompleteTool?.index !== undefined) text = text.slice(0, incompleteTool.index);
     // 富媒体完整标签显示为附件占位；尚未闭合时也隐藏协议正文。
+    text = text.replace(/\[Tapback\s*[:：][^\]]*(?:\]|$)/gi, "");
     text = text.replace(MEDIA_DIRECTIVE_RE, "📎 ");
     text = text.replace(INCOMPLETE_MEDIA_DIRECTIVE_RE, "📎 ");
     // Tapback is a side effect on an existing message, never a preview bubble.

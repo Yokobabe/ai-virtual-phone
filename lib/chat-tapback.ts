@@ -2,6 +2,41 @@ import { getChatMessagePreview, loadChatMessages, updateMessageMediaData, type C
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 
 export type MessageTapback = string;
+export type GroupTapback = { actorId: string; actorName: string; emoji: string };
+
+export function getGroupTapbacks(message: ChatMessage): GroupTapback[] {
+    if (message.mediaData?.tapbacks) return message.mediaData.tapbacks;
+    return message.mediaData?.tapback ? [{ actorId: message.mediaData.tapbackBy === "assistant" ? "legacy-assistant" : "self", actorName: message.mediaData.tapbackBy === "assistant" ? "角色" : "你", emoji: getTapbackGlyph(message.mediaData.tapback) }] : [];
+}
+
+export function setGroupTapback(sessionId: string, messageId: string, actor: { actorId: string; actorName: string }, emoji: string, toggle = false): ChatMessage | null {
+    if (!isNativeTapbackEmoji(emoji)) return null;
+    const message = loadChatMessages(sessionId).find(item => item.id === messageId && !item.isRetracted);
+    if (!message) return null;
+    const existing = getGroupTapbacks(message);
+    const remove = toggle && existing.some(item => item.actorId === actor.actorId && item.emoji === emoji);
+    const tapbacks = existing.filter(item => item.actorId !== actor.actorId);
+    if (!remove) tapbacks.push({ ...actor, emoji });
+    const mediaData = { ...message.mediaData, tapbacks };
+    delete mediaData.tapback; delete mediaData.tapbackBy;
+    updateMessageMediaData(message.id, mediaData);
+    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(IMESSAGE_TAPBACK_APPLIED_EVENT, { detail: { sessionId, messageId } }));
+    return { ...message, mediaData };
+}
+
+export function applyGroupAssistantTapback(sessionId: string, action: string | undefined, actor: { actorId: string; actorName: string }): ChatMessage | null {
+    const [emoji, hint = ""] = (action || "").split("|").map(item => item.trim());
+    const target = [...loadChatMessages(sessionId)].reverse().find(message =>
+        !message.isRetracted && (message.role === "user" || message.role === "assistant") && message.senderCharacterId !== actor.actorId
+        && (!message.mediaType || !NON_TAPBACK_TARGET_MEDIA.has(message.mediaType))
+        && Boolean(message.content.trim() || message.mediaType)
+        && (hint === "replace" ? getGroupTapbacks(message).some(item => item.actorId === actor.actorId) : hint ? message.id === hint : message.role === "user"));
+    return target ? setGroupTapback(sessionId, target.id, actor, getTapbackGlyph(emoji)) : null;
+}
+
+export function buildGroupTapbackPrompt(): string {
+    return "群聊 Tapback 是可选的真实回应，不是每个人每轮必做。你可以在自己的 [角色名]: 段落内输出 [Tapback:单个emoji] 回应最新用户消息。用 [Tapback:单个emoji|replace] 更换你上次的回应。每个角色每轮最多一次，每条消息每人一个，彼此互不覆盖。可选任意Unicode emoji，按语境选择；只说换好了不算执行，必须输出标记。";
+}
 export type IMessageTapbackCandidate = { id: MessageTapback; glyph: string; label: string };
 
 export const IMESSAGE_TAPBACKS: ReadonlyArray<IMessageTapbackCandidate> = [
@@ -109,11 +144,15 @@ const NON_TAPBACK_TARGET_MEDIA = new Set<NonNullable<ChatMessage["mediaType"]>>(
 
 /** Apply a model-authored Tapback to the latest eligible user message. */
 export function applyAssistantTapback(sessionId: string, requestedTapback: string | undefined): ChatMessage | null {
-    const requested = getTapbackGlyph(normalizeCandidateGlyph(requestedTapback));
+    const [glyph, targetHint = ""] = (requestedTapback || "").split("|").map(value => value.trim());
+    const requested = getTapbackGlyph(normalizeCandidateGlyph(glyph));
     if (!isNativeTapbackEmoji(requested)) return null;
 
     const target = [...loadChatMessages(sessionId)].reverse().find(message => (
         message.role === "user"
+        && (!targetHint || (targetHint === "replace"
+            ? message.mediaData?.tapbackBy === "assistant" && Boolean(message.mediaData?.tapback)
+            : message.id === targetHint))
         && !message.isRetracted
         && (!message.mediaType || !NON_TAPBACK_TARGET_MEDIA.has(message.mediaType))
         && Boolean(message.content.trim() || message.mediaType || getChatMessagePreview(message))
@@ -136,5 +175,7 @@ export function buildIMessageTapbackPromptInstruction(): string {
         "正常交流通常直接回复文字即可，不需要附带 Tapback；它不是每轮任务，也不是固定的开场或结尾。用户给你 Tapback 不代表你必须回一个。",
         "仅当你确实想对用户最新一条消息做简短的情绪反应时，才输出独立标记 [Tapback:单个emoji]。它会真实贴在该消息上。每轮最多一次，也可以完全不使用。",
         "可使用任意一个标准 Unicode emoji，不受用户快捷候选栏限制。根据那条消息的具体语义、你的性格与当下情绪选择；不要机械沿用上一轮的表情，也不要为追求变化而强行轮换。",
+        "用户要求更换你之前的回应时，输出 [Tapback:新的emoji|replace]，会替换你最近一次已有的回应，而不是贴到用户刚发的更换要求上。若指定历史中某条已回应的消息，可用 [Tapback:新的emoji|消息ID] 精确替换。",
+        "例如把刚才的爱心换成亲吻，真正的动作是 [Tapback:😘|replace]。只在文字里说‘换好了’、描述动作或单独发emoji都不会改变Tapback；决定执行时必须输出动作标记，不要只口头承诺。无需为了展示能力而每轮使用。",
     ].join("\n");
 }

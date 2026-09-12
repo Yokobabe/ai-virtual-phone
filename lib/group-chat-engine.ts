@@ -5,6 +5,7 @@ import { ChatSession, ChatMessage, loadChatAppSettings, createResponseBatchId, c
 import { extractTextToolDirectiveText } from "./text-tool-protocol";
 import type { ApiConfig, PresetConfig, RegexConfig } from "./settings-types";
 import { loadCharacters } from "./character-storage";
+import { buildGroupTapbackPrompt } from "./chat-tapback";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
 import { runChatPluginTransform } from "./chat-plugin-hooks";
 import { buildChatPluginPromptFragments } from "./chat-plugin-storage";
@@ -493,6 +494,7 @@ async function buildGroupChatPromptMessages(
         offlineSummaryTag: preset?.story_summary_tag?.trim() || "summary",
         nativeToolHistory: usesNativeActions,
     });
+    if (!isOfflineMode) llmMessages.push({ role: "system", content: buildGroupTapbackPrompt() });
     if (promptProfile?.output === "plain_text") {
         llmMessages.push({
             role: "system",

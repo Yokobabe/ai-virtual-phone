@@ -1,11 +1,16 @@
-import { getTapbackGlyph, getTapbackLabel } from "@/lib/chat-tapback";
+import { getTapbackGlyph, getTapbackLabel, type GroupTapback } from "@/lib/chat-tapback";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 
 interface IMessageTapbackBadgeProps {
-    tapback: string;
+    tapback?: string;
     tapbackBy?: "user" | "assistant";
+    reactions?: GroupTapback[];
 }
 
-export function IMessageTapbackBadge({ tapback, tapbackBy = "user" }: IMessageTapbackBadgeProps) {
+export function IMessageTapbackBadge({ tapback, tapbackBy = "user", reactions }: IMessageTapbackBadgeProps) {
+    if (reactions?.length) return <GroupTapbackStack reactions={reactions} />;
+    if (!tapback) return null;
     return (
         <span
             className="imessage-tapback-badge"
@@ -27,4 +32,31 @@ export function IMessageTapbackBadge({ tapback, tapbackBy = "user" }: IMessageTa
             </span>
         </span>
     );
+}
+
+function GroupTapbackStack({ reactions }: { reactions: GroupTapback[] }) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLButtonElement>(null);
+    const closeRef = useRef<HTMLButtonElement>(null);
+    useEffect(() => {
+        if (!open) return;
+        closeRef.current?.focus();
+        const close = (event: KeyboardEvent) => { if (event.key === "Escape") { setOpen(false); ref.current?.focus(); } };
+        window.addEventListener("keydown", close);
+        return () => window.removeEventListener("keydown", close);
+    }, [open]);
+    const displayed = reactions.slice(-3);
+    return <>
+        <button ref={ref} type="button" className="imessage-tapback-badge group-tapback-stack" style={{ width: 35 + (displayed.length - 1) * 17 }} aria-label={`${reactions.length} 人回应，查看详情`} aria-expanded={open}
+            onPointerDown={event => event.stopPropagation()} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }} onClick={event => { event.stopPropagation(); setOpen(value => !value); }}>
+            {displayed.map((item, index) => <span className="group-tapback-layer" key={item.actorId} style={{ left: index * 17, zIndex: index }}>{item.emoji}</span>)}
+            {reactions.length > 3 && <span className="group-tapback-overflow">+{reactions.length - 3}</span>}
+        </button>
+        {open && ref.current && createPortal(<div className="group-tapback-detail-backdrop" onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); setOpen(false); ref.current?.focus(); }}>
+            <section className="group-tapback-detail" role="dialog" aria-label="消息回应" onClick={event => event.stopPropagation()}>
+                <header><span>回应 · {reactions.length}</span><button ref={closeRef} type="button" onClick={() => { setOpen(false); ref.current?.focus(); }} aria-label="关闭回应详情">×</button></header>
+                <div>{reactions.map(item => <div className="group-tapback-person" key={item.actorId}><span>{item.actorName}</span><span>{item.emoji}</span></div>)}</div>
+            </section>
+        </div>, ref.current.closest('.chat-room-wrapper') || document.body)}
+    </>;
 }

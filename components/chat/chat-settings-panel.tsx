@@ -1,4 +1,6 @@
 "use client";
+import "@/styles/chat-settings.css";
+import { BubbleColorSettings } from "./bubble-color-settings";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
@@ -521,6 +523,7 @@ export function ChatSettingsPanel({
     };
 
     const [groupName, setGroupName] = useState(session.groupName || "");
+    const [groupAvatar, setGroupAvatar] = useState(session.groupAvatar);
 
     const characters = loadCharacters();
     const character = characters.find(c => c.id === session.contactId);
@@ -835,120 +838,30 @@ export function ChatSettingsPanel({
     const displayedSearchMessages = searchMode ? searchResults : searchHistoryMessages;
 
     return (
-        <PageShell title="聊天信息" onBack={onClose} className="absolute inset-0 z-[100]">
+        <PageShell onBack={onClose} className="absolute inset-0 z-[100] imessage-settings-page">
             <div className="page-menu chat-info-menu">
-                {/* Basic Info & Search */}
-                <div className="menu-group">
-                    <button className="menu-item" onClick={() => setEditingAlias(true)}>
-                        <ChatInfoIcon icon={MessageSquare} color={CONTENT_APP_ACCENTS.chat} />
-                        <div className="menu-label-group"><span className="menu-label">{session.isGroup ? "群聊名称" : "设置备注"}</span></div>
+<div className="chat-settings-profile">
+  {session.isGroup ? <GroupAvatarPicker avatarOnly value={groupAvatar} members={[...(!session.isSpectator && userIdentity ? [{ avatar: userIdentity.avatarUrl }] : []), ...groupChars.filter((c): c is NonNullable<typeof c> => !!c)]} onChange={next => { setGroupAvatar(next); updateSession({ groupAvatar: next }); }} /> : <div className="chat-settings-avatar">{character?.avatar ? <img src={character.avatar} alt="" /> : <ChatFallbackAvatar />}</div>}
+  {editingAlias ? <input autoFocus className="chat-settings-name chat-settings-name-input" aria-label={session.isGroup ? "群聊名称" : "备注"} defaultValue={session.isGroup ? groupName : alias}
+    placeholder={characterName}
+    onFocus={e => e.currentTarget.select()}
+    onBlur={e => { const name = e.currentTarget.value.trim(); if (session.isGroup) { setGroupName(name); updateSession({ groupName: name }); } else { setAlias(name); updateSession({ alias: name }); } setEditingAlias(false); }}
+    onKeyDown={e => { if (e.nativeEvent.isComposing) return; if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { e.currentTarget.value = session.isGroup ? groupName : alias; e.currentTarget.blur(); } }}
+  /> : <button type="button" className="chat-settings-name" aria-label={session.isGroup ? "修改群聊名称" : "修改备注"} onClick={() => setEditingAlias(true)}>{characterName}</button>}
+
+</div><section className="chat-settings-section "><h2>功能设置</h2><div className="menu-group"><div className="menu-item">
+                        <ChatInfoIcon icon={Pin} color={BINDING_ACCENTS.preset} />
+                        <div className="menu-label-group"><span className="menu-label">置顶聊天</span></div>
                         <div className="menu-right">
-                            <span className="menu-desc mr-1">{session.isGroup ? (groupName || "未设置") : (alias || "无备注")}</span>
-                            <ChevronRight size={16} />
+                            <Toggle checked={isPinned} onChange={c => { setIsPinned(c); updateSession({ isPinned: c }); }} />
                         </div>
-                    </button>
-                    {session.isGroup && <div className="menu-item">
-                        <GroupAvatarPicker value={session.groupAvatar} members={[...(!session.isSpectator && userIdentity ? [{ avatar: userIdentity.avatarUrl }] : []), ...groupChars.filter((c): c is NonNullable<typeof c> => !!c)]} onChange={groupAvatar => updateSession({ groupAvatar })} />
-                    </div>}
-                    <button className="menu-item" onClick={openSearchPanel}>
+                    </div>
+<button className="menu-item" onClick={openSearchPanel}>
                         <ChatInfoIcon icon={Search} color={BINDING_ACCENTS.api} />
                         <div className="menu-label-group"><span className="menu-label">查找聊天记录</span></div>
                         <div className="menu-right"><ChevronRight size={16} /></div>
                     </button>
-                    {!session.isGroup && isAgentComputerConfigured() && (
-                        <button className="menu-item" onClick={() => setShowComputer(true)}>
-                            <ChatInfoIcon icon={Laptop} color={BINDING_ACCENTS.memory} />
-                            <div className="menu-label-group">
-                                <span className="menu-label">TA 的电脑</span>
-                                <span className="menu-desc">看看 TA 在自己电脑上存了什么</span>
-                            </div>
-                            <div className="menu-right"><ChevronRight size={16} /></div>
-                        </button>
-                    )}
-                </div>
-
-                {/* Group member management */}
-                {session.isGroup && (
-                    <div className="menu-group">
-                        <div className="menu-item" style={{ cursor: "default" }}>
-                            <ChatInfoIcon icon={Users} color={BINDING_ACCENTS.preset} />
-                            <div className="menu-label-group">
-                                <span className="menu-label">群成员管理</span>
-                                <span className="menu-desc">
-                                    {session.isSpectator
-                                        ? "围观群：你不在群内，身份只读"
-                                        : (getGroupRole(session, GROUP_SELF_KEY) === "member"
-                                            ? "你是普通成员，没有管理权限"
-                                            : "点击成员执行管理操作")}
-                                </span>
-                            </div>
-                        </div>
-                        {memberEntries.map(entry => {
-                            const badge = roleLabel(entry.key);
-                            const actionable = memberActionsFor(entry.key).length > 0;
-                            return (
-                                <button
-                                    key={entry.key}
-                                    className="menu-item"
-                                    style={{ paddingLeft: 72, ...(actionable ? {} : { cursor: "default" }) }}
-                                    onClick={() => { if (actionable) setMemberActionKey(entry.key); }}
-                                >
-                                    <div className="w-[24px] h-[24px] rounded-full overflow-hidden bg-[var(--c-input)] shrink-0 flex items-center justify-center">
-                                        {entry.avatar ? <img src={entry.avatar} className="w-full h-full object-cover" alt="" /> : <ChatFallbackAvatar />}
-                                    </div>
-                                    <div className="menu-label-group">
-                                        <span className="menu-label">{entry.name}</span>
-                                        {entry.muteMs > 0 && (
-                                            <span className="menu-desc">禁言中 · 剩余{formatMuteRemainingLabel(entry.muteMs)}</span>
-                                        )}
-                                    </div>
-                                    <div className="menu-right">
-                                        {badge && <span className="menu-desc mr-1">{badge}</span>}
-                                        {actionable && <ChevronRight size={14} />}
-                                    </div>
-                                </button>
-                            );
-                        })}
-                        {canInvite && (
-                            <button className="menu-item" onClick={() => setShowInvitePicker(true)}>
-                                <ChatInfoIcon icon={UserPlus} color={BINDING_ACCENTS.voice} />
-                                <div className="menu-label-group"><span className="menu-label">拉人进群</span></div>
-                                <div className="menu-right"><ChevronRight size={16} /></div>
-                            </button>
-                        )}
-                        {!session.isSpectator && (
-                            <div className="menu-item">
-                                <ChatInfoIcon icon={AlertCircle} color={BINDING_ACCENTS.memory} />
-                                <div className="menu-label-group">
-                                    <span className="menu-label">允许角色对我使用管理操作</span>
-                                    <span className="menu-desc">开启后群主/管理员角色可以禁言你（不能踢你）</span>
-                                </div>
-                                <div className="menu-right">
-                                    <Toggle
-                                        checked={allowAdminOnUser}
-                                        onChange={c => { setAllowAdminOnUser(c); updateSession({ allowAdminActionsOnUser: c }); }}
-                                    />
-                                </div>
-                            </div>
-                        )}
-                        {!session.isSpectator && ownerKey !== GROUP_SELF_KEY && (
-                            <button className="menu-item" onClick={reclaimOwnership}>
-                                <ChatInfoIcon icon={Users} color="var(--c-danger)" />
-                                <div className="menu-label-group">
-                                    <span className="menu-label menu-label-danger">收回群主身份</span>
-                                    <span className="menu-desc">上帝操作：无视群规则直接拿回群主</span>
-                                </div>
-                            </button>
-                        )}
-                    </div>
-                )}
-
-                {/* 状态栏（状态区）：原生开关 + 自定义契约/渲染。
-                    群聊同样支持：群回复按 [角色名]: 切段后每段各自解析，
-                    一份契约 + 一份渲染，群里每个角色各出一条状态栏。 */}
-                {(
-                    <div className="menu-group">
-                        <div className="menu-item">
+<div className="menu-item">
                             <ChatInfoIcon icon={Code} color={BINDING_ACCENTS.preset} />
                             <div className="menu-label-group">
                                 <span className="menu-label">原生状态栏</span>
@@ -968,7 +881,7 @@ export function ChatSettingsPanel({
                                 />
                             </div>
                         </div>
-                        {statusPresetSupported && statusRegion.mode !== "native" && (
+{statusPresetSupported && statusRegion.mode !== "native" && (
                             <div className="menu-item cursor-pointer" onClick={openStatusRegionDialog}>
                                 <ChatInfoIcon icon={Sparkles} color={BINDING_ACCENTS.preset} />
                                 <div className="menu-label-group">
@@ -994,19 +907,87 @@ export function ChatSettingsPanel({
                                 </div>
                             </div>
                         )}
-                    </div>
-                )}
-
-                {/* Toggles */}
-                <div className="menu-group">
-                    <div className="menu-item">
-                        <ChatInfoIcon icon={Pin} color={BINDING_ACCENTS.preset} />
-                        <div className="menu-label-group"><span className="menu-label">置顶聊天</span></div>
-                        <div className="menu-right">
-                            <Toggle checked={isPinned} onChange={c => { setIsPinned(c); updateSession({ isPinned: c }); }} />
+<KeyboardAutoSendDebounceItem sessionId={session.id} /></div></section><section className="chat-settings-section "><h2>AI 设置</h2><div className="menu-group"><div className="menu-item">
+                            <ChatInfoIcon icon={MessageSquare} color={CONTENT_APP_ACCENTS.chat} />
+                            <div className="menu-label-group">
+                                <span className="menu-label">双语翻译</span>
+                                <span className="menu-desc">{session.isGroup ? "外语发言自动附中文译文" : "外语回复自动附中文译文"}</span>
+                            </div>
+                            <div className="menu-right">
+                                <Toggle
+                                    checked={bilingualTranslationEnabled}
+                                    onChange={c => {
+                                        setBilingualTranslationEnabled(c);
+                                        updateSession({ bilingualTranslationEnabled: c });
+                                    }}
+                                />
+                            </div>
                         </div>
-                    </div>
-                    <div className="menu-item">
+{bilingualTranslationEnabled && (
+                            <>
+                                <div className="menu-item">
+                                    <ChatInfoIcon icon={MessageSquare} color={BINDING_ACCENTS.voice} />
+                                    <div className="menu-label-group">
+                                        <span className="menu-label">折叠中文译文</span>
+                                        <span className="menu-desc">关闭后默认直接展开中文</span>
+                                    </div>
+                                    <div className="menu-right">
+                                        <Toggle
+                                            checked={collapseBilingualTranslation}
+                                            onChange={c => {
+                                                setCollapseBilingualTranslation(c);
+                                                updateSession({ collapseBilingualTranslation: c });
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                                <button className="menu-item" onClick={openBilingualPromptEditor}>
+                                    <ChatInfoIcon icon={MessageSquare} color={BINDING_ACCENTS.memory} />
+                                    <div className="menu-label-group">
+                                        <span className="menu-label">双语提示词</span>
+                                    </div>
+                                    <div className="menu-right">
+                                        <span className="menu-desc mr-1">
+                                            {bilingualTranslationPrompt === defaultBilingualPrompt && offlineBilingualTranslationPrompt === defaultOfflineBilingualPrompt ? "默认" : "已自定义"}
+                                        </span>
+                                        <ChevronRight size={16} />
+                                    </div>
+                                </button>
+                            </>
+                        )}
+<div className="menu-item">
+                            <ChatInfoIcon icon={Sparkles} color={BINDING_ACCENTS.api} />
+                            <div className="menu-label-group">
+                                <span className="menu-label">线上流式生成</span>
+                                <span className="menu-desc">仅当前会话：线上 AI 回复边生成边显示；关闭则整段返回</span>
+                            </div>
+                            <div className="menu-right">
+                                <Toggle
+                                    checked={streamOnline}
+                                    onChange={c => {
+                                        setStreamOnline(c);
+                                        updateSession({ streamOnline: c });
+                                    }}
+                                />
+                            </div>
+                        </div>
+<div className="menu-item">
+                            <ChatInfoIcon icon={Sparkles} color={BINDING_ACCENTS.preset} />
+                            <div className="menu-label-group">
+                                <span className="menu-label">线下流式生成</span>
+                                <span className="menu-desc">仅当前会话：线下 AI 回复边生成边显示；关闭则整段返回</span>
+                            </div>
+                            <div className="menu-right">
+                                <Toggle
+                                    checked={streamOffline}
+                                    onChange={c => {
+                                        setStreamOffline(c);
+                                        updateSession({ streamOffline: c });
+                                    }}
+                                />
+                            </div>
+                        </div>
+<div className="menu-item">
                         <ChatInfoIcon icon={ImageIcon} color={BINDING_ACCENTS.api} />
                         <div className="menu-label-group">
                             <span className="menu-label">传入最近图片数</span>
@@ -1039,140 +1020,16 @@ export function ChatSettingsPanel({
                             </button>
                         </div>
                     </div>
-                    <>
-                        <div className="menu-item">
-                            <ChatInfoIcon icon={MessageSquare} color={CONTENT_APP_ACCENTS.chat} />
+{!session.isGroup && isAgentComputerConfigured() && (
+                        <button className="menu-item" onClick={() => setShowComputer(true)}>
+                            <ChatInfoIcon icon={Laptop} color={BINDING_ACCENTS.memory} />
                             <div className="menu-label-group">
-                                <span className="menu-label">双语翻译</span>
-                                <span className="menu-desc">{session.isGroup ? "外语发言自动附中文译文" : "外语回复自动附中文译文"}</span>
+                                <span className="menu-label">TA 的电脑</span>
+                                <span className="menu-desc">看看 TA 在自己电脑上存了什么</span>
                             </div>
-                            <div className="menu-right">
-                                <Toggle
-                                    checked={bilingualTranslationEnabled}
-                                    onChange={c => {
-                                        setBilingualTranslationEnabled(c);
-                                        updateSession({ bilingualTranslationEnabled: c });
-                                    }}
-                                />
-                            </div>
-                        </div>
-                        {bilingualTranslationEnabled && (
-                            <>
-                                <div className="menu-item">
-                                    <ChatInfoIcon icon={MessageSquare} color={BINDING_ACCENTS.voice} />
-                                    <div className="menu-label-group">
-                                        <span className="menu-label">折叠中文译文</span>
-                                        <span className="menu-desc">关闭后默认直接展开中文</span>
-                                    </div>
-                                    <div className="menu-right">
-                                        <Toggle
-                                            checked={collapseBilingualTranslation}
-                                            onChange={c => {
-                                                setCollapseBilingualTranslation(c);
-                                                updateSession({ collapseBilingualTranslation: c });
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-                                <button className="menu-item" onClick={openBilingualPromptEditor}>
-                                    <ChatInfoIcon icon={MessageSquare} color={BINDING_ACCENTS.memory} />
-                                    <div className="menu-label-group">
-                                        <span className="menu-label">双语提示词</span>
-                                    </div>
-                                    <div className="menu-right">
-                                        <span className="menu-desc mr-1">
-                                            {bilingualTranslationPrompt === defaultBilingualPrompt && offlineBilingualTranslationPrompt === defaultOfflineBilingualPrompt ? "默认" : "已自定义"}
-                                        </span>
-                                        <ChevronRight size={16} />
-                                    </div>
-                                </button>
-                            </>
-                        )}
-                        <div className="menu-item">
-                            <ChatInfoIcon icon={Smile} color={BINDING_ACCENTS.preset} />
-                            <div className="menu-label-group">
-                                <span className="menu-label">丢弃无效表情包</span>
-                                <span className="menu-desc">角色发送不存在的表情包时自动丢弃该消息</span>
-                            </div>
-                            <div className="menu-right">
-                                <Toggle
-                                    checked={discardInvalidStickers}
-                                    onChange={c => {
-                                        setDiscardInvalidStickers(c);
-                                        updateSession({ discardInvalidStickers: c });
-                                    }}
-                                />
-                            </div>
-                        </div>
-                        {!session.isGroup && (
-                            <button
-                                type="button"
-                                className="menu-item"
-                                onClick={() => {
-                                    setTapbackDraft(tapbackCandidates.map(item => item.glyph));
-                                    setTapbackError("");
-                                    setEditingTapbacks(true);
-                                }}
-                            >
-                                <ChatInfoIcon icon={Smile} color={CONTENT_APP_ACCENTS.chat} />
-                                <div className="menu-label-group">
-                                    <span className="menu-label">Tapback 候选</span>
-                                    <span className="menu-desc">自定义长按消息时显示的 6 个表情</span>
-                                </div>
-                                <div className="menu-right gap-1.5">
-                                    <span className="menu-desc mr-1">{tapbackCandidates.map(item => item.glyph).join(" ")}</span>
-                                    <ChevronRight size={16} />
-                                </div>
-                            </button>
-                        )}
-                        <div className="menu-item">
-                            <ChatInfoIcon icon={Sparkles} color={BINDING_ACCENTS.api} />
-                            <div className="menu-label-group">
-                                <span className="menu-label">线上流式生成</span>
-                                <span className="menu-desc">仅当前会话：线上 AI 回复边生成边显示；关闭则整段返回</span>
-                            </div>
-                            <div className="menu-right">
-                                <Toggle
-                                    checked={streamOnline}
-                                    onChange={c => {
-                                        setStreamOnline(c);
-                                        updateSession({ streamOnline: c });
-                                    }}
-                                />
-                            </div>
-                        </div>
-                        <div className="menu-item">
-                            <ChatInfoIcon icon={Sparkles} color={BINDING_ACCENTS.preset} />
-                            <div className="menu-label-group">
-                                <span className="menu-label">线下流式生成</span>
-                                <span className="menu-desc">仅当前会话：线下 AI 回复边生成边显示；关闭则整段返回</span>
-                            </div>
-                            <div className="menu-right">
-                                <Toggle
-                                    checked={streamOffline}
-                                    onChange={c => {
-                                        setStreamOffline(c);
-                                        updateSession({ streamOffline: c });
-                                    }}
-                                />
-                            </div>
-                        </div>
-                        <button className="menu-item" onClick={() => setShowScreenEffects(true)}>
-                            <ChatInfoIcon icon={Sparkles} color={BINDING_ACCENTS.preset} />
-                            <div className="menu-label-group">
-                                <span className="menu-label">全屏特效</span>
-                                <span className="menu-desc">消息包含触发词时播放表情雨/礼花，全局生效</span>
-                            </div>
-                            <div className="menu-right">
-                                <ChevronRight size={16} />
-                            </div>
+                            <div className="menu-right"><ChevronRight size={16} /></div>
                         </button>
-                    </>
-                </div>
-
-                {/* Backgrounds & UI */}
-                <div className="menu-group">
-                    <label className="menu-item">
+                    )}</div></section><section className="chat-settings-section "><h2>外观与体验</h2><div className="menu-group"><label className="menu-item">
                         <ChatInfoIcon icon={ImageIcon} color={BINDING_ACCENTS.api} />
                         <div className="menu-label-group"><span className="menu-label">聊天背景</span></div>
                         <div className="menu-right">
@@ -1181,7 +1038,8 @@ export function ChatSettingsPanel({
                         </div>
                         <input type="file" accept="image/*" onChange={e => handleImageUpload(e, setBackgroundImage, "backgroundImage")} className="hidden" />
                     </label>
-                    {session.isGroup ? (
+<BubbleColorSettings session={session} />
+{session.isGroup ? (
                         <>
                             <div className="menu-item" style={{ cursor: "default" }}>
                                 <ChatInfoIcon icon={Video} color={BINDING_ACCENTS.voice} />
@@ -1227,7 +1085,7 @@ export function ChatSettingsPanel({
                             <input type="file" accept="image/*" onChange={e => handleImageUpload(e, setVideoBackground, "videoBackground")} className="hidden" />
                         </label>
                     )}
-                    <label className="menu-item">
+<label className="menu-item">
                         <ChatInfoIcon icon={Mic} color={BINDING_ACCENTS.voice} />
                         <div className="menu-label-group"><span className="menu-label">语音通话背景</span></div>
                         <div className="menu-right">
@@ -1236,44 +1094,148 @@ export function ChatSettingsPanel({
                         </div>
                         <input type="file" accept="image/*" onChange={e => handleImageUpload(e, setVoiceBackground, "voiceBackground")} className="hidden" />
                     </label>
-                </div>
-
-                {/* Advanced */}
-                <div className="menu-group">
-                    <KeyboardAutoSendDebounceItem sessionId={session.id} />
-                    <button className="menu-item" onClick={() => setEditingCSS(true)}>
-                        <ChatInfoIcon icon={Code} color={BINDING_ACCENTS.embedding} />
-                        <div className="menu-label-group"><span className="menu-label">自定义 CSS 样式</span></div>
-                        <div className="menu-right">
-                            {customCSS && <span className="menu-desc mr-1">已设置</span>}
-                            <ChevronRight size={16} />
+{!session.isGroup && (
+                            <button
+                                type="button"
+                                className="menu-item"
+                                onClick={() => {
+                                    setTapbackDraft(tapbackCandidates.map(item => item.glyph));
+                                    setTapbackError("");
+                                    setEditingTapbacks(true);
+                                }}
+                            >
+                                <ChatInfoIcon icon={Smile} color={CONTENT_APP_ACCENTS.chat} />
+                                <div className="menu-label-group">
+                                    <span className="menu-label">Tapback 候选</span>
+                                    <span className="menu-desc">自定义长按消息时显示的 6 个表情</span>
+                                </div>
+                                <div className="menu-right gap-1.5">
+                                    <span className="menu-desc mr-1">{tapbackCandidates.map(item => item.glyph).join(" ")}</span>
+                                    <ChevronRight size={16} />
+                                </div>
+                            </button>
+                        )}
+<div className="menu-item">
+                            <ChatInfoIcon icon={Smile} color={BINDING_ACCENTS.preset} />
+                            <div className="menu-label-group">
+                                <span className="menu-label">丢弃无效表情包</span>
+                                <span className="menu-desc">角色发送不存在的表情包时自动丢弃该消息</span>
+                            </div>
+                            <div className="menu-right">
+                                <Toggle
+                                    checked={discardInvalidStickers}
+                                    onChange={c => {
+                                        setDiscardInvalidStickers(c);
+                                        updateSession({ discardInvalidStickers: c });
+                                    }}
+                                />
+                            </div>
                         </div>
-                    </button>
-                </div>
-
-                {/* Destructive Actions */}
-                <div className="menu-group">
-                    {!session.isGroup && (
+<button className="menu-item" onClick={() => setShowScreenEffects(true)}>
+                            <ChatInfoIcon icon={Sparkles} color={BINDING_ACCENTS.preset} />
+                            <div className="menu-label-group">
+                                <span className="menu-label">全屏特效</span>
+                                <span className="menu-desc">消息包含触发词时播放表情雨/礼花，全局生效</span>
+                            </div>
+                            <div className="menu-right">
+                                <ChevronRight size={16} />
+                            </div>
+                        </button>
+<button className="menu-item" onClick={() => setEditingCSS(true)}>
+  <ChatInfoIcon icon={Code} color={BINDING_ACCENTS.embedding} />
+  <div className="menu-label-group"><span className="menu-label">自定义 CSS 样式</span></div>
+  <div className="menu-right">{customCSS && <span className="menu-desc mr-1">已设置</span>}<ChevronRight size={16} /></div>
+</button></div></section>{session.isGroup && <section className="chat-settings-section "><h2>群聊管理</h2><div className="menu-group">
+<div className="menu-item" style={{ cursor: "default" }}>
+                            <ChatInfoIcon icon={Users} color={BINDING_ACCENTS.preset} />
+                            <div className="menu-label-group">
+                                <span className="menu-label">群成员管理</span>
+                                <span className="menu-desc">
+                                    {session.isSpectator
+                                        ? "围观群：你不在群内，身份只读"
+                                        : (getGroupRole(session, GROUP_SELF_KEY) === "member"
+                                            ? "你是普通成员，没有管理权限"
+                                            : "点击成员执行管理操作")}
+                                </span>
+                            </div>
+                        </div>
+{memberEntries.map(entry => {
+                            const badge = roleLabel(entry.key);
+                            const actionable = memberActionsFor(entry.key).length > 0;
+                            return (
+                                <button
+                                    key={entry.key}
+                                    className="menu-item"
+                                    style={{ paddingLeft: 72, ...(actionable ? {} : { cursor: "default" }) }}
+                                    onClick={() => { if (actionable) setMemberActionKey(entry.key); }}
+                                >
+                                    <div className="w-[24px] h-[24px] rounded-full overflow-hidden bg-[var(--c-input)] shrink-0 flex items-center justify-center">
+                                        {entry.avatar ? <img src={entry.avatar} className="w-full h-full object-cover" alt="" /> : <ChatFallbackAvatar />}
+                                    </div>
+                                    <div className="menu-label-group">
+                                        <span className="menu-label">{entry.name}</span>
+                                        {entry.muteMs > 0 && (
+                                            <span className="menu-desc">禁言中 · 剩余{formatMuteRemainingLabel(entry.muteMs)}</span>
+                                        )}
+                                    </div>
+                                    <div className="menu-right">
+                                        {badge && <span className="menu-desc mr-1">{badge}</span>}
+                                        {actionable && <ChevronRight size={14} />}
+                                    </div>
+                                </button>
+                            );
+                        })}
+{canInvite && (
+                            <button className="menu-item" onClick={() => setShowInvitePicker(true)}>
+                                <ChatInfoIcon icon={UserPlus} color={BINDING_ACCENTS.voice} />
+                                <div className="menu-label-group"><span className="menu-label">拉人进群</span></div>
+                                <div className="menu-right"><ChevronRight size={16} /></div>
+                            </button>
+                        )}
+{!session.isSpectator && (
+                            <div className="menu-item">
+                                <ChatInfoIcon icon={AlertCircle} color={BINDING_ACCENTS.memory} />
+                                <div className="menu-label-group">
+                                    <span className="menu-label">允许角色对我使用管理操作</span>
+                                    <span className="menu-desc">开启后群主/管理员角色可以禁言你（不能踢你）</span>
+                                </div>
+                                <div className="menu-right">
+                                    <Toggle
+                                        checked={allowAdminOnUser}
+                                        onChange={c => { setAllowAdminOnUser(c); updateSession({ allowAdminActionsOnUser: c }); }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+{!session.isSpectator && ownerKey !== GROUP_SELF_KEY && (
+                            <button className="menu-item" onClick={reclaimOwnership}>
+                                <ChatInfoIcon icon={Users} color="var(--c-danger)" />
+                                <div className="menu-label-group">
+                                    <span className="menu-label menu-label-danger">收回群主身份</span>
+                                    <span className="menu-desc">上帝操作：无视群规则直接拿回群主</span>
+                                </div>
+                            </button>
+                        )}</div></section>}<section className="chat-settings-section chat-settings-danger"><h2>会话管理</h2><div className="menu-group">{!session.isGroup && (
                     <button className="menu-item" onClick={() => setShowConfirmDelete(true)}>
                         <ChatInfoIcon icon={UserMinus} color="var(--c-danger)" />
                         <div className="menu-label-group"><span className="menu-label menu-label-danger">删除好友</span></div>
                     </button>
                     )}
-                    <button className="menu-item" onClick={() => setShowConfirmClearTools(true)}>
+<button className="menu-item" onClick={() => setShowConfirmClearTools(true)}>
                         <ChatInfoIcon icon={Code} color="var(--c-danger)" />
                         <div className="menu-label-group">
                             <span className="menu-label menu-label-danger">清理原生tool调用历史——防报错</span>
                             <span className="menu-desc">切换到文本协议 API 前使用</span>
                         </div>
                     </button>
-                    <button className="menu-item" onClick={() => setShowConfirmClear(true)}>
+<button className="menu-item" onClick={() => setShowConfirmClear(true)}>
                         <ChatInfoIcon icon={Trash2} color="var(--c-danger)" />
                         <div className="menu-label-group">
                             <span className="menu-label menu-label-danger">清空线上聊天记录</span>
                             <span className="menu-desc">不影响线下模式记录</span>
                         </div>
                     </button>
-                    <button
+<button
                         className="menu-item"
                         disabled={offlineHistoryBusy}
                         onClick={() => {
@@ -1289,7 +1251,7 @@ export function ChatSettingsPanel({
                             </span>
                         </div>
                     </button>
-                    <button
+<button
                         className="menu-item"
                         disabled={offlineHistoryBusy}
                         onClick={() => {
@@ -1308,8 +1270,7 @@ export function ChatSettingsPanel({
                                         : "移除该会话及线上线下记录，好友保留"}
                             </span>
                         </div>
-                    </button>
-                </div>
+                    </button></div></section>
 
             </div>
 
@@ -1393,37 +1354,11 @@ export function ChatSettingsPanel({
                 </div>
             )}
 
-            {/* Modal: Alias / Group Name */}
-            {editingAlias && (
-                <div className="modal-overlay">
-                    <div className="modal-dialog">
-                        <div className="ts-17 font-semibold text-center text-[var(--c-text)]">{session.isGroup ? "修改群名" : "修改备注"}</div>
-                        <Input
-                            type="text"
-                            value={session.isGroup ? groupName : alias}
-                            onChange={e => session.isGroup ? setGroupName(e.target.value) : setAlias(e.target.value)}
-                            placeholder={session.isGroup ? "输入群名" : (character?.name || "输入备注名")}
-                        />
-                        <div className="flex gap-3 w-full">
-                            <button onClick={() => setEditingAlias(false)} className="ui-btn ui-btn-ghost flex-1">取消</button>
-                            <button onClick={() => {
-                                if (session.isGroup) {
-                                    updateSession({ groupName });
-                                } else {
-                                    updateSession({ alias });
-                                }
-                                setEditingAlias(false);
-                            }} className="ui-btn ui-btn-success flex-1">保存</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {/* Modal: Bilingual Prompt */}
             {editingBilingualPrompt && (
-                <div className="modal-overlay">
-                    <div className="modal-dialog chat-bilingual-prompt-dialog">
-                        <div className="ts-17 font-semibold text-center text-[var(--c-text)]">双语提示词</div>
+                <div className="chat-status-subpage">
+                    <PageShell title="双语提示词" onBack={() => setEditingBilingualPrompt(false)}>
+                    <div className="chat-settings-editor">
                         <div className="chat-bilingual-prompt-stack">
                             <div className="chat-bilingual-prompt-section">
                                 <div className="chat-bilingual-prompt-head">
@@ -1479,11 +1414,12 @@ export function ChatSettingsPanel({
                             <button onClick={() => setEditingBilingualPrompt(false)} className="ui-btn ui-btn-ghost flex-1">
                                 取消
                             </button>
-                            <button onClick={saveBilingualPromptDraft} className="ui-btn ui-btn-success flex-1">
+                            <button onClick={saveBilingualPromptDraft} className="ui-btn ui-btn-primary flex-1">
                                 保存
                             </button>
                         </div>
                     </div>
+                    </PageShell>
                 </div>
             )}
 
@@ -1742,15 +1678,13 @@ export function ChatSettingsPanel({
                 </div>
             )}
             {showStatusRegionDialog && (
-                <div className="fixed inset-0 z-[10030] flex items-end justify-center bg-black/45 sm:items-center" role="dialog" aria-modal="true" aria-label="自定义状态栏">
-                    <div className="flex max-h-[86vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-[var(--c-page-body-bg)] text-[var(--c-text)] shadow-2xl sm:rounded-2xl">
+                <div className="chat-status-subpage">
+                    <PageShell title="自定义状态栏" onBack={() => setShowStatusRegionDialog(false)}>
                         <div className="flex items-center justify-between px-5 pb-2 pt-4">
-                            <div className="font-bold text-[var(--c-text-title)]">自定义状态栏</div>
                             <div className="flex items-center gap-1.5">
                                 <button type="button" className="modal-header-btn modal-header-btn-muted" aria-label="状态栏方案" onClick={() => { setStatusSchemes(getSchemes(STATUS_SCHEME_TARGET)); setStatusSchemeDeleteId(null); setShowStatusSchemes(v => !v); }}><FolderOpen size={16} /></button>
                                 <button type="button" className="modal-header-btn modal-header-btn-muted" aria-label="导入状态栏" onClick={() => statusImportInputRef.current?.click()}><Upload size={16} /></button>
                                 <button type="button" className="modal-header-btn modal-header-btn-muted" aria-label="导出状态栏" onClick={exportStatusRegion}><Download size={16} /></button>
-                                <button type="button" className="modal-header-btn modal-header-btn-muted" aria-label="关闭" onClick={() => setShowStatusRegionDialog(false)}><X size={18} /></button>
                             </div>
                             <input ref={statusImportInputRef} type="file" accept="application/json,.json" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) importStatusRegion(f); e.target.value = ""; }} />
                         </div>
@@ -1850,7 +1784,7 @@ export function ChatSettingsPanel({
                                 保存并启用
                             </button>
                         </div>
-                    </div>
+                    </PageShell>
                 </div>
             )}
         </PageShell>

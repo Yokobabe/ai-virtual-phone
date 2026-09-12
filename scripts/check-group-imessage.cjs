@@ -44,3 +44,11 @@ assert.equal(runs([msg('a1'), msg('a2', 'a', undefined, { createdAt: '300001' })
 assert.equal(runs([msg('old1', '', undefined, { senderName: 'A' }), msg('old2', '', undefined, { senderName: 'B' })]).firstIds.length, 2);
 assert.deepEqual(runs([msg('a1'), msg('a2')], false).tailIds, ['a2']);
 console.log('PASS: group run boundaries, card/sticker endings, hidden messages, timestamps and private tails');
+const previewSource = fs.readFileSync(path.join(__dirname, '../lib/stream-preview.ts'), 'utf8');
+const splitFunction = previewSource.match(/export function splitStreamPreviewSegments\(text: string\): string\[\] \{[\s\S]*?\n\}/)?.[0];
+assert.ok(splitFunction);
+const splitContext = { exports: {} };
+vm.runInNewContext(ts.transpileModule(splitFunction, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, splitContext);
+assert.equal(splitContext.exports.splitStreamPreviewSegments('宝贝，早安。\n睡够了没，嗯？\n爸爸惦记你一晚上了。').length, 1);
+assert.equal(splitContext.exports.splitStreamPreviewSegments('宝贝，早安。\n\n睡够了没，嗯？\n\n爸爸惦记你一晚上了。').length, 3);
+console.log('PASS: actual stream splitter preserves single newlines and splits blank-line-separated messages');

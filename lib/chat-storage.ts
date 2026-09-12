@@ -34,11 +34,13 @@ export type ChatContact = {
 };
 
 export type ChatSession = {
+    bubbleColors?: import("./chat-bubble-colors").BubbleColors;
     id: string;
     contactId: string;
     lastMessageId?: string;
     lastMessagePreview?: string;
     unreadCount: number;
+    unreadMessageIds?: string[];
     updatedAt: string; // ISO date
     isPinned: boolean;
     backgroundImage?: string; // Add support for custom background
@@ -130,6 +132,7 @@ export type ChatMessage = {
         /** Unicode emoji; rendered with the device's native emoji font. */
         tapback?: string;
         tapbackBy?: "user" | "assistant";
+        tapbacks?: Array<{ actorId: string; actorName: string; emoji: string }>;
         stickerUrl?: string;      // 表情包图片路径
         diceFace?: number;        // 骰子点数（1-6），气泡翻滚后定格并与全屏动效一致
         pokeSender?: string;      // 拍一拍发起人名字
@@ -1056,6 +1059,23 @@ export function saveChatSessions(sessions: ChatSession[]) {
     else dbPutSessions(refreshed.items);
 }
 
+export const CHAT_UNREAD_UPDATED_EVENT = "chat-unread-updated";
+
+export function isUnreadChatMessage(message: ChatMessage): boolean {
+    return message.role === "assistant" && !message.isRetracted
+        && !["tool_call", "tool_result", "tool_notice", "memory_write_request", "tapback_action", "poke", "voice_call", "video_call", "system_instruction", "group_admin_notice", "accept_red_packet", "decline_red_packet", "accept_transfer", "decline_transfer", "accept_payment_request", "decline_payment_request"].includes(message.mediaType || "")
+        && Boolean(message.content.trim() || message.mediaType);
+}
+
+export function markChatSessionRead(sessionId: string): void {
+    const session = _sessionsCache.find(item => item.id === sessionId);
+    if (!session || (!session.unreadCount && !session.unreadMessageIds?.length)) return;
+    session.unreadCount = 0;
+    session.unreadMessageIds = [];
+    dbPutSessions([session]);
+    if (typeof window !== "undefined") window.dispatchEvent(new Event(CHAT_UNREAD_UPDATED_EVENT));
+}
+
 export function createOrGetSession(contactId: string): ChatSession {
     const sessions = loadChatSessions();
     const existing = sessions.find(s => s.contactId === contactId);
@@ -1175,6 +1195,10 @@ export function pushChatMessage(msg: Omit<ChatMessage, "id" | "createdAt" | "sta
     const sessIdx = _sessionsCache.findIndex(s => s.id === msg.sessionId);
     if (sessIdx !== -1 && isSessionPreviewCandidate(newMsg)) {
         const target = _sessionsCache[sessIdx];
+        if (isUnreadChatMessage(newMsg)) {
+            target.unreadMessageIds = [...(target.unreadMessageIds || []), newMsg.id];
+            target.unreadCount = Math.max(0, target.unreadCount || 0) + 1;
+        }
         target.lastMessageId = newMsg.id;
         if (preview) target.lastMessagePreview = preview;
         target.updatedAt = newMsg.createdAt;
@@ -1184,6 +1208,10 @@ export function pushChatMessage(msg: Omit<ChatMessage, "id" | "createdAt" | "sta
         const sessions = loadChatSessions();
         const idx2 = sessions.findIndex(s => s.id === msg.sessionId);
         if (idx2 !== -1 && isSessionPreviewCandidate(newMsg)) {
+            if (isUnreadChatMessage(newMsg)) {
+                sessions[idx2].unreadMessageIds = [...(sessions[idx2].unreadMessageIds || []), newMsg.id];
+                sessions[idx2].unreadCount = Math.max(0, sessions[idx2].unreadCount || 0) + 1;
+            }
             sessions[idx2].lastMessageId = newMsg.id;
             if (preview) sessions[idx2].lastMessagePreview = preview;
             sessions[idx2].updatedAt = newMsg.createdAt;
@@ -1581,6 +1609,16 @@ export function clearChatSessionMessages(sessionId: string) {
 
 function dispatchDeletedMessages(messages: ChatMessage[]): void {
     if (typeof window === "undefined" || messages.length === 0) return;
+    const removed = new Set(messages.map(message => message.id));
+    for (const session of _sessionsCache) {
+        const ids = session.unreadMessageIds || [];
+        const remaining = ids.filter(id => !removed.has(id));
+        if (remaining.length === ids.length) continue;
+        session.unreadMessageIds = remaining;
+        session.unreadCount = Math.max(0, session.unreadCount - (ids.length - remaining.length));
+        dbPutSessions([session]);
+    }
+    window.dispatchEvent(new Event(CHAT_UNREAD_UPDATED_EVENT));
     window.dispatchEvent(new CustomEvent(CHAT_MESSAGES_DELETED_EVENT, { detail: { messages } }));
     for (const message of messages) {
         emitChatPluginEvent("message.deleted", { id: message.id, sessionId: message.sessionId });

@@ -1,4 +1,5 @@
 "use client";
+import { VoiceReferenceGraphic } from "./voice-reference-graphic";
 
 import { useState, useEffect, useCallback, useRef, useMemo, memo, type ReactNode } from "react";
 import { findCustomStickerByName, resolveCustomStickerUrl } from "@/lib/custom-sticker-storage";
@@ -630,7 +631,7 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
                 }}
                 aria-expanded={expanded}
             >
-                {expanded ? "收起中文" : "中文"}
+                {expanded ? "收起译文" : "译文"}
             </button>
             {expanded && (
                 <>
@@ -1616,12 +1617,14 @@ function QuoteBubble({ msg, displayContent, replyAccessory, defaultTranslationEx
             )}
             {msg.content && (
                 <div className="chat-quote-reply">
+                    <span className="imessage-bubble-surface" aria-hidden="true" />
                     {replyAccessory && <span className="chat-quote-reply-accessory" onPointerDown={event => event.stopPropagation()} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }}>{replyAccessory}</span>}
                     <TextBubble content={displayContent ?? msg.content} defaultTranslationExpanded={defaultTranslationExpanded} />
-                    {d?.tapback && (
+                    {(d?.tapback || d?.tapbacks?.length) && (
                         <IMessageTapbackBadge
                             tapback={d.tapback}
                             tapbackBy={d.tapbackBy || "user"}
+                            reactions={d.tapbacks}
                         />
                     )}
                 </div>
@@ -2313,6 +2316,7 @@ function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpa
     const duration = msg.mediaData?.voiceDuration || Math.max(2, Math.ceil(speechText.length / 4));
 
     const playSrc = (src: string) => {
+        setSynthFailed(false);
         // 必须用 <audio> 元素:iOS 静音拨键会掐掉 Web Audio 的输出(表现为全线
         // 无声),媒体元素不受影响。元素属于宿主页面,锁屏媒体卡片指向站点本身,
         // 点了只会回到 App;播完清 src 让卡片立即撤下。
@@ -2322,11 +2326,12 @@ function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpa
         const finalize = () => {
             if (audioRef.current === audio) audioRef.current = null;
             try { audio.pause(); audio.removeAttribute("src"); audio.load(); } catch { /* ignore */ }
-            setPlaying(false);
+            if (mountedRef.current) setPlaying(false);
         };
         audio.onended = finalize;
-        audio.onerror = finalize;
-        audio.play().catch(finalize);
+        const fail = () => { if (mountedRef.current) setSynthFailed(true); finalize(); };
+        audio.onerror = fail;
+        audio.play().catch(fail);
     };
 
     // 点击才合成（不再挂载即合成）：已有音频直接播；没有就现场合成一次，
@@ -2335,9 +2340,17 @@ function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpa
         if (synthesizing) return;
         if (playing && audioRef.current) {
             const active = audioRef.current;
-            audioRef.current = null;
-            try { active.pause(); active.removeAttribute("src"); active.load(); } catch { /* ignore */ }
+            active.pause();
             setPlaying(false);
+            return;
+        }
+        if (audioRef.current) {
+            const active = audioRef.current;
+            setSynthFailed(false);
+            setPlaying(true);
+            active.play().catch(() => {
+                if (mountedRef.current) { setPlaying(false); setSynthFailed(true); }
+            });
             return;
         }
         if (msg.mediaUrl && !needsResynthesis) {
@@ -2366,39 +2379,11 @@ function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpa
 
     useEffect(() => () => { audioRef.current?.pause(); }, []);
 
-    // Wave bars — slightly irregular heights so the idle state already looks intentional.
-    const barCount = Math.min(Math.max(4, Math.round(duration / 2)), 9);
-    const barHeights = Array.from({ length: barCount }, (_, i) => {
-        const center = (barCount - 1) / 2;
-        const dist = Math.abs(i - center);
-        return Math.max(6, Math.round(15 - dist * 2.2));
-    });
-
     return (
-        <div className="voice-msg-bubble" onClick={handlePlay}
-            style={{ minWidth: `${Math.min(60 + duration * 8, 220)}px` }}
-        >
-            <div className="voice-msg-icon-shell">
-                <div className="voice-msg-icon">
-                {synthesizing ? (
-                    <svg width="16" height="16" viewBox="0 0 24 24" className="animate-spin" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" /></svg>
-                ) : playing ? (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
-                ) : (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                )}
-                </div>
-            </div>
-            <div className="voice-msg-bars" {...(playing ? { "data-playing": "" } : {})}>
-                {barHeights.map((height, i) => (
-                    <div
-                        key={i}
-                        className="voice-msg-bar"
-                        style={{ height: `${height}px`, animationDelay: `${i * 0.08}s` }}
-                    />
-                ))}
-            </div>
-            <span className="voice-msg-dur">{synthFailed ? "合成失败·点击重试" : `${duration}"`}</span>
+        <div className="voice-msg-bubble" onClick={handlePlay} role="button" tabIndex={0}
+            aria-label={synthesizing ? "正在生成语音" : synthFailed ? "播放失败，点击重试" : playing ? "暂停语音" : "播放语音"}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handlePlay(); } }}>
+            <VoiceReferenceGraphic playing={playing} synthesizing={synthesizing} failed={synthFailed} duration={duration}/>
         </div>
     );
 }

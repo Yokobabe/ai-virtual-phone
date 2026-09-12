@@ -55,7 +55,7 @@ import {
     saveMenstrualPeriodCareTrigger,
     type MenstrualPeriodCareEvent,
 } from "./menstrual-storage";
-import { applyAssistantTapback } from "./chat-tapback";
+import { applyAssistantTapback, applyGroupAssistantTapback } from "./chat-tapback";
 
 // ── Constants ──────────────────────────────────────────────
 const MAX_FOLLOW_UPS = 10;
@@ -932,7 +932,9 @@ export async function parseAndSaveResponse(
         if (p.mediaType === "video_call") { triggerCall = "video"; continue; }
         if (p.mediaType === "tapback_action") {
             if (hasTapbackAction) continue;
-            if (sess && !sess.isGroup && applyAssistantTapback(sessionId, p.mediaData?.tapback)) {
+            if (sess && (sess.isGroup
+                ? options?.senderCharacterId && sess.participantIds?.includes(options.senderCharacterId) && applyGroupAssistantTapback(sessionId, p.mediaData?.tapback, { actorId: options.senderCharacterId, actorName: options.senderName || "群成员" })
+                : applyAssistantTapback(sessionId, p.mediaData?.tapback))) {
                 hasTapbackAction = true;
             }
             continue;

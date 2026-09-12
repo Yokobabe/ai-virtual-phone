@@ -15,7 +15,7 @@ export function GroupAvatar({ src, members }: { src?: string; members: Member[] 
     </span>;
 }
 
-export function GroupAvatarPicker({ value, members, onChange }: { value?: string; members: Member[]; onChange: (value: string) => void }) {
+export function GroupAvatarPicker({ value, members, onChange, avatarOnly = false }: { value?: string; members: Member[]; onChange: (value: string) => void; avatarOnly?: boolean }) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const [expanded, setExpanded] = useState(false);
@@ -42,11 +42,13 @@ export function GroupAvatarPicker({ value, members, onChange }: { value?: string
         } catch { setError("图片无法加载，请检查链接或改用本地选择"); }
         finally { setBusy(false); }
     };
-    return <div className="group-avatar-picker">
-        <button type="button" className="group-avatar-setting-row" aria-expanded={expanded} onClick={() => setExpanded(open => !open)}>
+    return <div className={`group-avatar-picker${avatarOnly ? " group-avatar-profile-picker" : ""}`}>
+        <button type="button" className={avatarOnly ? "chat-settings-avatar" : "group-avatar-setting-row"} aria-label="修改群聊头像" aria-expanded={expanded} onClick={() => setExpanded(open => !open)}>
+            {avatarOnly ? <GroupAvatar src={value} members={members} /> : <>
             <span className="chat-info-icon" style={{ overflow: "hidden" }}><GroupAvatar src={value} members={members} /></span>
             <span className="menu-label-group"><span className="menu-label">群聊头像</span></span>
             <span className="menu-right"><span className="menu-desc">{busy ? "正在处理…" : value ? "已设置" : "默认"}</span><ChevronRight size={16} /></span>
+            </>}
         </button>
             <input ref={fileRef} type="file" accept="image/*" aria-label="选择群聊头像" disabled={busy} style={{ display: "none" }} onChange={async event => {
                 const file = event.target.files?.[0];

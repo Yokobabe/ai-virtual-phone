@@ -65,5 +65,33 @@ assert.equal(applied.mediaData.tapbackBy, 'assistant');
 tapback.applyAssistantTapback('session', '🫶🏽');
 assert.equal(messages[0].mediaData.tapback, '🫶🏽', 'A new reaction replaces the old one');
 messages = [{ id: 'a2', role: 'assistant', content: '你好' }];
+messages = [
+  { id: 'old', role: 'user', content: '亲亲', mediaData: { tapback: '❤️', tapbackBy: 'assistant', label: 'kept' } },
+  { id: 'new', role: 'user', content: '把刚才的爱心换成亲吻' },
+];
+assert.equal(tapback.applyAssistantTapback('session', '😘|replace').id, 'old');
+assert.equal(messages[0].mediaData.tapback, '😘');
+assert.equal(messages[0].mediaData.label, 'kept');
+assert.equal(messages[1].mediaData, undefined);
+assert.equal(tapback.applyAssistantTapback('session', '🥹|old').id, 'old');
+assert.equal(tapback.applyAssistantTapback('session', '🥹|missing'), null);
+assert.equal(tapback.applyAssistantTapback('session', '😂').id, 'new');
+messages = [{ id: 'a2', role: 'assistant', content: '你好' }];
+assert.equal(tapback.applyAssistantTapback('session', '😘|replace'), null);
 assert.equal(tapback.applyAssistantTapback('session', '😂'), null);
 console.log('PASS: Enter/IME/newline behavior; native emoji validation; optional tapback, target selection and replacement.');
+messages = [{ id: 'group-user', role: 'user', content: '今晚一起吃饭' }];
+const alice = { actorId: 'alice', actorName: '角色甲' };
+const bob = { actorId: 'bob', actorName: '角色乙' };
+tapback.applyGroupAssistantTapback('group', '❤️', alice);
+tapback.applyGroupAssistantTapback('group', '😂', bob);
+assert.equal(messages[0].mediaData.tapbacks.length, 2);
+messages.push({ id: 'request', role: 'user', content: '换一个' });
+tapback.applyGroupAssistantTapback('group', '🥹|replace', alice);
+assert.equal(messages[0].mediaData.tapbacks.find(r => r.actorId === 'alice').emoji, '🥹');
+assert.equal(messages[0].mediaData.tapbacks.find(r => r.actorId === 'bob').emoji, '😂');
+tapback.setGroupTapback('group', 'group-user', { actorId: 'self', actorName: '你' }, '👍', true);
+tapback.setGroupTapback('group', 'group-user', { actorId: 'self', actorName: '你' }, '👍', true);
+assert.equal(messages[0].mediaData.tapbacks.length, 2);
+assert.equal(tapback.applyGroupAssistantTapback('group', 'hello', alice), null);
+console.log('PASS: independent group actors, replacement and user-only removal.');

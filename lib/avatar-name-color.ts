@@ -1,14 +1,16 @@
 export const DEFAULT_AVATAR_NAME_COLOR = "#8e8e93";
 
 /** Dominant chromatic family, rather than the often black/white background. */
-export function pickAvatarNameColor(pixels: ArrayLike<number>): string {
+export function pickAvatarNameColor(pixels: ArrayLike<number>, bubble = false): string {
     const bins = Array.from({ length: 24 }, () => ({ weight: 0, r: 0, g: 0, b: 0 }));
     let visible = 0;
+    const total = [0,0,0];
     let chromatic = 0;
     for (let i = 0; i + 3 < pixels.length; i += 4) {
         if (pixels[i + 3] < 128) continue;
         visible++;
         const r = pixels[i] / 255, g = pixels[i + 1] / 255, b = pixels[i + 2] / 255;
+        total[0]+=r; total[1]+=g; total[2]+=b;
         const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
         if (delta < .065 || max < .12 || min > .9) continue;
         chromatic++;
@@ -19,9 +21,11 @@ export function pickAvatarNameColor(pixels: ArrayLike<number>): string {
         bin.weight += weight;
         bin.r += r * weight; bin.g += g * weight; bin.b += b * weight;
     }
-    if (!visible || chromatic / visible < .025) return DEFAULT_AVATAR_NAME_COLOR;
+    if (!visible) return DEFAULT_AVATAR_NAME_COLOR;
+    if (chromatic / visible < .025) return bubble ? `rgb(${total.map(c=>Math.round(c/visible*255)).join(", ")})` : DEFAULT_AVATAR_NAME_COLOR;
     const bin = bins.reduce((best, item) => item.weight > best.weight ? item : best);
     const r = bin.r / bin.weight, g = bin.g / bin.weight, b = bin.b / bin.weight;
+    if (bubble) return `rgb(${[r,g,b].map(c=>Math.round(c*255)).join(", ")})`;
     const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
     const lightness = (max + min) / 2;
     const saturation = Math.min(.48, Math.max(.2, delta / (1 - Math.abs(2 * lightness - 1))));
@@ -44,9 +48,10 @@ export function pickAvatarNameColor(pixels: ArrayLike<number>): string {
 
 const cache = new Map<string, Promise<string>>();
 
-export function extractAvatarNameColor(src: string): Promise<string> {
+export function extractAvatarNameColor(src: string, bubble = false): Promise<string> {
     if (typeof window === "undefined" || !src) return Promise.resolve(DEFAULT_AVATAR_NAME_COLOR);
-    const cached = cache.get(src);
+    const cacheKey = `${bubble ? "bubble:" : "name:"}${src}`;
+    const cached = cache.get(cacheKey);
     if (cached) return cached;
     const result = new Promise<string>(resolve => {
         const img = new Image();
@@ -71,7 +76,7 @@ export function extractAvatarNameColor(src: string): Promise<string> {
                 const side = Math.min(img.naturalWidth, img.naturalHeight);
                 ctx.beginPath(); ctx.arc(20, 20, 20, 0, Math.PI * 2); ctx.clip();
                 ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 40, 40);
-                finish(pickAvatarNameColor(ctx.getImageData(0, 0, 40, 40).data));
+                finish(pickAvatarNameColor(ctx.getImageData(0, 0, 40, 40).data, bubble));
             } catch {
                 finish(DEFAULT_AVATAR_NAME_COLOR);
             }
@@ -80,6 +85,6 @@ export function extractAvatarNameColor(src: string): Promise<string> {
     });
     // Bound data-URL retention; one request shared by all messages of an avatar.
     if (cache.size >= 128) cache.delete(cache.keys().next().value!);
-    cache.set(src, result);
+    cache.set(cacheKey, result);
     return result;
 }
