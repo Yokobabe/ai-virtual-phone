@@ -130,6 +130,7 @@ const groupFunction=groupSource.match(/export function parseGroupChatResponse\([
 const groupContext={exports:{},stripGroupFinancialActionsForMetadataRepair:text=>text};
 vm.runInNewContext(ts.transpileModule(groupFunction,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,groupContext);
 const parser=load('lib/rich-message-parser.ts',{
+ './chat-echo':load('lib/chat-echo.ts'),
  './state-value-parser':load('lib/state-value-parser.ts'),
  './action-parser':{stripActionShells:text=>text},
  './text-tool-protocol':{stripTextToolDirectives:text=>text},
@@ -145,3 +146,44 @@ for(const section of sections){
 assert.equal(messages[0].mediaData.tapbacks.length,2);
 assert.equal(messages[0].mediaData.tapbacks.find(r=>r.actorId==='one').emoji,'😘');
 console.log('PASS: screenshot-style standalone per-character Tapback sections parse and persist two distinct reactions.');
+
+messages=[
+ {id:'user',role:'user',content:'你们聊'},
+ {id:'alice-text',role:'assistant',senderCharacterId:'alice',senderName:'角色甲',content:'我先来'},
+ {id:'bob-text',role:'assistant',senderCharacterId:'bob',senderName:'角色乙',content:'收到'},
+ {id:'removed',role:'assistant',senderCharacterId:'bob',senderName:'角色乙',content:'撤回',isRetracted:true},
+ {id:'hidden',role:'assistant',senderCharacterId:'bob',senderName:'角色乙',content:'动作',mediaType:'avatar_action'},
+ {id:'system',role:'system',content:'通知'},
+];
+assert.equal(tapback.applyGroupAssistantTapback('group','❤️|alice-text',bob).id,'alice-text');
+assert.equal(tapback.applyGroupAssistantTapback('group','😂|@角色乙',alice).id,'bob-text');
+assert.equal(tapback.applyGroupAssistantTapback('group','🥹|actor:alice',bob).id,'alice-text');
+assert.equal(tapback.applyGroupAssistantTapback('group','😘|replace',alice).id,'bob-text');
+for(const target of ['alice-text','actor:alice','@角色甲','removed','hidden','system','missing']) {
+ assert.equal(tapback.applyGroupAssistantTapback('group',`❤️|${target}`,alice),null,target);
+}
+assert.equal(tapback.applyGroupAssistantTapback('group','👍',alice).id,'user','Legacy implicit target stays user');
+messages.push({id:'duplicate-name',role:'assistant',senderCharacterId:'carol',senderName:'角色乙',content:'我同名'});
+assert.equal(tapback.applyGroupAssistantTapback('group','❤️|@角色乙',alice),null,'Ambiguous names cannot pick arbitrarily');
+assert.equal(tapback.applyGroupAssistantTapback('group','❤️|actor:bob',alice).id,'bob-text');
+const tapPrompt=tapback.buildGroupTapbackPrompt(messages);
+assert.match(tapPrompt,/其他 char/);assert.match(tapPrompt,/actor:bob/);assert.match(tapPrompt,/alice-text/);
+assert.doesNotMatch(tapPrompt,/removed \||hidden \||system \|/);
+// A just-emitted char message is a target for B's streamed action in the same round.
+messages=[{id:'fresh-alice',role:'assistant',senderCharacterId:'alice',senderName:'角色甲',content:'刚说完'}];
+vm.runInNewContext(loop,{
+ rawParts:[{content:'',mediaType:'tapback_action',mediaData:{tapback:'😂|@角色甲'}}],
+ stripInvalidStickerParts:p=>p,senderInfo:{characterId:'bob',characterName:'角色乙'},
+ session:{id:'group',participantIds:['alice','bob']},generationGuard:{},throwIfGenerationStopped:()=>{},
+ isGroupMuted:()=>false,applyGroupAssistantTapback:tapback.applyGroupAssistantTapback,syncMessagesFromStorage:()=>{},
+ buildAssistantMessageDraft:()=>{throw new Error('No separate Tapback action bubble');},
+});
+assert.equal(messages[0].mediaData.tapbacks[0].actorId,'bob');
+tapback.applyGroupAssistantTapback('group','👍|fresh-alice',{actorId:'carol',actorName:'角色丙'});
+assert.equal(messages[0].mediaData.tapbacks.length,2,'Reactions on chars also stack independently');
+for(const action of ['😂|@角色甲','❤️|actor:alice','👍|alice-text']) {
+ assert.equal(parser.parseAIResponse(`[Tapback:${action}]`,[]).parts[0].mediaData.tapback,action);
+}
+assert.equal(parser.parseAIResponse('[Avatar:history:previous]',[]).parts[0].mediaData.avatarImageId,'history:previous');
+assert.equal(parser.parseAIResponse('[Avatar:p1|白色小猫]',[]).parts[0].mediaData.avatarImageId,'p1|白色小猫');
+console.log('PASS: char-to-char Tapback by message/name/actor ID, replacement, exclusions, ambiguous names and same-round streamed reactions.');

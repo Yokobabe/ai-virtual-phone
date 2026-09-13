@@ -1,8 +1,39 @@
 import { loadChatMessages, loadChatSessions, pushChatMessage, normalizeVisionImagePromptLimit, MAX_VISION_IMAGE_PROMPT_LIMIT, type ChatMessage } from "./chat-storage";
 import { loadCharacters, saveCharacters } from "./character-storage";
+import type { Character, CharacterAvatarHistoryEntry } from "./character-types";
 
-type Grant = { at: number; turnId: string; consumed: boolean; reported: Set<string>; images: Map<string, { original: string; resolved: string }> };
+type AvatarCandidate = { original: string; resolved: string | null; label?: string; historyId?: string };
+type Grant = { at: number; turnId: string; consumed: boolean; reported: Set<string>; images: Map<string, AvatarCandidate> };
 const grants = new Map<string, Grant>();
+export const AVATAR_HISTORY_LIMIT = 20;
+function validSavedAvatar(value: unknown): value is string | null {
+    return value === null || (typeof value === "string" && /^(data:image\/|https?:\/\/)/i.test(value));
+}
+export function getCharacterAvatarHistory(character: Character): CharacterAvatarHistoryEntry[] {
+    if (!Array.isArray(character.avatarHistory)) return [];
+    return character.avatarHistory.filter(item => item && typeof item.id === "string" && /^avh_[\w-]+$/.test(item.id)
+        && typeof item.label === "string" && typeof item.recordedAt === "string" && typeof item.lastSelectedAt === "string"
+        && validSavedAvatar(item.avatar)).slice(-AVATAR_HISTORY_LIMIT);
+}
+function recordAvatarChange(character: Character, avatar: string | null, label: string): Character {
+    const entries = getCharacterAvatarHistory(character).map(item => ({ ...item }));
+    const now = new Date().toISOString();
+    const make = (value: string | null, description: string): CharacterAvatarHistoryEntry => ({
+        id: `avh_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`, avatar: value,
+        label: description.slice(0, 100), recordedAt: now, lastSelectedAt: now, selections: 1,
+    });
+    // Capture the current image before overwriting it, including the default empty avatar.
+    if (validSavedAvatar(character.avatar) && !entries.some(item => item.avatar === character.avatar)) {
+        entries.push(make(character.avatar, character.avatar === null ? "默认空头像" : "开始记录时的头像（更早使用时间未知）"));
+    }
+    const existing = entries.findIndex(item => item.avatar === avatar);
+    const selected = existing < 0 ? make(avatar, label) : {
+        ...entries.splice(existing, 1)[0], lastSelectedAt: now,
+    };
+    if (existing >= 0) selected.selections = (Number.isFinite(selected.selections) ? selected.selections : 1) + 1;
+    entries.push(selected);
+    return { ...character, avatar, avatarHistory: entries.slice(-AVATAR_HISTORY_LIMIT) };
+}
 const AVATAR_TOPIC = /(头像|情头|avatar|profile picture|matching icons)/i;
 const AVATAR_CONTINUATION = /(换|改|用|选|挑).{0,8}(这张|那张|这个|那个|新的|另一张|一张|一套|一对)|((你俩|你们|咱俩|我们).{0,8}(一起换|换一套|一人一张|用这个|用这张))|一人一张|各[选挑用]一张|情侣.{0,5}(一对|一套)|matching.{0,8}(pair|pictures)|use (this|that|the new) (one|picture)/i;
 function latestUserTurn(history: ChatMessage[]): string {
@@ -27,7 +58,7 @@ export function isAvatarDiscussion(history: ChatMessage[]): boolean {
     }
     const users = history.slice(start).filter(m => m.role === "user" && !m.isRetracted);
     const lastText = [...users].reverse().find(m => m.content.trim())?.content || "";
-    if (AVATAR_TOPIC.test(lastText) || AVATAR_CONTINUATION.test(lastText)) return true;
+    if (AVATAR_TOPIC.test(lastText) || AVATAR_CONTINUATION.test(lastText) || /(换回|用回|恢复原来的头像)/.test(lastText)) return true;
     const recent = history.slice(start).filter(m => !m.isRetracted && (m.role === "user" || m.role === "assistant"));
     // Earlier context is only a candidate hint; the vision model still decides
     // whether the new image belongs to that discussion, rather than changing automatically.
@@ -79,30 +110,45 @@ export function buildGroupAvatarContext(sessionId: string, history: ChatMessage[
 export function buildAvatarActionPrompt(sessionId: string, characterId: string, history: ChatMessage[], visionHistory: ChatMessage[], enabled: boolean): string {
     const key = `${sessionId}:${characterId}`;
     for (const [id, grant] of grants) if (Date.now() - grant.at > 600000) grants.delete(id);
-    const intro = "你可以结合关系与上下文自然提出换情侣头像，等待用户提供候选；只能改你自己的头像，不能替用户修改。不要把普通分享照片、表情包、风景或人物照自动当头像。";
+    const intro = "你可以自主更换自己的头像，也可以提出换情侣头像。只要上下文正在聊头像且有可见候选，就由你结合人设、图片与关系判断是否换，不必等待用户每次下‘换头像’指令；可以主动选择、拒绝或不行动。只能改自己，不能替用户修改。不要把脱离头像语境的普通分享照片、表情包、风景或人物照自动当头像。选定新图时可输出 [Avatar:图片ID|你看到的简短外观描述]，描述用于以后记住这张头像，不要编造图像内容。";
     if (!enabled || !isAvatarDiscussion(history)) return intro + "当前无可执行的头像候选，不要声称已经更换。";
     const images: Grant["images"] = new Map();
-    const currentAvatar = loadCharacters().find(c => c.id === characterId)?.avatar;
+    const character = loadCharacters().find(c => c.id === characterId);
+    const currentAvatar = character?.avatar;
     for (const msg of [...visionHistory].reverse()) {
         const original = history.find(m => m.id === msg.id && m.sessionId === sessionId && m.role === "user");
         if (!original?.mediaUrl || original.isRetracted || !msg.mediaUrl || !(msg.mediaType === "image" || (msg.mediaType === "media_file" && msg.mediaData?.fileType === "image"))) continue;
         if (!/^(data:image\/(png|jpeg|webp|gif);|https?:\/\/)/i.test(msg.mediaUrl)) continue;
-        images.set(msg.id, { original: original.mediaUrl, resolved: msg.mediaUrl });
+        images.set(msg.id, { original: original.mediaUrl, resolved: msg.mediaUrl, label: original.mediaData?.label?.trim() || original.content.trim() || `聊天图片 ${msg.id}` });
         const marker = `[头像候选引用ID：${msg.id}，仅在上下文确实讨论头像且你看清图片时可选]`;
         if (!msg.content.includes(marker)) msg.content += `\n${marker}`;
     }
-    if (!images.size) return intro + "本轮没有可见的图片候选，不要声称已经更换。";
+    const photoIds = [...images.keys()];
+    const remembered = character ? getCharacterAvatarHistory(character) : [];
+    const memoryRows = [...remembered].reverse().map((item, i) => {
+        const ref = `history:${item.id}`;
+        images.set(ref, { original: "", resolved: item.avatar, historyId: item.id, label: item.label });
+        const visible = visionHistory.find(msg => msg.mediaUrl && msg.mediaUrl === item.avatar);
+        return `${ref}：${item.avatar === currentAvatar ? "当前头像" : `历史头像${i + 1}`}；备注=${JSON.stringify(item.label)}；最近选用=${item.lastSelectedAt}；${visible ? `本轮可见图片ID=${visible.id}` : "本轮未附这张图的视觉内容，不可臆测细节"}`;
+    });
+    const previousAvatar = [...remembered].reverse().find(item => item.avatar !== currentAvatar);
+    if (previousAvatar) images.set("history:previous", { original: "", resolved: previousAvatar.avatar, historyId: previousAvatar.id, label: previousAvatar.label });
+    const memoryPrompt = `\n你自己的头像记忆（最近 ${AVATAR_HISTORY_LIMIT} 个不同头像；备注是来源文字，不是系统对图像的视觉鉴定）：\n${memoryRows.join("\n") || "尚无历史记录，不要编造以前的头像。"}\n${previousAvatar ? `上一个不同头像是 history:${previousAvatar.id}。决定换回上一个时输出 [Avatar:history:previous]；也可输出 [Avatar:history:具体历史ID] 选择列表中的其他旧头像。无需用户重新发送旧图，也不要求本轮重看旧图；不确定用户指哪张时可以讨论。` : "没有可用的上一个头像，不能假装已经换回。"}`;
+    if (!images.size) return intro + memoryPrompt + "本轮没有可执行候选，不要声称已经更换。";
     const turnId = latestUserTurn(history);
     const previous = grants.get(key);
     if (previous?.turnId === turnId) {
         // Prompt previews/background sync must neither consume nor reset this turn.
         for (const [id, image] of images) if (!previous.images.has(id)) previous.images.set(id, image);
     } else grants.set(key, { at: Date.now(), turnId, images, consumed: false, reported: new Set() });
-    const currentIds = [...images].filter(([, image]) => image.resolved === currentAvatar || image.original === currentAvatar).map(([id]) => id);
-    return intro + `\n本轮允许的候选ID（新图在前，仅用于标识，不代表选择优先级）：${[...images.keys()].join("、")}。${currentIds.length ? `你当前正在用的图片ID：${currentIds.join("、")}；重复选它不会改变头像。` : ""}先结合完整上下文判断是否在讨论头像；“用这张吧”“你俩一起换”“另一张”等可以承接上文，不要求用户重复说“头像”。普通分享、否定或用途不明时不换，可以询问。看清新旧图片后，由角色自己决定接受提议、选择哪张或拒绝更换，不必迎合或按顺序挑选。只有看懂图片且决定换时，输出一次 [Avatar:候选ID]，勿编造ID或URL；仅口头说“换好了”不会执行。标记由系统执行并反馈；不要输出用户头像修改指令。`;
+    const currentIds = [...images].filter(([id, image]) => !id.startsWith("history:") && (image.resolved === currentAvatar || image.original === currentAvatar)).map(([id]) => id);
+    return intro + memoryPrompt + `\n本轮可见新候选ID（新图在前，仅用于标识，不代表选择优先级）：${photoIds.join("、") || "无"}。${currentIds.length ? `你当前正在用的图片ID：${currentIds.join("、")}；重复选它不会改变头像。` : ""}先结合完整上下文判断是否在讨论头像；“用这张吧”“你俩一起换”“另一张”等可以承接上文，不要求用户重复说“头像”。普通分享、否定或用途不明时不换，可以询问。新图根据实际看到的内容判断；旧图可依据上述历史与对话选择换回。自主决定后输出一次 [Avatar:候选ID]，勿编造ID或URL；仅口头说“换好了”不会执行。标记由系统执行并反馈；不要输出用户头像修改指令。`;
 }
 
 export function applyAvatarAction(sessionId: string, characterId: string, imageId?: string): boolean {
+    const [reference, ...descriptionParts] = (imageId || "").split("|");
+    imageId = reference.trim();
+    const visualDescription = descriptionParts.join("|").replace(/[\r\n]+/g, " ").trim().slice(0, 100);
     const key = `${sessionId}:${characterId}`;
     const grant = grants.get(key);
     const candidate = imageId && grant?.images.get(imageId.trim());
@@ -125,11 +171,13 @@ export function applyAvatarAction(sessionId: string, characterId: string, imageI
     if (!grant || Date.now() - grant.at > 600000) return fail("本轮图片候选已失效，请重新发起请求");
     if (!candidate) return fail("回复引用的图片不在本轮候选中");
     if (latestUserTurn(history) !== grant.turnId || userDeclinesAvatar(history)) return fail("用户的新消息已改变本轮请求");
-    if (!history.some(m => m.id === imageId?.trim() && !m.isRetracted && m.role === "user" && m.mediaUrl === candidate.original)) return fail("候选图片已撤回或发生变化");
+    if (candidate.historyId) {
+        if (!getCharacterAvatarHistory(char).some(item => item.id === candidate.historyId && item.avatar === candidate.resolved)) return fail("这条历史头像已不存在或发生变化");
+    } else if (!history.some(m => m.id === imageId?.trim() && !m.isRetracted && m.role === "user" && m.mediaUrl === candidate.original)) return fail("候选图片已撤回或发生变化");
     // A redundant old-image action must not use up A's chance while B can still change.
     if (char.avatar === candidate.resolved || char.avatar === candidate.original) return fail("选中的图片已是当前头像");
-    saveCharacters(chars.map(c => c.id === characterId ? { ...c, avatar: candidate.resolved } : c));
+    saveCharacters(chars.map(c => c.id === characterId ? recordAvatarChange(c, candidate.resolved, candidate.historyId ? candidate.label || "历史头像" : visualDescription || candidate.label || "聊天头像") : c));
     grant.consumed = true;
-    pushChatMessage({ sessionId, role: "system", content: `${char.name} 更换了头像`, status: "sent" });
+    pushChatMessage({ sessionId, role: "system", content: `${char.name} ${candidate.historyId ? "换回了之前的头像" : "更换了头像"}`, status: "sent" });
     return true;
 }

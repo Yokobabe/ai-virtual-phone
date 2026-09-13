@@ -6,6 +6,7 @@ import { extractTextToolDirectiveText } from "./text-tool-protocol";
 import type { ApiConfig, PresetConfig, RegexConfig } from "./settings-types";
 import { loadCharacters } from "./character-storage";
 import { buildGroupTapbackPrompt } from "./chat-tapback";
+import { buildEchoPrompt, echoHistoryText } from "./chat-echo";
 import { buildAvatarActionPrompt, buildGroupAvatarContext, getAvatarVisionPromptLimit } from "./chat-avatar-action";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
 import { runChatPluginTransform } from "./chat-plugin-hooks";
@@ -131,7 +132,7 @@ export function annotateGroupHistory(
 
         return {
             ...msg,
-            content: `[${senderName}]: ${content}`,
+            content: `[${senderName}]: ${echoHistoryText(msg, content)}${msg.role === "user" && Array.isArray(msg.mediaData?.mentions) && msg.mediaData.mentions.length ? `\n[本条消息明确提及：${msg.mediaData.mentions.filter(m => m && charMap.has(m.characterId)).map(m => `${charMap.get(m.characterId)}（角色ID:${m.characterId}）`).join("、")}；提及是互动信息，不强制被提及者回复或其他成员沉默。]` : ""}`,
         };
     });
 }
@@ -497,7 +498,7 @@ async function buildGroupChatPromptMessages(
         offlineSummaryTag: preset?.story_summary_tag?.trim() || "summary",
         nativeToolHistory: usesNativeActions,
     });
-    if (!isOfflineMode) llmMessages.push({ role: "system", content: buildGroupTapbackPrompt() + "\n" + avatarInstructions });
+    if (!isOfflineMode) llmMessages.push({ role: "system", content: buildGroupTapbackPrompt(promptHistory) + "\n" + avatarInstructions + "\n" + buildEchoPrompt() });
     if (promptProfile?.output === "plain_text") {
         llmMessages.push({
             role: "system",

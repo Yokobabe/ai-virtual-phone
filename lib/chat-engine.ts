@@ -89,6 +89,7 @@ import {
 } from "./bilingual-prompt-defaults";
 import { parseOfflineResponse, extractThinkingTag, type ParsedOfflineResponse } from "./chat-offline-storage";
 import { buildIMessageTapbackPromptInstruction } from "./chat-tapback";
+import { buildEchoPrompt } from "./chat-echo";
 import { buildAvatarActionPrompt, getAvatarVisionPromptLimit } from "./chat-avatar-action";
 import { throwIfAborted } from "./abort-utils";
 import { armShortcutContinuation, SHORTCUT_VISION_OFF_NOTE, type ShortcutContinuationHandle, type ShortcutContinuationStyle } from "./shortcut-continuation-client";
@@ -1943,7 +1944,7 @@ export async function buildChatPromptMessages(
     if (resolvedAppId === "chat" && !session.isGroup && !isOfflineMode) {
         llmMessages.push({
             role: "system",
-            content: buildIMessageTapbackPromptInstruction() + "\n" + avatarInstruction,
+            content: buildIMessageTapbackPromptInstruction() + "\n" + avatarInstruction + "\n" + buildEchoPrompt(),
         });
     }
     if (promptProfile?.output === "plain_text") {

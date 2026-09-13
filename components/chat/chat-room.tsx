@@ -16,6 +16,12 @@ import { PhotoInputModal, TextPhotoModal, VoiceRecordModal, RedPacketModal, Loca
 import { EmojiPanel, StickerPanel } from "./emoji-panel";
 import { IMessageTapbackBadge } from "./imessage-tapback-badge";
 import { StickerSearchSuggest } from "./sticker-search-suggest";
+import { useGroupMentions } from "./use-group-mentions";
+import { MentionAvatar } from "./mention-avatar";
+import { useEchoSendGesture } from "./use-echo-send-gesture";
+import { canUseEcho, hasEcho } from "@/lib/chat-echo";
+import { useChatEcho } from "./use-chat-echo";
+import type { MentionMember } from "@/lib/group-mentions";
 import { StateValuesPanel } from "./state-values-panel";
 import { generateChatCompletion, generateOfflineChatCompletion, flattenCompletionResult, ChatEngineError } from "@/lib/chat-engine";
 import { formatOfflineTurnXml as formatOfflineTurnXmlShared, buildOfflinePromptHistory as buildOfflinePromptHistoryShared } from "@/lib/offline-prompt-builder";
@@ -495,6 +501,7 @@ type ContextMenuAnchor = {
 };
 
 type RenderChatMessage = ChatMessage & {
+    echoPlaybackKey?: string;
     displayProjected?: boolean;
     displaySourceId?: string;
 };
@@ -513,6 +520,7 @@ const TRANSIENT_MESSAGE_PREFIX = "ui-transient-";
 type RichModalKind = "photo" | "text_photo" | "red_packet" | "transfer" | "location" | "transfer_target" | "voice_msg" | "gift" | "system_instruction";
 type ChatTextInputHandle = {
     appendText: (text: string, options?: { focus?: boolean }) => void;
+    mention: (member: MentionMember) => void;
     clear: () => void;
     focus: () => void;
 };
@@ -626,6 +634,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     characterName: string;
     characterId: string;
     stickerCharacterIds?: string[];
+    mentionMembers: MentionMember[];
     isGroup: boolean;
     isSpectator: boolean;
     muteUntilMs: number;
@@ -650,7 +659,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     onOpenCustomPlusAction: (action: RegisteredCustomAppChatPlusAction) => void;
     onStartVideoCall: () => void;
     onStartVoiceCall: () => void;
-    onSendText: (text: string, options?: { autoReply?: boolean }) => boolean;
+    onSendText: (text: string, options?: { autoReply?: boolean; screenEffect?: "echo"; mentions?: { characterId: string; name: string }[] }) => boolean;
     onStopGeneration: () => void;
     onTriggerAIResponse: () => void;
 	onSendSticker: (name: string, url?: string) => void;
@@ -658,6 +667,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     characterName,
     characterId,
     stickerCharacterIds,
+    mentionMembers,
     isGroup,
     isSpectator,
     muteUntilMs,
@@ -682,7 +692,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     onOpenCustomPlusAction,
     onStartVideoCall,
     onStartVoiceCall,
-    onSendText,
+    onSendText: sendText,
     onStopGeneration,
     onTriggerAIResponse,
     onSendSticker,
@@ -701,6 +711,9 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     }, [muteUntilMs]);
     const muteRemainingMs = muteUntilMs > muteNowTick ? muteUntilMs - muteNowTick : 0;
     const inputLocked = isSpectator || muteRemainingMs > 0;
+    const mentions = useGroupMentions(inputText, setInputText, textareaRef, mentionMembers,
+        isGroup && !inputLocked && inputFocused && !showEmojiPanel && !showStickerPanel && !showPlusMenu);
+    const onSendText = (text: string, options?: { autoReply?: boolean; screenEffect?: "echo" }) => sendText(text, { ...options, mentions: mentions.identities(text) });
 
     const resetTextareaHeight = () => {
         if (textareaRef.current) textareaRef.current.style.height = "auto";
@@ -719,12 +732,13 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
 
     useImperativeHandle(ref, () => ({
         appendText,
+        mention: (member: MentionMember) => { if (!inputLocked) mentions.insert(member, false); },
         clear: () => {
             setInputText("");
             resetTextareaHeight();
         },
         focus: () => textareaRef.current?.focus(),
-    }), [appendText]);
+    }), [appendText, mentions.insert, inputLocked]);
 
     const sendDraft = (autoReply?: boolean) => {
         const trimmed = inputText.trim();
@@ -742,6 +756,14 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
         }
         sendDraft();
     };
+
+    const sendEchoDraft = () => {
+        if (inputLocked || isGenerating || !canUseEcho({ content: inputText })) return;
+        if (!onSendText(inputText.trim(), { screenEffect: "echo" })) return;
+        setInputText(""); resetTextareaHeight(); onClosePanels(); textareaRef.current?.blur();
+    };
+    const echoGesture = useEchoSendGesture(!inputLocked && !isGenerating && canUseEcho({ content: inputText }), sendEchoDraft,
+        () => (!isGenerating ? handleAIReply : handleSubmit)());
 
     const handleAIReply = () => {
         const trimmed = inputText.trim();
@@ -826,7 +848,8 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                 </div>
             )}
 
-            {suggestEnabled && (
+            {mentions.panel}
+            {suggestEnabled && !mentions.open && (
                 <StickerSearchSuggest
                     query={inputText}
                     characterIds={suggestCharacterIds}
@@ -886,6 +909,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                 rows={1}
                 value={inputText}
                 onChange={e => {
+                    mentions.change(e.target.value, e.target.selectionStart);
                     setInputText(e.target.value);
                     setSuggestClosed(false);
                     e.target.style.height = "auto";
@@ -904,8 +928,18 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                 onBlur={() => {
                     setInputFocused(false);
                     setSuggestClosed(true);
+                    mentions.close();
                 }}
+                onSelect={e => mentions.select(e.currentTarget.selectionStart)}
+                onCompositionStart={() => mentions.composition(true)}
+                onCompositionEnd={() => mentions.composition(false)}
+                aria-expanded={mentions.open}
+                role={isGroup ? "combobox" : undefined}
+                aria-controls={mentions.open ? mentions.listId : undefined}
+                aria-activedescendant={mentions.activeOptionId}
+                aria-autocomplete={isGroup ? "list" : undefined}
                 onKeyDown={e => {
+                    if (mentions.keyDown(e)) return;
                     if (e.key === "Escape") {
                         setSuggestClosed(true);
                         return;
@@ -945,8 +979,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
                 </button>
                 <button
-                    onClick={!isGenerating ? handleAIReply : handleSubmit}
-                    onPointerDown={e => e.preventDefault()}
+                    {...echoGesture.handlers}
                     disabled={!isGenerating && inputLocked && !isGroup}
                     style={inputLocked && !isGenerating ? { opacity: 0.35 } : undefined}
                     className="ui-bare-btn text-[var(--c-text)] chat-send-btn"
@@ -1324,6 +1357,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         for (const msg of messages) {
             if (seen.has(msg.id)) continue;
             seen.add(msg.id);
+            if (hasEcho(msg)) continue;
             if (msg.role !== "user" && msg.role !== "assistant") continue;
             // 只对本次打开聊天室之后产生的消息生效，历史加载/翻页不触发
             if (new Date(msg.createdAt).getTime() < screenFxMountedAtRef.current) continue;
@@ -4240,7 +4274,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         return true;
     };
 
-    const handleSendText = (text: string, options?: { autoReply?: boolean }): boolean => {
+    const handleSendText = (text: string, options?: { autoReply?: boolean; screenEffect?: "echo"; mentions?: { characterId: string; name: string }[] }): boolean => {
         if (!ensureGroupSpeakPermission()) return false;
         if (isGenerating) {
             showChatToast("请先等待对方回复");
@@ -4264,7 +4298,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         const commitSendText = (currentText: string) => {
             // 掷骰子：整条消息就是骰子图标时，发骰子气泡（内容仅图标），
             // 点数由系统旁白公布——避免结果挂在 user 消息上被角色模仿格式
-            const diceOnly = !isQuoting && isDiceOnlyMessage(currentText);
+            const useEcho = options?.screenEffect === "echo" && canUseEcho({ content: currentText });
+            const diceOnly = !useEcho && !isQuoting && isDiceOnlyMessage(currentText);
             const diceFace = diceOnly ? rollChatDiceFace() : 0;
 
             const newMsg = pushChatMessage({
@@ -4272,10 +4307,16 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 role: "user",
                 content: currentText,
                 mediaType: diceOnly ? "dice" : isQuoting ? "quote" : undefined,
-                mediaData: diceOnly ? { diceFace } : isQuoting ? quoteData : undefined,
+                mediaData: diceOnly ? { diceFace } : useEcho || isQuoting || (session.isGroup && options?.mentions?.length) ? {
+                    ...(useEcho ? { screenEffect: "echo" as const } : {}),
+                    ...(isQuoting ? quoteData : {}),
+                    ...(session.isGroup && options?.mentions?.length ? { mentions: options.mentions.filter(m => session.participantIds?.includes(m.characterId) && currentText.includes(`@${m.name}`)) } : {}),
+                } : undefined,
             });
 
             setMessages(prev => [...prev, newMsg]);
+            // Use the actual publish boundary (also after async plugins), not only history inference.
+            if (hasEcho(newMsg)) echo.published(newMsg);
             if (diceOnly) {
                 const diceAside = pushChatMessage({
                     sessionId: session.id,
@@ -5315,6 +5356,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                         }
                         setActiveMessageId(null);
                     }} className="ctx-menu-btn"><Copy className="imessage-context-icon" aria-hidden="true" /><span>复制</span></button>
+                    {hasEcho(m) && <button type="button" onClick={() => { closeContextMenu(); echo.replay(m.id); }} className="ctx-menu-btn">
+                        <span className="imessage-context-icon" aria-hidden="true">↻</span><span>重播回声</span>
+                    </button>}
                     <button onClick={() => (m.role === "assistant" ? handleEditResponseStart(m) : handleEditMessageStart(m))} className="ctx-menu-btn">
                         <Pencil className="imessage-context-icon" aria-hidden="true" />
                         <span>{m.role === "assistant" && (m.rawResponseText || m.editableResponseText) ? "编辑回复" : "编辑"}</span>
@@ -5587,6 +5631,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 projected.push({
                     ...base,
                     id,
+                    echoPlaybackKey: `${batch[0].id}__echo_${index}`,
                     content: part.content,
                     mediaType: part.mediaType,
                     mediaData,
@@ -5615,6 +5660,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         }
         return projected;
     }, [dedupedMessages, normalizeDisplayParts, renderDisplayText]);
+    const echo = useChatEcho(projectedMessages, session.id, wrapperRef, !offlineMode && !showSettings && !showVoiceCall && !showVideoCall);
 
     // Build a map: startMsgId → { startIdx, endIdx, duration }
     // and a set of all message indices that belong to a voice call group
@@ -5976,6 +6022,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
             {/* 全屏特效层（表情雨/礼花），不拦截任何触摸操作 */}
             <ChatScreenEffectOverlay active={activeScreenEffect} onDone={() => setActiveScreenEffect(null)} />
+            {echo.overlay}
             {/* Header */}
             <header className="page-header chat-room-main-pane" data-ui="header">
                 <div className="page-header-safe-area" />
@@ -6602,18 +6649,22 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                             : character;
                                                         return (
                                                             <>
-                                                    <div onDoubleClick={() => {
+                                                    <MentionAvatar name={senderChar?.name || "群成员"} onMention={session.isGroup && senderChar && !session.isSpectator ? () => {
+                                                        if (!ensureGroupSpeakPermission()) return;
+                                                        setShowEmojiPanel(false); setShowStickerPanel(false); setShowPlusMenu(false);
+                                                        chatTextInputRef.current?.mention({ id: senderChar.id, name: groupPrivateAliases.get(senderChar.id) || senderChar.name, avatar: senderChar.avatar });
+                                                    } : undefined} onPoke={() => {
                                                         const targetChar = session.isGroup && msg.senderCharacterId
                                                             ? groupCharMap.get(msg.senderCharacterId) || character
                                                             : character;
                                                         if (targetChar) sendRichMessage("poke", { pokeTarget: targetChar.name });
-                                                    }} className="w-[40px] h-[40px] rounded-[20px] bg-[var(--c-input)] overflow-hidden cursor-pointer">
+                                                    }}>
                                                         {senderChar?.avatar ? (
                                                             <img src={senderChar.avatar} className="w-full h-full object-cover" alt="" />
                                                         ) : (
                                                             <ChatFallbackAvatar />
                                                         )}
-                                                    </div>
+                                                    </MentionAvatar>
                                                             </>
                                                         );
                                                     })()}
@@ -6879,6 +6930,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 characterName={character?.name || "对方"}
                 characterId={session.contactId}
 	                stickerCharacterIds={session.isGroup ? session.participantIds : undefined}
+                    mentionMembers={groupCharacters.map(c => ({ id: c.id, name: groupPrivateAliases.get(c.id) || c.name, avatar: c.avatar }))}
 	                isGroup={!!session.isGroup}
 	                isSpectator={!!session.isGroup && !!session.isSpectator}
 	                muteUntilMs={session.isGroup && session.groupMutes?.[GROUP_SELF_KEY] ? new Date(session.groupMutes[GROUP_SELF_KEY]).getTime() : 0}

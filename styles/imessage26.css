@@ -1,4 +1,36 @@
 /* Sent quote excerpts are outlined; the composer preview remains a filled bubble. */
+.echo-preview { position: absolute; inset: 0; z-index: 200; overflow: hidden; isolation: isolate; background: color-mix(in srgb, var(--im26-page, #fafafa) 40%, transparent); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); color: var(--im26-ink, #111); touch-action: none; }
+.echo-dimmer { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+.echo-preview-heading { position: absolute; z-index: 3; left: 20px; top: max(42px, env(safe-area-inset-top)); display: grid; gap: 6px; pointer-events: none; }
+.echo-preview-heading > span { font-size: 12px; opacity: .6; }
+.echo-preview-heading strong { font-size: 24px; font-weight: 600; }
+.echo-preview-heading small { font-size: 11px; opacity: .65; }
+.echo-original { position: absolute; bottom: calc(max(22px, env(safe-area-inset-bottom)) + 70px); right: 22px; max-width: 47%; z-index: 2; }
+.echo-preview .echo-pill { width: max-content; max-width: 210px; color: var(--bubble-text-ink, #fff); white-space: pre-wrap; overflow-wrap: anywhere; font-weight: 400; }
+.chat-room-wrapper[data-imessage-private] .echo-preview .imessage-bubble-surface::before { content: ""; left: auto; right: 7px; transform: none; }
+.echo-original .echo-pill { max-width: 100%; }
+.echo-pill > span:not(.imessage-bubble-surface) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+.echo-field { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.echo-copy { position: absolute; left: 0; top: 0; width: max-content; max-width: 70%; opacity: 0; transform-origin: center; animation: none; }
+.echo-preview-controls { position: absolute; z-index: 4; left: 0; right: 0; bottom: max(22px, env(safe-area-inset-bottom)); display: flex; justify-content: center; gap: 12px; }
+.echo-preview-controls button { border: 1px solid var(--im26-glass-edge, #ffffffb3); border-radius: 30px; padding: 12px 20px; min-height: 44px; color: inherit; background: var(--im26-menu-surface, #ffffffd9); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); font-size: 14px; cursor: pointer; }
+.echo-preview-controls button:focus-visible { outline: 2px solid var(--im26-blue, #38acfc); outline-offset: 3px; }
+.chat-send-btn { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.chat-send-btn { touch-action: none; }
+.echo-preview-controls .echo-confirm-send { background: var(--im26-blue, #38acfc); color: #fff; }
+.echo-live { position: absolute; inset: 0; z-index: 201; overflow: hidden; isolation: isolate; touch-action: none; }
+.echo-live-field { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.echo-live-original { position: absolute; transform: translate(-50%, -50%); z-index: 2; pointer-events: none; }
+.echo-live .echo-copy { max-width: none; }
+.chat-room-wrapper[data-imessage-private] .echo-live [data-echo-tail] .imessage-bubble-surface::before { content: ""; }
+.chat-room-wrapper[data-imessage-private] .echo-live [data-echo-role="user"] .imessage-bubble-surface::before { left: auto; right: 7px; transform: none; }
+.echo-live-skip { position: absolute; z-index: 3; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); border-radius: 24px; padding: 10px 18px; min-height: 44px; color: var(--im26-ink, #111); background: var(--im26-menu-surface, #ffffffd9); }
+.echo-replay-message { align-self: flex-end; border: 0; background: transparent; color: var(--im26-blue, #38acfc); font-size: 11px; padding: 6px 4px; min-height: 30px; cursor: pointer; }
+.chat-msg-wrapper[data-role="assistant"] .echo-replay-message { align-self: flex-start; }
+@media (prefers-reduced-motion: reduce) {
+  .echo-preview .echo-copy { animation: none !important; left: var(--echo-rest-x); top: var(--echo-rest-y); opacity: .8; transform: scale(var(--echo-scale)); }
+  .echo-preview .echo-copy:nth-child(n+9) { display: none; }
+}
 .chat-room-wrapper.chat-room-wrapper[data-imessage-private] .chat-quote-preview {
  --quote-readable-ink:#55555d;
  background:transparent !important;
@@ -587,11 +619,15 @@
 }
 
 /* Group identity: one name at the beginning, one avatar at the end of a run. */
+.chat-room-wrapper[data-imessage-group] {
+  --group-avatar-size: max(34px, calc(17.94px * var(--app-text-scale, 1) + 16px));
+  --group-avatar-gutter: calc(var(--group-avatar-size) + 6px);
+}
 .chat-app .chat-room-wrapper[data-imessage-private][data-imessage-group] > .page-body {
   padding-left: 8px;
 }
 .chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-role="assistant"] {
-  padding-left: 33px;
+  padding-left: var(--group-avatar-gutter);
   position: relative;
 }
 .chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-role="assistant"][data-group-last] > .chat-msg-avatar {
@@ -601,13 +637,23 @@
   bottom: var(--group-avatar-bottom, 0px);
 }
 .chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-role="assistant"] > .chat-msg-avatar > div {
-  width: 28px;
-  height: 28px;
+  width: var(--group-avatar-size);
+  height: var(--group-avatar-size);
   border-radius: 50%;
 }
 .chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-role="assistant"] .chat-msg-content-wrap {
-  max-width: min(100%, calc((100% + 33px) * .8)) !important;
+  max-width: min(100%, calc((100% + var(--group-avatar-gutter)) * .8)) !important;
 }
+.group-mention-avatar { touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.group-mention-avatar img { pointer-events: none; }
+.group-mention-panel { position: absolute; bottom: calc(100% + 8px); left: 12px; right: 12px; z-index: 30; max-height: min(250px, 35dvh); overflow-y: auto; overscroll-behavior: contain; padding: 8px; border-radius: 22px; color: var(--c-text); background: var(--im26-menu-surface, var(--c-card)); border: 1px solid var(--im26-menu-edge, var(--c-card-border)); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); box-shadow: 0 8px 25px #0002; }
+.group-mention-heading, .group-mention-empty { padding: 8px 10px; font-size: 12px; color: var(--c-icon); }
+.group-mention-panel button { width: 100%; display: flex; align-items: center; gap: 10px; border: 0; border-radius: 14px; background: transparent; color: inherit; text-align: left; padding: 8px 10px; min-height: 48px; font: inherit; }
+.group-mention-panel button[aria-selected="true"] { background: color-mix(in srgb, currentColor 7%, transparent); }
+.group-mention-panel img, .group-mention-fallback { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.group-mention-fallback { display: grid; place-items: center; background: var(--c-input); }
+.group-mention-panel button > span:nth-child(2) { overflow-wrap: anywhere; }
+.group-mention-at { margin-left: auto; color: var(--c-icon); }
 .chat-room-wrapper[data-imessage-group] .chat-group-sender-name {
   display: block;
   color: #8e8e93;
@@ -639,7 +685,7 @@
   margin-bottom: 11px;
 }
 .chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-role="assistant"] .chat-msg-content-wrap:not(:has(.chat-bubble-media)) {
-  max-width: min(100%, calc((100% + 33px) * .72)) !important;
+  max-width: min(100%, calc((100% + var(--group-avatar-gutter)) * .72)) !important;
 }
 .chat-room-wrapper[data-imessage-group] .chat-msg-wrapper[data-role="user"] .chat-msg-content-wrap:not(:has(.chat-bubble-media)) {
   max-width: 72% !important;

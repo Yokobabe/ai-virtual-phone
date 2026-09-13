@@ -10,6 +10,7 @@
  */
 
 import type { ChatMessage } from "./chat-storage";
+import { canUseEcho } from "./chat-echo";
 import type { StateValue } from "./chat-storage";
 import { parseStateValues, mergeStateValues } from "./state-value-parser";
 import { stripActionShells } from "./action-parser";
@@ -202,7 +203,7 @@ const RICH_PATTERNS: {
         build: (m) => ({ content: "", mediaType: "avatar_action" as const, mediaData: { avatarImageId: m[1]?.trim() || "" } }),
     },
     {
-        // Real iMessage Tapback action: attaches to the latest eligible user message.
+        // Real Tapback action: target resolution is private/group aware (ID/name supported in groups).
         regex: new RegExp(`\\[Tapback${C}([^\\]]+)\\]`, "i"),
         build: (m) => ({
             content: "",
@@ -658,8 +659,18 @@ export function parseAIResponse(rawText: string, previousState: StateValue[]): P
 
     // 4. Parse each segment
     const parts: ParsedMessagePart[] = [];
+    let echoUsed = false;
     for (const seg of segments) {
-        parseSegment(seg, parts);
+        const echo = /^\[Echo\]\s*/i.test(seg);
+        const segmentParts: ParsedMessagePart[] = [];
+        parseSegment(echo ? seg.replace(/^\[Echo\]\s*/i, "") : seg, segmentParts);
+        // Bind only to the first visible part; never skip an attachment to mark a later text.
+        const first = segmentParts[0];
+        if (echo && !echoUsed && first && canUseEcho(first) && !first.content.includes("\x00HTML_BLOCK_")) {
+            first.mediaData = { ...first.mediaData, screenEffect: "echo" };
+            echoUsed = true;
+        }
+        parts.push(...segmentParts);
     }
 
     // 5. Restore HTML block placeholders and keep unknown bracket protocols as plain text.

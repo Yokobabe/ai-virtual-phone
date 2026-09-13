@@ -106,3 +106,68 @@ console.log('PASS: group A previously changed + new photo for A/B; redundant old
  assert.equal(f.buildGroupAvatarContext('s',s.history,visible,true),'');
 }
 console.log('PASS: avatar-only batch vision 1→3, normal/off/20-image cap, shared ordering & live A/B ownership; no allocation instructions and independent same-photo choices remain allowed.');
+
+{
+ const f=fixture(),s=f.state;
+ s.chars[0].avatar='data:image/png;base64,initial==';
+ s.history=[text('invite','这几张适合当头像，你发来我看看。','assistant'),photo('first','给你看看')];
+ assert.equal(f.isAvatarDiscussion(s.history),true,'Avatar context needs no new user command');
+ assert.match(f.build(),/不必等待用户每次/);
+ assert.equal(f.applyAvatarAction('s','a','first|白色小猫，蓝色背景'),true);
+ assert.equal(s.chars[0].avatarHistory.length,2,'Preserve initial image before replacing');
+ assert.equal(s.chars[0].avatarHistory.at(-1).label,'白色小猫，蓝色背景');
+ const initialId=s.chars[0].avatarHistory[0].id;
+ // New runtime and different chat session: only persisted character data survives.
+ const r=fixture();r.state.chars=JSON.parse(JSON.stringify(s.chars));
+ r.state.history=[text('back1','换回去吧','user','g')];
+ const prompt=r.build('a','g');
+ assert.match(prompt,/白色小猫/);assert.match(prompt,/history:previous/);
+ assert.equal(r.applyAvatarAction('g','a','history:previous'),true);
+ assert.equal(r.state.chars[0].avatar,'data:image/png;base64,initial==');
+ assert.match(r.state.notices.at(-1).content,/换回了之前的头像/);
+ assert.equal(r.state.chars[0].avatarHistory.length,2,'Restoration reuses entry, not duplicate image');
+ r.state.history.push(text('back2','还是用回小猫头像','user','g'));r.build('a','g');
+ assert.equal(r.applyAvatarAction('g','a','history:previous'),true,'Previous toggles to last distinct avatar');
+ assert.equal(r.state.chars[0].avatar,photo('first').mediaUrl);
+ r.state.history.push(text('back3','换回最初的头像','user','g'));r.build('a','g');r.build('b','g');
+ assert.equal(r.applyAvatarAction('g','b',`history:${initialId}`),false,'Cannot use someone else’s private history');
+ assert.equal(r.applyAvatarAction('g','a',`history:${initialId}`),true);
+ r.state.history.push(text('back4','换回去','user','g'));r.build('a','g');
+ r.state.chars[0].avatarHistory=[];
+ assert.equal(r.applyAvatarAction('g','a','history:previous'),false,'Removed history cannot execute a stale grant');
+}
+{
+ const f=fixture();f.state.chars[0].avatar=null;
+ assert.match(f.build(),/无可执行/);
+ for(let i=0;i<24;i++){
+  f.state.history=[photo(`history${i}`)];f.build();
+  assert.equal(f.applyAvatarAction('s','a',`history${i}`),true);
+ }
+ assert.equal(f.state.chars[0].avatarHistory.length,20);
+ assert.equal(new Set(f.state.chars[0].avatarHistory.map(h=>h.avatar)).size,20);
+ assert.equal(f.state.chars[0].avatarHistory.at(-1).avatar,f.state.chars[0].avatar);
+ assert.equal(f.getCharacterAvatarHistory({avatarHistory:[null,{}, {id:'bad',avatar:'javascript:alert(1)',label:'bad'}]}).length,0);
+}
+console.log('PASS: autonomous contextual selection; persisted avatar history across runtime/session; previous/specific restoration; isolated ownership, stale-history guards and 20-image cap.');
+
+{
+ // Real character-storage serialization and cold cache reload (KV boundary mocked).
+ const storageJs=ts.transpileModule(fs.readFileSync('lib/character-storage.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+ const kv=new Map();
+ function storage(){
+  const sandbox={exports:{},window:{dispatchEvent(){}},Event:class{},setTimeout(){},require:id=>{
+   if(id==='./character-time')return {normalizeTimeZone:x=>x};
+   if(id==='./kv-db')return {kvGet:key=>kv.get(key),kvSet:(key,value)=>kv.set(key,value),registerKvMigration(){}};
+   throw new Error(`Unexpected storage dependency: ${id}`);
+  }};
+  vm.runInNewContext(storageJs,sandbox);return sandbox.exports;
+ }
+ const f=fixture();f.state.chars[0].avatar=null;f.state.history=[photo()];f.build();f.applyAvatarAction('s','a','p1|小猫');
+ storage().saveCharacters(f.state.chars);
+ const reloaded=storage().loadCharacters();
+ assert.equal(reloaded[0].avatarHistory.length,2);
+ assert.equal(reloaded[0].avatarHistory[0].avatar,null);
+ assert.equal(reloaded[0].avatarHistory[1].label,'小猫');
+ assert.equal(reloaded[0].avatar,photo().mediaUrl);
+}
+console.log('PASS: real character-storage save/load preserves avatar history after a cold cache restart.');
