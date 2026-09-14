@@ -1997,9 +1997,19 @@
   color: var(--im26-composer-hint, #707075);
 }
 
-.chat-room-wrapper[data-imessage-private] .chat-input-actions {
+.chat-room-wrapper[data-imessage-private] .chat-input-bar:not([data-offline-input]) .chat-input-actions {
   display: contents;
   padding: 0;
+}
+
+.chat-room-wrapper[data-imessage-private] .chat-input-bar[data-offline-input] .chat-input-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  width: 100%;
+  padding: 6px 0 0;
 }
 
 .chat-room-wrapper[data-imessage-private] .chat-input-actions .chat-offline-toggle,

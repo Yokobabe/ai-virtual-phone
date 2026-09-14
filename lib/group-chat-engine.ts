@@ -5,9 +5,10 @@ import { ChatSession, ChatMessage, loadChatAppSettings, createResponseBatchId, c
 import { extractTextToolDirectiveText } from "./text-tool-protocol";
 import type { ApiConfig, PresetConfig, RegexConfig } from "./settings-types";
 import { loadCharacters } from "./character-storage";
-import { buildGroupTapbackPrompt } from "./chat-tapback";
+import { buildGroupTapbackPrompt, buildPokeUsagePrompt } from "./chat-tapback";
 import { buildEchoPrompt, echoHistoryText } from "./chat-echo";
 import { buildAvatarActionPrompt, buildGroupAvatarContext, getAvatarVisionPromptLimit } from "./chat-avatar-action";
+import { buildCurrentAvatarSnapshot } from "./chat-current-avatar-context";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
 import { runChatPluginTransform } from "./chat-plugin-hooks";
 import { buildChatPluginPromptFragments } from "./chat-plugin-storage";
@@ -35,6 +36,7 @@ import {
     publishDebugPromptSnapshot,
     touchNativeExpandedToolSource,
     appendEmptyGenerateGuardMessage,
+    appendCurrentAvatarContext,
     applyCustomPromptProfileToPreset,
     stripOnlineThinkingTag,
     stripPresetTexts,
@@ -498,7 +500,14 @@ async function buildGroupChatPromptMessages(
         offlineSummaryTag: preset?.story_summary_tag?.trim() || "summary",
         nativeToolHistory: usesNativeActions,
     });
-    if (!isOfflineMode) llmMessages.push({ role: "system", content: buildGroupTapbackPrompt(promptHistory) + "\n" + avatarInstructions + "\n" + buildEchoPrompt() });
+    if (!isOfflineMode) {
+        await appendCurrentAvatarContext(llmMessages, buildCurrentAvatarSnapshot({
+            sessionId: session.id,
+            participantIds,
+            userIdentity,
+        }), config.enableImageRecognition);
+    }
+    if (!isOfflineMode) llmMessages.push({ role: "system", content: buildGroupTapbackPrompt(promptHistory) + "\n" + buildPokeUsagePrompt(promptHistory) + "\n" + avatarInstructions + "\n" + buildEchoPrompt() });
     if (promptProfile?.output === "plain_text") {
         llmMessages.push({
             role: "system",

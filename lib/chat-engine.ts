@@ -88,9 +88,10 @@ import {
     resolveBilingualPrompt,
 } from "./bilingual-prompt-defaults";
 import { parseOfflineResponse, extractThinkingTag, type ParsedOfflineResponse } from "./chat-offline-storage";
-import { buildIMessageTapbackPromptInstruction } from "./chat-tapback";
+import { buildIMessageTapbackPromptInstruction, buildPokeUsagePrompt } from "./chat-tapback";
 import { buildEchoPrompt } from "./chat-echo";
 import { buildAvatarActionPrompt, getAvatarVisionPromptLimit } from "./chat-avatar-action";
+import { buildCurrentAvatarSnapshot, formatCurrentAvatarTruth, type CurrentAvatarSubject } from "./chat-current-avatar-context";
 import { throwIfAborted } from "./abort-utils";
 import { armShortcutContinuation, SHORTCUT_VISION_OFF_NOTE, type ShortcutContinuationHandle, type ShortcutContinuationStyle } from "./shortcut-continuation-client";
 
@@ -227,6 +228,32 @@ export async function resolveCompressedImageDataUrl(imageRef: string): Promise<s
         return blob ? readCompressedImageDataUrl(blob) : imageRef;
     }
     return imageRef;
+}
+
+export async function appendCurrentAvatarContext(
+    messages: LLMMessage[],
+    subjects: CurrentAvatarSubject[],
+    enableVision: boolean | undefined,
+): Promise<void> {
+    const visualMessages: LLMMessage[] = [];
+    const visibleSubjectIds = new Set<string>();
+    if (enableVision) {
+        for (const subject of subjects) {
+            if (!subject.avatarUrl) continue;
+            const imageUrl = await resolveCompressedImageDataUrl(subject.avatarUrl);
+            if (!imageUrl) continue;
+            visibleSubjectIds.add(subject.id);
+            visualMessages.push({
+                role: "user",
+                content: [
+                    { type: "text", text: `系统提供的当前头像视觉：${subject.name}。这不是用户新发的聊天图片，也不是换头像候选。` },
+                    { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
+                ],
+            });
+        }
+    }
+    messages.push({ role: "system", content: formatCurrentAvatarTruth(subjects, visibleSubjectIds) });
+    messages.push(...visualMessages);
 }
 
 type VisionImageResolveResult =
@@ -1941,10 +1968,17 @@ export async function buildChatPromptMessages(
         offlineSummaryTag: preset?.story_summary_tag?.trim() || "summary",
         nativeToolHistory: usesNativeActions,
     });
+    if (resolvedAppId === "chat" && !isOfflineMode) {
+        await appendCurrentAvatarContext(llmMessages, buildCurrentAvatarSnapshot({
+            sessionId: session.id,
+            viewerCharacterId: character.id,
+            userIdentity,
+        }), config.enableImageRecognition);
+    }
     if (resolvedAppId === "chat" && !session.isGroup && !isOfflineMode) {
         llmMessages.push({
             role: "system",
-            content: buildIMessageTapbackPromptInstruction() + "\n" + avatarInstruction + "\n" + buildEchoPrompt(),
+            content: buildIMessageTapbackPromptInstruction() + "\n" + buildPokeUsagePrompt(promptHistory) + "\n" + avatarInstruction + "\n" + buildEchoPrompt(),
         });
     }
     if (promptProfile?.output === "plain_text") {

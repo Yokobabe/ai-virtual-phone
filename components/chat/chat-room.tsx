@@ -787,7 +787,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
         <img className="imessage-plus-app-icon" src={`/imessage26/apps/${fileName}`} alt="" aria-hidden="true" />
     );
     const plusMenuItems = [
-        ...(!isGroup ? [{ icon: imessageMenuIcon("offline-mode.jpg"), label: "线下模式", onClick: onToggleOfflineMode }] : []),
+        { icon: imessageMenuIcon("offline-mode.jpg"), label: "线下模式", onClick: onToggleOfflineMode },
         { icon: imessageMenuIcon("photo-wall.jpg"), label: "照片墙", onClick: () => onOpenRichModal("photo") },
         { icon: imessageMenuIcon("text-image.jpg"), label: !isGroup ? "文字图" : "文字图片", onClick: () => onOpenRichModal("text_photo") },
         { icon: imessageMenuIcon("system-instruction.jpg"), label: "系统指令", onClick: () => onOpenRichModal("system_instruction") },
@@ -1138,7 +1138,7 @@ const OfflineTextInputBar = memo(forwardRef<OfflineTextInputHandle, {
     };
 
     return (
-        <div className="chat-input-bar chat-room-main-pane flex flex-col" data-ui="input">
+        <div className="chat-input-bar chat-room-main-pane flex flex-col" data-ui="input" data-offline-input="">
             <textarea
                 ref={textareaRef}
                 rows={1}
