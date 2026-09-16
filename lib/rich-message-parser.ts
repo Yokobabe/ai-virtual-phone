@@ -167,6 +167,57 @@ const RICH_PATTERNS: {
         }),
     },
     {
+        // A character can change the private-chat remark shown on the user's phone.
+        regex: /\[修改备注[：:]([^\]\r\n]{1,40})\]/,
+        build: (m) => ({
+            content: "",
+            mediaType: "private_alias_action",
+            mediaData: { chatRenameKind: "private_alias", chatRenameValue: m[1].trim() },
+        }),
+    },
+    {
+        // A group member can rename the current group chat.
+        regex: /\[修改群名[：:]([^\]\r\n]{1,40})\]/,
+        build: (m) => ({
+            content: "",
+            mediaType: "group_name_action",
+            mediaData: { chatRenameKind: "group_name", chatRenameValue: m[1].trim() },
+        }),
+    },
+    {
+        // Explicitly target a 1-based item in the latest photo group.
+        // [照片标记:第3张:70:25:圈这里]
+        regex: new RegExp(`\\[照片标记${C}第?(\\d{1,2})张${C}(\\d{1,3})${C}(\\d{1,3})${C}([^\\]]+)\\]`),
+        build: (m) => ({
+            content: "",
+            mediaType: "photo_markup_action",
+            mediaData: {
+                photoMarkTargetIndex: Math.max(0, Number(m[1]) - 1),
+                photoMarkX: Math.max(0, Math.min(100, Number(m[2]))) / 100,
+                photoMarkY: Math.max(0, Math.min(100, Number(m[3]))) / 100,
+                photoMarkText: m[4].trim(),
+            },
+        }),
+    },
+    {
+        // Attach a visible handwritten-style note to the preceding photo.
+        // Coordinates are optional percentages: [照片标记:70:25:看这里]
+        regex: new RegExp(`\\[照片标记${C}(\\d{1,3})${C}(\\d{1,3})${C}([^\\]]+)\\]`),
+        build: (m) => ({
+            content: "",
+            mediaType: "photo_markup_action",
+            mediaData: {
+                photoMarkX: Math.max(0, Math.min(100, Number(m[1]))) / 100,
+                photoMarkY: Math.max(0, Math.min(100, Number(m[2]))) / 100,
+                photoMarkText: m[3].trim(),
+            },
+        }),
+    },
+    {
+        regex: new RegExp(`\\[照片标记${C}([^\\]]+)\\]`),
+        build: (m) => ({ content: "", mediaType: "photo_markup_action", mediaData: { photoMarkText: m[1].trim(), photoMarkX: 0.12, photoMarkY: 0.18 } }),
+    },
+    {
         regex: new RegExp(`\\[照片${C}(使用参考图|不使用参考图)${C}([^\\]]+)\\]`),
         build: (m) => ({
             content: "",
@@ -685,8 +736,39 @@ export function parseAIResponse(rawText: string, previousState: StateValue[]): P
         return { ...p, content: display };
     }).filter(p => p.mediaType || !isInvisibleOrWhitespaceOnly(p.content));
 
+    // Markup is an independent action message. The chat runtime resolves it against
+    // the latest photo/current group cover, updates that photo, and stores a visible
+    // action notice so the mark remains part of conversational memory.
+    const annotated: ParsedMessagePart[] = [...cleaned];
+
+    // Consecutive photo directives in one reply form one swipeable photo set.
+    // The images remain separate stored messages so vision history, generation retry,
+    // deletion and storage maintenance keep their existing per-image behavior.
+    for (let start = 0; start < annotated.length;) {
+        if (annotated[start].mediaType !== "image") { start += 1; continue; }
+        let end = start + 1;
+        while (end < annotated.length && annotated[end].mediaType === "image") end += 1;
+        const count = end - start;
+        if (count > 1) {
+            const groupId = `photo_group_ai_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            for (let index = start; index < end; index += 1) {
+                annotated[index] = {
+                    ...annotated[index],
+                    mediaData: {
+                        ...annotated[index].mediaData,
+                        photoGroupId: groupId,
+                        photoGroupIndex: index - start,
+                        photoGroupCount: count,
+                        photoKind: "text_photo",
+                    },
+                };
+            }
+        }
+        start = end;
+    }
+
     return {
-        parts: cleaned,
+        parts: annotated,
         stateValues,
         freshStateValues: parsedSV.stateValues,
         statusPanel: restore(status.content),

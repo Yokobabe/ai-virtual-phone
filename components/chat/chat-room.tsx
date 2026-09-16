@@ -6,6 +6,8 @@ import { cleanStreamText, splitStreamPreviewSegments, stripLiteralTexts, stripXm
 import type { StateValue } from "@/lib/chat-storage";
 import { parseStateValues, mergeStateValues } from "@/lib/state-value-parser";
 import { parseAIResponse, type ParsedMessagePart } from "@/lib/rich-message-parser";
+import { applyAssistantPhotoMarkupAction, describePhotoAnnotations } from "@/lib/chat-photo-markup";
+import { applyAssistantChatRenameAction } from "@/lib/chat-rename-action";
 import { applyAvatarAction } from "@/lib/chat-avatar-action";
 import { useChatCharacter } from "./use-chat-character";
 import { isKnownStickerLabel } from "@/lib/sticker-data";
@@ -125,11 +127,11 @@ function isCallSysMsg(msg: ChatMessage): boolean {
     return CALL_SYS_RE.test(msg.content);
 }
 /** Returns the effective UI role: call messages render as "system" regardless of stored role */
-const ACTION_MEDIA_TYPES = new Set(["poke", "tapback_action", "avatar_action", "accept_red_packet", "decline_red_packet", "accept_transfer", "decline_transfer", "accept_payment_request", "decline_payment_request", "group_admin_notice"]);
+const ACTION_MEDIA_TYPES = new Set(["poke", "tapback_action", "avatar_action", "photo_markup_action", "chat_background_change", "private_alias_action", "group_name_action", "accept_red_packet", "decline_red_packet", "accept_transfer", "decline_transfer", "accept_payment_request", "decline_payment_request", "group_admin_notice"]);
 // 拍一拍/群管理通知/通话留痕渲染成灰色系统小字，没有 💭 面板入口——
 // 状态栏/内心独白/状态值挂上去会被显示层吞掉，挂载时必须跳过它们
 function canCarryFoldedPanel(part: { content?: string; mediaType?: ChatMessage["mediaType"] }): boolean {
-    if (part.mediaType === "poke" || part.mediaType === "group_admin_notice") return false;
+    if (part.mediaType === "poke" || part.mediaType === "group_admin_notice" || part.mediaType === "photo_markup_action" || part.mediaType === "chat_background_change" || part.mediaType === "private_alias_action" || part.mediaType === "group_name_action") return false;
     return !CALL_SYS_RE.test(part.content || "");
 }
 function uiRole(msg: ChatMessage): string {
@@ -1665,6 +1667,47 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         closeContextMenu();
     };
 
+    const handleUserPhotoAnnotationsSave = (
+        target: ChatMessage,
+        annotations: NonNullable<ChatMessage["mediaData"]>["photoAnnotations"] = [],
+        previous: NonNullable<ChatMessage["mediaData"]>["photoAnnotations"] = [],
+    ) => {
+        const before = previous || [];
+        const after = annotations || [];
+        if (JSON.stringify(before) === JSON.stringify(after)) return;
+        const mediaData = { ...target.mediaData, photoAnnotations: after };
+        updateMessageMediaData(target.id, mediaData);
+
+        const added = after.filter(annotation => !before.some(item => item.id === annotation.id));
+        const summary = added.length
+            ? describePhotoAnnotations(added)
+            : (after.length < before.length ? "移除了之前的部分标记" : describePhotoAnnotations(after));
+        const count = target.mediaData?.photoGroupCount || 1;
+        const index = target.mediaData?.photoGroupIndex || 0;
+        const actorName = userIdentity?.name || "你";
+        const event = pushChatMessage({
+            sessionId: session.id,
+            role: "user",
+            content: count > 1 ? `${actorName}标记了第 ${index + 1} 张照片` : `${actorName}标记了照片`,
+            mediaType: "photo_markup_action",
+            mediaData: {
+                photoMarkupTargetMessageId: target.id,
+                photoMarkupTargetGroupId: target.mediaData?.photoGroupId,
+                photoMarkTargetIndex: index,
+                photoMarkupActorId: "self",
+                photoMarkupActorName: actorName,
+                photoMarkupSummary: summary,
+            },
+        });
+        setMessages(prev => [
+            ...prev.map(message => message.id === target.id ? { ...message, mediaData } : message),
+            event,
+        ]);
+        cancelFollowUp(session.id);
+        setPendingGenerate(true);
+        queueMicrotask(() => window.dispatchEvent(new CustomEvent(CHAT_REQUEST_REPLY_EVENT, { detail: { sessionId: session.id } })));
+    };
+
     const getContextMenuInitialStyle = () => {
         const anchor = contextMenuAnchor;
         if (!anchor) return { left: 0, top: 0 };
@@ -2715,6 +2758,37 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             let savedAnyPart = false;
             for (const part of parts) {
                 throwIfGenerationStopped(guard);
+                if (part.mediaType === "photo_markup_action") {
+                    const applied = applyAssistantPhotoMarkupAction({
+                        sessionId: session.id,
+                        actorId: r.characterId,
+                        actorName: r.characterName,
+                        markData: part.mediaData,
+                        responseBatchId,
+                        responseRoundId,
+                    });
+                    if (applied) {
+                        savedAnyPart = true;
+                        msgsSetter(prev => [...prev.map(message => message.id === applied.target.id ? applied.target : message), applied.event]);
+                    }
+                    continue;
+                }
+                if (part.mediaType === "group_name_action" || part.mediaType === "private_alias_action") {
+                    const applied = applyAssistantChatRenameAction({
+                        sessionId: session.id,
+                        actorId: r.characterId,
+                        actorName: r.characterName,
+                        actionData: part.mediaData,
+                        responseBatchId,
+                        responseRoundId,
+                        liveSession: session,
+                    });
+                    if (applied) {
+                        savedAnyPart = true;
+                        msgsSetter(prev => [...prev, applied.event]);
+                    }
+                    continue;
+                }
                 if (part.mediaType === "avatar_action") {
                     applyAvatarAction(session.id, r.characterId, part.mediaData?.avatarImageId);
                     syncMessagesFromStorage();
@@ -3130,6 +3204,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         let triggerCall: "voice" | "video" | undefined;
         let hasDecline = false;
         let hasTapbackAction = false;
+        let hasPhotoMarkupAction = false;
+        let hasChatRenameAction = false;
         const charN = character?.name || "对方";
         const userN = userIdentity?.name || "你";
         const filteredParts: typeof parts = [];
@@ -3140,6 +3216,35 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         };
         for (const p of parts) {
             throwIfGenerationStopped(options);
+            if (p.mediaType === "photo_markup_action") {
+                const applied = applyAssistantPhotoMarkupAction({
+                    sessionId: session.id,
+                    actorId: session.contactId,
+                    actorName: charN,
+                    markData: p.mediaData,
+                    responseBatchId,
+                });
+                if (applied) {
+                    hasPhotoMarkupAction = true;
+                    setMessages(prev => [...prev.map(message => message.id === applied.target.id ? applied.target : message), applied.event]);
+                }
+                continue;
+            }
+            if (p.mediaType === "private_alias_action" || p.mediaType === "group_name_action") {
+                const applied = applyAssistantChatRenameAction({
+                    sessionId: session.id,
+                    actorId: session.contactId,
+                    actorName: charN,
+                    actionData: p.mediaData,
+                    responseBatchId,
+                    liveSession: session,
+                });
+                if (applied) {
+                    hasChatRenameAction = true;
+                    setMessages(prev => [...prev, applied.event]);
+                }
+                continue;
+            }
             if (p.mediaType === "voice_call") { triggerCall = "voice"; continue; }
             if (p.mediaType === "video_call") { triggerCall = "video"; continue; }
             if (p.mediaType === "avatar_action") {
@@ -3210,7 +3315,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 });
                 setMessages(prev => [...prev, aiMsg]);
             }
-            return { hasVisible: hasTapbackAction, stateValues, triggerCall, hasDecline };
+            return { hasVisible: hasTapbackAction || hasPhotoMarkupAction || hasChatRenameAction, stateValues, triggerCall, hasDecline };
         }
 
         // Build rich-media drafts first, then publish them in the same order as the UI display.
@@ -3774,6 +3879,45 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         return true;
     };
 
+    const sendPhotoGroup = (items: Array<{ label: string; mediaUrl?: string; photoKind: "photo" | "text_photo" }>): boolean => {
+        if (!items.length || !ensureGroupSpeakPermission()) return false;
+        if (isGenerating) {
+            showChatToast("请先等待对方回复");
+            return false;
+        }
+        cancelFollowUp(session.id);
+        const photoGroupId = `photo_group_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const responseBatchId = createResponseBatchId();
+        const created = items.map((item, index) => pushChatMessage({
+            sessionId: session.id,
+            role: "user",
+            content: "",
+            mediaType: "image",
+            mediaUrl: item.mediaUrl,
+            responseBatchId,
+            mediaData: {
+                label: item.label,
+                photoKind: item.photoKind,
+                photoGroupId,
+                photoGroupIndex: index,
+                photoGroupCount: items.length,
+            },
+        }));
+        if (created[0]) {
+            const mediaData = {
+                ...created[0].mediaData,
+                photoGroupActiveIndex: 0,
+                photoGroupLeadMessageId: created[0].id,
+                photoGroupLeadLabel: created[0].mediaData?.label,
+            };
+            updateMessageMediaData(created[0].id, mediaData);
+            created[0] = { ...created[0], mediaData };
+        }
+        setMessages(prev => [...prev, ...created]);
+        setPendingGenerate(true);
+        return true;
+    };
+
     const sendSystemInstruction = (content: string): boolean => {
         if (isGenerating) {
             showChatToast("请先等待对方回复");
@@ -3944,6 +4088,37 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                         let appliedTapback = false;
                         for (const part of parts) {
                             throwIfGenerationStopped(generationGuard);
+                            if (part.mediaType === "photo_markup_action") {
+                                const applied = applyAssistantPhotoMarkupAction({
+                                    sessionId: session.id,
+                                    actorId: senderInfo.characterId,
+                                    actorName: senderInfo.characterName,
+                                    markData: part.mediaData,
+                                    responseBatchId,
+                                    responseRoundId,
+                                });
+                                if (applied) {
+                                    savedAnyPart = true;
+                                    setMessages(prev => [...prev.map(message => message.id === applied.target.id ? applied.target : message), applied.event]);
+                                }
+                                continue;
+                            }
+                            if (part.mediaType === "group_name_action" || part.mediaType === "private_alias_action") {
+                                const applied = applyAssistantChatRenameAction({
+                                    sessionId: session.id,
+                                    actorId: senderInfo.characterId,
+                                    actorName: senderInfo.characterName,
+                                    actionData: part.mediaData,
+                                    responseBatchId,
+                                    responseRoundId,
+                                    liveSession: session,
+                                });
+                                if (applied) {
+                                    savedAnyPart = true;
+                                    setMessages(prev => [...prev, applied.event]);
+                                }
+                                continue;
+                            }
                             // Streamed tool rounds must execute the action rather than save an invisible bubble.
                             if (part.mediaType === "avatar_action") {
                                 if (!isGroupMuted(session, senderInfo.characterId)) applyAvatarAction(session.id, senderInfo.characterId, part.mediaData?.avatarImageId);
@@ -4288,10 +4463,28 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
         // If quoting a message, send as quote type
         const isQuoting = !!quotingMessage;
-        const quoteData = quotingMessage ? {
-            quoteMessageId: quotingMessage.id,
-            quotePreview: getQuotePreview(quotingMessage),
-            quoteRole: quotingMessage.role,
+        const quoteSourceMessages = quotingMessage ? loadChatMessages(session.id) : [];
+        const quoteStored = quotingMessage ? quoteSourceMessages.find(message => message.id === quotingMessage.id) || quotingMessage : undefined;
+        const quoteGroup = quoteStored?.mediaData?.photoGroupId
+            ? quoteSourceMessages
+                .filter(message => message.mediaData?.photoGroupId === quoteStored.mediaData?.photoGroupId)
+                .sort((a, b) => (a.mediaData?.photoGroupIndex ?? 0) - (b.mediaData?.photoGroupIndex ?? 0))
+            : [];
+        const quoteGroupIndex = quoteGroup.length
+            ? Math.max(0, Math.min(quoteGroup.length - 1, quoteStored?.mediaData?.photoGroupActiveIndex ?? 0))
+            : 0;
+        const quotePhoto = quoteGroup.length ? quoteGroup[quoteGroupIndex] : (quoteStored?.mediaType === "image" ? quoteStored : undefined);
+        const quoteData = quoteStored ? {
+            quoteMessageId: quoteStored.id,
+            quotePreview: getQuotePreview(quoteStored),
+            quoteRole: quoteStored.role,
+            ...(quotePhoto ? {
+                quotePhotoMessageId: quotePhoto.id,
+                quotePhotoLabel: quotePhoto.mediaData?.label,
+                quotePhotoGroupIndex: quoteGroupIndex,
+                quotePhotoGroupCount: quoteGroup.length || 1,
+                quotePhotoAnnotations: quotePhoto.mediaData?.photoAnnotations,
+            } : {}),
         } : undefined;
         setQuotingMessage(null);
 
@@ -4307,6 +4500,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 role: "user",
                 content: currentText,
                 mediaType: diceOnly ? "dice" : isQuoting ? "quote" : undefined,
+                mediaUrl: isQuoting ? quotePhoto?.mediaUrl : undefined,
                 mediaData: diceOnly ? { diceFace } : useEcho || isQuoting || (session.isGroup && options?.mentions?.length) ? {
                     ...(useEcho ? { screenEffect: "echo" as const } : {}),
                     ...(isQuoting ? quoteData : {}),
@@ -5254,10 +5448,15 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             return;
         }
         setActiveMessageId(null);
-        const targetMsg = loadChatMessages(session.id).find(m => m.id === msgId);
+        const storedMessages = loadChatMessages(session.id);
+        const targetMsg = storedMessages.find(m => m.id === msgId);
         if (!targetMsg) return;
-        void deleteWeixinCloudBeforeLocal([targetMsg], () => {
-            deleteChatMessage(msgId);
+        const photoGroupId = targetMsg.mediaData?.photoGroupId;
+        const targetMessages = photoGroupId
+            ? storedMessages.filter(message => message.mediaData?.photoGroupId === photoGroupId)
+            : [targetMsg];
+        void deleteWeixinCloudBeforeLocal(targetMessages, () => {
+            targetMessages.forEach(message => deleteChatMessage(message.id));
             syncMessagesFromStorage();
         });
     };
@@ -6443,13 +6642,38 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     // Skip messages that belong to a voice call group (rendered above)
                     if (voiceCallGroups.memberSet.has(idx)) return null;
 
-                    const renderMsg = msg;
+                    const photoGroupId = msg.mediaData?.photoGroupId;
+                    const photoGroupMessages = photoGroupId
+                        ? projectedMessages
+                            .filter(candidate => (candidate.mediaType === "image" || (candidate.mediaType === "media_file" && candidate.mediaData?.fileType === "image")) && candidate.mediaData?.photoGroupId === photoGroupId)
+                            .sort((a, b) => (a.mediaData?.photoGroupIndex ?? 0) - (b.mediaData?.photoGroupIndex ?? 0))
+                        : [msg];
+                    if (photoGroupId && photoGroupMessages[0]?.id !== msg.id) return null;
+                    const renderMsg: RenderChatMessage = photoGroupMessages.length > 1 ? {
+                        ...msg,
+                        mediaData: {
+                            ...msg.mediaData,
+                            photoGroupCount: photoGroupMessages.length,
+                            photoGroupItems: photoGroupMessages.map(item => ({
+                                messageId: item.id,
+                                mediaUrl: item.mediaUrl,
+                                label: item.mediaData?.label,
+                                photoKind: item.mediaData?.photoKind,
+                                annotations: item.mediaData?.photoAnnotations,
+                            })),
+                        },
+                    } : msg;
                     const isSystemInstruction = isSystemInstructionMessage(renderMsg);
                     const bubbleDisplayContent = getMessageDisplayContent(renderMsg);
                     let prevVisibleMsg: RenderChatMessage | null = null;
                     for (let prevIdx = idx - 1; prevIdx >= 0; prevIdx -= 1) {
                         if (voiceCallGroups.memberSet.has(prevIdx)) continue;
                         const candidate = projectedMessages[prevIdx];
+                        const candidateGroupId = candidate.mediaData?.photoGroupId;
+                        if (candidateGroupId) {
+                            const firstGroupIndex = projectedMessages.findIndex(entry => entry.mediaData?.photoGroupId === candidateGroupId);
+                            if (firstGroupIndex !== prevIdx) continue;
+                        }
                         const candidateDisplayContent = getMessageDisplayContent(candidate);
                         if (isHiddenChatFlowMessage(candidate, candidateDisplayContent)) continue;
                         prevVisibleMsg = candidate;
@@ -6687,7 +6911,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                 onPointerMove: handleMessagePointerMove,
                                                 onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); openMessageContextMenu(msg.id, { x: e.clientX, y: e.clientY }, e.currentTarget as HTMLElement); },
                                             } : {})}
-                                            className={`chat-bubble-role-${msg.role} ${isMediaBubble ? "chat-bubble-media" : ""} ${isStandaloneHtmlPreview ? "chat-bubble-html-preview" : ""} ${renderMsg.mediaType === "music_share" ? "chat-bubble-music-share" : ""} ${renderMsg.mediaType === "gift" || renderMsg.mediaType === "image" || isStandaloneHtmlPreview ? "rounded-none" : "rounded-md"} break-words relative cursor-pointer select-none`}
+                                            className={`chat-bubble-role-${msg.role} ${isMediaBubble ? "chat-bubble-media" : ""} ${isStandaloneHtmlPreview ? "chat-bubble-html-preview" : ""} ${renderMsg.mediaType === "music_share" ? "chat-bubble-music-share" : ""} ${renderMsg.mediaType === "gift" || renderMsg.mediaType === "image" || renderMsg.mediaData?.photoGroupId || isStandaloneHtmlPreview ? "rounded-none" : "rounded-md"} break-words relative cursor-pointer select-none`}
                                             style={isStandaloneHtmlPreview ? STANDALONE_CARD_BUBBLE_STYLE : undefined}
                                             data-ui={msg.role === "user" ? "bubble-user" : "bubble-bot"}
                                             data-msg-id={msg.id}
@@ -6717,6 +6941,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                 onShowDetail={setMediaDetailMsg}
                                                 characterId={msg.senderCharacterId || session.contactId}
                                                 onUpdate={(updated) => setMessages(prev => prev.map(m => m.id === updated.id ? updated : m))}
+                                                onPhotoAnnotationsSave={handleUserPhotoAnnotationsSave}
                                                 onSystemMessage={(text) => {
                                                     const sysMsg = pushChatMessage({
                                                         sessionId: session.id,
@@ -7096,13 +7321,19 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             )}
             {richModal === "text_photo" && (
                 <TextPhotoModal
-                    onSend={(text) => { setRichModal(null); sendRichMessage("image", { label: text }); }}
+                    onSend={(texts) => {
+                        const sent = sendPhotoGroup(texts.map(text => ({ label: text, photoKind: "text_photo" as const })));
+                        if (sent) setRichModal(null);
+                    }}
                     onClose={() => setRichModal(null)}
                 />
             )}
             {richModal === "photo" && (
                 <PhotoInputModal
-                    onSend={(desc, imageDataUrl) => { setRichModal(null); sendRichMessage("image", { label: desc }, "", imageDataUrl); }}
+                    onSend={(items) => {
+                        const sent = sendPhotoGroup(items.map(item => ({ label: item.description, mediaUrl: item.imageDataUrl, photoKind: "photo" as const })));
+                        if (sent) setRichModal(null);
+                    }}
                     onClose={() => setRichModal(null)}
                 />
             )}

@@ -37,6 +37,7 @@ import {
     touchNativeExpandedToolSource,
     appendEmptyGenerateGuardMessage,
     appendCurrentAvatarContext,
+    appendCurrentChatBackgroundContext,
     applyCustomPromptProfileToPreset,
     stripOnlineThinkingTag,
     stripPresetTexts,
@@ -506,8 +507,13 @@ async function buildGroupChatPromptMessages(
             participantIds,
             userIdentity,
         }), config.enableImageRecognition);
+        await appendCurrentChatBackgroundContext(llmMessages, session, config.enableImageRecognition);
     }
-    if (!isOfflineMode) llmMessages.push({ role: "system", content: buildGroupTapbackPrompt(promptHistory) + "\n" + buildPokeUsagePrompt(promptHistory) + "\n" + avatarInstructions + "\n" + buildEchoPrompt() });
+    if (!isOfflineMode) llmMessages.push({
+        role: "system",
+        content: buildGroupTapbackPrompt(promptHistory) + "\n" + buildPokeUsagePrompt(promptHistory) + "\n" + avatarInstructions + "\n" + buildEchoPrompt()
+            + `\n当前群聊名称是“${session.groupName || "群聊"}”。群成员可以依各自性格、关系和正在发生的事情，自主决定偶尔修改群名；不要机械执行，也不要频繁改名。真正决定修改时，该角色输出 [修改群名:新群名]，系统才会实际保存；禁止只用文字声称改好了却不输出协议。`,
+    });
     if (promptProfile?.output === "plain_text") {
         llmMessages.push({
             role: "system",

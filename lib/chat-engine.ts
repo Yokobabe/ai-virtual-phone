@@ -80,6 +80,8 @@ export { getApiLogs, clearApiLogs, type DebugInfo } from "./api-log-store";
 import { stripStateAndInnerForPrompt } from "./prompt-sanitizer";
 import { getInternalCapability, getInternalCapabilitySubToolDefinitions } from "./internal-capability-storage";
 import { isMediaStoreRef, loadMediaBlob } from "./media-cache-storage";
+import { getChatImageFromIndexedDB } from "./chat-asset-storage";
+import { compositePhotoAnnotations } from "./chat-photo-markup";
 import {
     DEFAULT_CHAT_BILINGUAL_PROMPT,
     DEFAULT_GROUP_CHAT_BILINGUAL_PROMPT,
@@ -256,6 +258,49 @@ export async function appendCurrentAvatarContext(
     messages.push(...visualMessages);
 }
 
+const CHAT_BACKGROUND_SNAPSHOT_KEY = "ai_phone_chat_background_snapshot_v1";
+registerKvMigration(CHAT_BACKGROUND_SNAPSHOT_KEY);
+
+export async function appendCurrentChatBackgroundContext(
+    messages: LLMMessage[],
+    session: ChatSession,
+    enableVision: boolean | undefined,
+): Promise<void> {
+    let previous: Record<string, string | null> = {};
+    try { previous = JSON.parse(kvGet(CHAT_BACKGROUND_SNAPSHOT_KEY) || "{}"); } catch { previous = {}; }
+    const current = session.backgroundImage?.trim() || null;
+    const changed = Object.prototype.hasOwnProperty.call(previous, session.id) && previous[session.id] !== current;
+    previous[session.id] = current;
+    try { kvSet(CHAT_BACKGROUND_SNAPSHOT_KEY, JSON.stringify(previous)); } catch { /* storage unavailable */ }
+
+    let visual = "";
+    if (current && enableVision) {
+        const source = current.startsWith("data:") || current.startsWith("http") || isMediaStoreRef(current)
+            ? current
+            : await getChatImageFromIndexedDB(current) || "";
+        if (source) visual = await resolveCompressedImageDataUrl(source) || "";
+    }
+    messages.push({
+        role: "system",
+        content: [
+            "### 当前 iMessage 聊天背景",
+            current ? "用户当前为这个会话设置了自定义聊天背景。" : "用户当前没有为这个会话设置自定义聊天背景。",
+            changed ? "自你上一次在本会话回复后，聊天背景已经更换。你可以在语境自然时意识到变化，但不要机械播报。" : "本轮聊天背景没有检测到新变化。",
+            current && !visual ? "本轮没有提供背景视觉，不得猜测画面内容。" : "",
+            "聊天背景不是头像、不是用户刚发送的照片，也不是换头像候选。",
+        ].filter(Boolean).join("\n"),
+    });
+    if (visual) {
+        messages.push({
+            role: "user",
+            content: [
+                { type: "text", text: "系统提供的当前 iMessage 聊天背景视觉。这不是聊天图片或头像候选。" },
+                { type: "image_url", image_url: { url: visual, detail: "low" } },
+            ],
+        });
+    }
+}
+
 type VisionImageResolveResult =
     | { url: string }
     | { drop: true }
@@ -319,7 +364,12 @@ export async function prepareVisionPromptImageMessage(msg: ChatMessage): Promise
     if (!isVisionPromptImageMessage(msg) || !msg.mediaUrl) return;
     const result = await resolveVisionImageRefForApi(msg.mediaUrl);
     if ("url" in result) {
-        msg.mediaUrl = result.url;
+        const annotations = msg.mediaType === "quote"
+            ? msg.mediaData?.quotePhotoAnnotations
+            : msg.mediaData?.photoAnnotations;
+        msg.mediaUrl = annotations?.length
+            ? await compositePhotoAnnotations(result.url, annotations) || result.url
+            : result.url;
     } else if ("drop" in result) {
         msg.mediaUrl = undefined;
     }
@@ -327,6 +377,7 @@ export async function prepareVisionPromptImageMessage(msg: ChatMessage): Promise
 
 function isVisionPromptImageMessage(msg: ChatMessage): boolean {
     return msg.mediaType === "image"
+        || (msg.mediaType === "quote" && Boolean(msg.mediaUrl))
         || (msg.role === "user" && msg.mediaType === "sticker" && Boolean(msg.mediaData?.stickerUrl))
         || (msg.mediaType === "media_file" && msg.mediaData?.fileType === "image");
 }
@@ -353,10 +404,28 @@ function stripVisionPromptImageData(msg: ChatMessage): ChatMessage {
 export function applyVisionImagePromptLimit(history: ChatMessage[], limitValue: unknown): ChatMessage[] {
     const limit = normalizeVisionImagePromptLimit(limitValue);
     let remaining = limit;
+    const allowedPhotoGroups = new Set<string>();
+    const rejectedPhotoGroups = new Set<string>();
 
     for (let index = history.length - 1; index >= 0; index -= 1) {
         const msg = history[index];
         if (!isVisionPromptImageMessage(msg) || !hasVisionPromptImageData(msg)) continue;
+        const groupId = msg.mediaData?.photoGroupId;
+        if (groupId) {
+            if (allowedPhotoGroups.has(groupId)) continue;
+            if (rejectedPhotoGroups.has(groupId)) {
+                history[index] = stripVisionPromptImageData(msg);
+                continue;
+            }
+            if (remaining > 0) {
+                remaining -= 1;
+                allowedPhotoGroups.add(groupId);
+                continue;
+            }
+            rejectedPhotoGroups.add(groupId);
+            history[index] = stripVisionPromptImageData(msg);
+            continue;
+        }
         if (remaining > 0) {
             remaining -= 1;
             continue;
@@ -1974,11 +2043,13 @@ export async function buildChatPromptMessages(
             viewerCharacterId: character.id,
             userIdentity,
         }), config.enableImageRecognition);
+        await appendCurrentChatBackgroundContext(llmMessages, session, config.enableImageRecognition);
     }
     if (resolvedAppId === "chat" && !session.isGroup && !isOfflineMode) {
         llmMessages.push({
             role: "system",
-            content: buildIMessageTapbackPromptInstruction() + "\n" + buildPokeUsagePrompt(promptHistory) + "\n" + avatarInstruction + "\n" + buildEchoPrompt(),
+            content: buildIMessageTapbackPromptInstruction() + "\n" + buildPokeUsagePrompt(promptHistory) + "\n" + avatarInstruction + "\n" + buildEchoPrompt()
+                + `\n当前用户手机里给你的私聊备注是“${session.alias || character.name}”。你可以依自己的性格、关系变化和当下情境，自主决定偶尔修改这个备注；这不是用户一提就必须照做的功能，也不要频繁修改。真正决定修改时输出 [修改备注:新备注]，系统才会实际保存；禁止只用文字声称改好了却不输出协议。该动作只能修改你自己的私聊备注。`,
         });
     }
     if (promptProfile?.output === "plain_text") {

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import {
     CHAT_INITIAL_VISIBLE_MESSAGE_COUNT,
     CHAT_LOAD_MORE_MESSAGE_COUNT,
+    CHAT_REQUEST_REPLY_EVENT,
     ChatSession,
     clearChatSessionMessages,
     clearChatSessionToolHistory,
@@ -643,6 +644,18 @@ export function ChatSettingsPanel({
         }
     };
 
+    const announceBackgroundChange = (action: "更换" | "移除") => {
+        const actorName = userName || "你";
+        pushChatMessage({
+            sessionId: session.id,
+            role: "user",
+            content: `${actorName}${action}了背景图`,
+            mediaType: "chat_background_change",
+            mediaData: { photoMarkupActorId: "self", photoMarkupActorName: actorName },
+        });
+        window.dispatchEvent(new CustomEvent(CHAT_REQUEST_REPLY_EVENT, { detail: { sessionId: session.id } }));
+    };
+
     const handleClearHistory = () => {
         clearChatSessionMessages(session.id);
         setShowConfirmClear(false);
@@ -703,6 +716,7 @@ export function ChatSettingsPanel({
             const id = await saveChatImageToIndexedDB(file);
             setter(id);
             updateSession({ [key]: id });
+            if (key === "backgroundImage") announceBackgroundChange("更换");
         } catch (error) {
             console.error("Failed to save image", error);
             alert("图片保存失败，请重试");
@@ -1033,7 +1047,7 @@ export function ChatSettingsPanel({
                         <ChatInfoIcon icon={ImageIcon} color={BINDING_ACCENTS.api} />
                         <div className="menu-label-group"><span className="menu-label">聊天背景</span></div>
                         <div className="menu-right">
-                            {backgroundImage && <><span className="menu-desc mr-1">已设置</span><button className="menu-desc mr-1 text-[var(--c-danger)]" onClick={e => { e.preventDefault(); setBackgroundImage(""); updateSession({ backgroundImage: "" }); }}>清除</button></>}
+                            {backgroundImage && <><span className="menu-desc mr-1">已设置</span><button className="menu-desc mr-1 text-[var(--c-danger)]" onClick={e => { e.preventDefault(); setBackgroundImage(""); updateSession({ backgroundImage: "" }); announceBackgroundChange("移除"); }}>清除</button></>}
                             <ChevronRight size={16} />
                         </div>
                         <input type="file" accept="image/*" onChange={e => handleImageUpload(e, setBackgroundImage, "backgroundImage")} className="hidden" />

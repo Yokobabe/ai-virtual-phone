@@ -9,26 +9,36 @@ import { LocationMap } from "./location-map";
 // ── Photo Input Modal ─────────────────────────────
 
 interface PhotoInputModalProps {
-    onSend: (description: string, imageDataUrl?: string) => void;
+    onSend: (items: Array<{ description: string; imageDataUrl: string }>) => void;
     onClose: () => void;
 }
 
 export function PhotoInputModal({ onSend, onClose }: PhotoInputModalProps) {
-    const [desc, setDesc] = useState("");
-    const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+    const [items, setItems] = useState<Array<{ id: string; description: string; imageDataUrl: string }>>([]);
+    const [activeId, setActiveId] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            setImageDataUrl(reader.result as string);
-        };
-        reader.readAsDataURL(file);
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+        Promise.all(files.map(file => new Promise<{ id: string; description: string; imageDataUrl: string }>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve({
+                id: `photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                description: "",
+                imageDataUrl: String(reader.result || ""),
+            });
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+        }))).then(next => {
+            setItems(prev => [...prev, ...next].slice(0, 20));
+            setActiveId(prev => prev || next[0]?.id || null);
+        }).catch(() => undefined);
+        e.target.value = "";
     };
 
-    const canSend = !!imageDataUrl;
+    const active = items.find(item => item.id === activeId) || items[0];
+    const canSend = items.length > 0;
 
     return (
         <div className="modal-overlay imessage-rich-input-overlay" onClick={onClose}>
@@ -37,42 +47,57 @@ export function PhotoInputModal({ onSend, onClose }: PhotoInputModalProps) {
                 className="modal-dialog imessage-rich-input-dialog"
             >
                 <div className="ts-16 font-semibold text-center text-[var(--c-text)]">发送照片</div>
-                <div
-                    className="w-full rounded-xl flex items-center justify-center ui-placeholder-gradient overflow-hidden cursor-pointer relative"
-                    style={{ minHeight: imageDataUrl ? "auto" : "120px" }}
-                    onClick={() => fileInputRef.current?.click()}
-                >
-                    {imageDataUrl ? (
-                        <img
-                            src={imageDataUrl}
-                            alt="preview"
-                            className="w-full h-auto rounded-xl"
-                            style={{ maxHeight: "240px", objectFit: "contain" }}
-                        />
+                <div className="chat-multi-photo-picker">
+                    {items.length ? (
+                        <div className="chat-multi-photo-grid">
+                            {items.map((item, index) => (
+                                <button key={item.id} type="button" className="chat-multi-photo-thumb" data-active={item.id === active?.id || undefined} onClick={() => setActiveId(item.id)}>
+                                    <img src={item.imageDataUrl} alt={`照片 ${index + 1}`} />
+                                    <span>{index + 1}</span>
+                                    <i onClick={event => {
+                                        event.stopPropagation();
+                                        setItems(prev => prev.filter(entry => entry.id !== item.id));
+                                        if (activeId === item.id) setActiveId(null);
+                                    }}>×</i>
+                                </button>
+                            ))}
+                            {items.length < 20 && <button type="button" className="chat-multi-photo-add" onClick={() => fileInputRef.current?.click()}>＋</button>}
+                        </div>
                     ) : (
-                        <div className="flex flex-col items-center gap-2 py-6">
+                        <button type="button" className="w-full min-h-[140px] rounded-xl flex flex-col items-center justify-center gap-2 ui-placeholder-gradient" onClick={() => fileInputRef.current?.click()}>
                             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--c-icon)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                 <line x1="12" y1="5" x2="12" y2="19" />
                                 <line x1="5" y1="12" x2="19" y2="12" />
                             </svg>
-                            <span className="ts-12 text-[var(--c-icon)]">点击上传图片</span>
-                        </div>
+                            <span className="ts-12 text-[var(--c-icon)]">选择一张或多张图片</span>
+                        </button>
                     )}
                     <input
                         ref={fileInputRef}
                         type="file"
                         accept="image/*"
+                        multiple
                         className="hidden"
                         onChange={handleFileChange}
                     />
                 </div>
+                {active && (
+                    <textarea
+                        value={active.description}
+                        onChange={event => setItems(prev => prev.map(item => item.id === active.id ? { ...item, description: event.target.value } : item))}
+                        placeholder="给当前照片加一句描述（可选）"
+                        className="ui-input w-full"
+                        rows={2}
+                        style={{ resize: "none" }}
+                    />
+                )}
                 <div className="flex gap-3 w-full">
                     <button
                         onClick={onClose}
                         className="ui-btn ui-btn-ghost ui-btn-bordered-ghost flex-1"
                     >取消</button>
                     <button
-                        onClick={() => { if (canSend) onSend(desc.trim(), imageDataUrl!); }}
+                        onClick={() => { if (canSend) onSend(items.map(({ description, imageDataUrl }) => ({ description: description.trim(), imageDataUrl }))); }}
                         disabled={!canSend}
                         className="ui-btn ui-btn-success flex-1"
                     >发送</button>
@@ -232,35 +257,40 @@ export function LocationInputModal({ onSend, onClose }: LocationInputModalProps)
 // ── Text Photo Modal ─────────────────────────────
 
 interface TextPhotoModalProps {
-    onSend: (text: string) => void;
+    onSend: (texts: string[]) => void;
     onClose: () => void;
 }
 
 export function TextPhotoModal({ onSend, onClose }: TextPhotoModalProps) {
-    const [text, setText] = useState("");
+    const [texts, setTexts] = useState([""]);
+    const validTexts = texts.map(text => text.trim()).filter(Boolean);
 
     return (
         <div className="modal-overlay imessage-rich-input-overlay" onClick={onClose}>
             <div onClick={e => e.stopPropagation()} className="modal-dialog imessage-rich-input-dialog">
                 <div className="ts-16 font-semibold text-center text-[var(--c-text)]">文字图片</div>
-                <div className="w-full h-[100px] rounded-xl flex items-center justify-center ui-placeholder-gradient">
-                    <span className="ts-13 text-[var(--c-text)] opacity-60 px-4 text-center leading-relaxed">
-                        {text.trim() || "输入文字，生成图片"}
-                    </span>
+                <div className="chat-text-photo-list">
+                    {texts.map((text, index) => (
+                        <div key={index} className="chat-text-photo-editor">
+                            <span>{index + 1}</span>
+                            <textarea
+                                value={text}
+                                onChange={event => setTexts(prev => prev.map((entry, i) => i === index ? event.target.value : entry))}
+                                placeholder="描述这一张文字图片..."
+                                className="ui-input w-full"
+                                rows={3}
+                                style={{ resize: "none" }}
+                            />
+                            {texts.length > 1 && <button type="button" onClick={() => setTexts(prev => prev.filter((_, i) => i !== index))}>×</button>}
+                        </div>
+                    ))}
+                    {texts.length < 20 && <button type="button" className="chat-text-photo-add" onClick={() => setTexts(prev => [...prev, ""])}>＋ 再加一张文字图</button>}
                 </div>
-                <textarea
-                    value={text}
-                    onChange={e => setText(e.target.value)}
-                    placeholder="描述图片内容..."
-                    className="ui-input w-full"
-                    rows={3}
-                    style={{ resize: "none" }}
-                />
                 <div className="flex gap-3 w-full">
                     <button onClick={onClose} className="ui-btn ui-btn-ghost ui-btn-bordered-ghost flex-1">取消</button>
                     <button
-                        onClick={() => { if (text.trim()) onSend(text.trim()); }}
-                        disabled={!text.trim()}
+                        onClick={() => { if (validTexts.length) onSend(validTexts); }}
+                        disabled={!validTexts.length}
                         className="ui-btn ui-btn-success flex-1"
                     >发送</button>
                 </div>

@@ -80,6 +80,33 @@ export type ChatSession = {
 export type ChatMessageStatus = "sending" | "sent" | "read" | "failed";
 export type ChatMessageRole = "user" | "assistant" | "system" | "tool";
 
+export type ChatPhotoAnnotation = {
+    id: string;
+    kind: "stroke" | "text";
+    color: string;
+    width?: number;
+    /** 0..1 normalized coordinates stored as x/y pairs. */
+    points?: number[];
+    x?: number;
+    y?: number;
+    text?: string;
+    /** Optional human/model description of what this mark represents. */
+    description?: string;
+    actorId?: string;
+    actorName?: string;
+    createdAt?: string;
+    /** AI/vector marks use an intentionally imperfect double-stroked rendering. */
+    renderStyle?: "handdrawn";
+};
+
+export type ChatPhotoGroupItem = {
+    messageId: string;
+    mediaUrl?: string;
+    label?: string;
+    photoKind?: "photo" | "text_photo";
+    annotations?: ChatPhotoAnnotation[];
+};
+
 export type StateValue = { name: string; value: number };
 export type NativeToolCallRecord = { id: string; name: string; args: Record<string, unknown>; thoughtSignature?: string };
 export type NativeToolResultRecord = { toolCallId: string; name: string; content: string };
@@ -103,6 +130,10 @@ export type ChatMessage = {
         | "poke" | "sticker" | "quote" | "dice"
         | "tapback_action"
         | "avatar_action"
+        | "photo_markup_action"
+        | "chat_background_change"
+        | "private_alias_action"
+        | "group_name_action"
         | "voice_call" | "video_call"
         | "accept_red_packet" | "decline_red_packet" | "accept_transfer" | "decline_transfer"
         | "payment_request" | "accept_payment_request" | "decline_payment_request"
@@ -128,10 +159,39 @@ export type ChatMessage = {
         amount?: number;          // 红包/转账金额
         count?: number;           // 红包个数
         label?: string;           // 红包留言/转账备注/照片描述/位置名/表情名
+        photoGroupId?: string;    // 同一次发送的照片组 ID
+        photoGroupIndex?: number; // 组内 0-based 顺序
+        photoGroupCount?: number; // 组内照片总数
+        /** 组内当前作为封面/首图的 0-based index；左右滑动后持久化。 */
+        photoGroupActiveIndex?: number;
+        photoGroupLeadMessageId?: string;
+        photoGroupLeadLabel?: string;
+        photoKind?: "photo" | "text_photo";
+        photoAnnotations?: ChatPhotoAnnotation[];
+        photoMarkText?: string;
+        photoMarkX?: number;
+        photoMarkY?: number;
+        photoMarkTargetIndex?: number;
+        photoMarkupTargetMessageId?: string;
+        photoMarkupTargetGroupId?: string;
+        photoMarkupActorId?: string;
+        photoMarkupActorName?: string;
+        photoMarkupSummary?: string;
+        chatRenameKind?: "private_alias" | "group_name";
+        chatRenameValue?: string;
+        chatRenameActorId?: string;
+        chatRenameActorName?: string;
+        /** UI projection: sibling messages collected onto the first photo bubble. */
+        photoGroupItems?: ChatPhotoGroupItem[];
         status?: "pending" | "opened" | "received" | "declined" | "paid" | "canceled";  // 红包/转账/代付状态
         quoteMessageId?: string;  // 引用消息 ID
         quotePreview?: string;    // 引用消息预览文本
         quoteRole?: ChatMessageRole; // 引用消息的 role
+        quotePhotoMessageId?: string;
+        quotePhotoLabel?: string;
+        quotePhotoGroupIndex?: number;
+        quotePhotoGroupCount?: number;
+        quotePhotoAnnotations?: ChatPhotoAnnotation[];
         /** Unicode emoji; rendered with the device's native emoji font. */
         tapback?: string;
         avatarImageId?: string;

@@ -3,6 +3,11 @@ import type { ChatMessage } from "./chat-storage";
 /** Copy readable content, not media URLs or an empty content field. */
 export function getQuotePreview(message: ChatMessage): string {
     const d = message.mediaData;
+    if (d?.photoGroupId && (d.photoGroupCount || 0) > 1) {
+        const index = Math.max(0, Math.min((d.photoGroupCount || 1) - 1, d.photoGroupActiveIndex ?? 0));
+        const label = d.photoGroupLeadLabel?.trim() || d.label?.trim() || "照片";
+        return `照片组 ${index + 1} / ${d.photoGroupCount}：${label}`;
+    }
     const text = (d?.label || message.content || "").trim();
     const labeled = (kind: string, value = text) => value ? `${kind}：${value}` : `${kind}消息`;
     switch (message.mediaType) {

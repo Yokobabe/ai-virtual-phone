@@ -18,6 +18,7 @@ import { formatCharacterRelationsForPrompt } from "./character-world-storage";
 import { buildCharacterTimeContext, buildGroupTimeContext, type CharacterTimeContext } from "./character-time";
 import { formatShoppingPaymentRequestHistory } from "./shopping-payment-request";
 import { buildGroupAdminBracketText } from "./group-admin";
+import { describePhotoAnnotations } from "./chat-photo-markup";
 
 export type LLMMessageRole = "system" | "user" | "assistant" | "tool";
 export type LLMToolCallPayload = { id: string; name: string; args: Record<string, unknown>; thoughtSignature?: string };
@@ -172,7 +173,15 @@ function isImageGenerationMediaMessage(msg: ChatMessage): boolean {
 function formatPhotoDirective(msg: ChatMessage, prefix = ""): string {
     const description = msg.mediaData?.label?.trim() || "图片";
     const mode = msg.mediaData?.useReferenceImage === true ? "使用参考图" : "不使用参考图";
-    return `${prefix}[照片:${mode}:${description}]`;
+    const count = msg.mediaData?.photoGroupCount || 1;
+    const active = Math.max(0, Math.min(count - 1, msg.mediaData?.photoGroupActiveIndex ?? 0));
+    const groupState = count > 1 && (msg.mediaData?.photoGroupIndex ?? 0) === 0
+        ? `\n[照片组状态:共${count}张；当前首图为第${active + 1}张；引用该组时以当前首图为准]`
+        : "";
+    const marks = msg.mediaData?.photoAnnotations?.length
+        ? `\n[照片现有标记:${describePhotoAnnotations(msg.mediaData.photoAnnotations)}]`
+        : "";
+    return `${prefix}[照片:${mode}:${description}]${groupState}${marks}`;
 }
 
 function formatImageGenerationDirective(msg: ChatMessage, prefix = ""): string {
@@ -187,11 +196,18 @@ function getPromptVisionImageUrl(msg: ChatMessage): string | undefined {
         const stickerUrl = msg.mediaData?.stickerUrl?.trim();
         return stickerUrl || undefined;
     }
+    if (msg.mediaType === "quote" && msg.mediaUrl) return msg.mediaUrl;
     return undefined;
 }
 
 function formatDirectVisionBody(msg: ChatMessage, userName: string, charName: string): string {
     if (msg.mediaType === "sticker") return formatRichMediaForHistory(msg, userName, charName);
+    if (msg.mediaType === "quote") {
+        const marks = msg.mediaData?.quotePhotoAnnotations?.length
+            ? `\n[被引用照片上的标记:${describePhotoAnnotations(msg.mediaData.quotePhotoAnnotations)}]`
+            : "";
+        return `[引用照片:${msg.mediaData?.quotePreview || msg.mediaData?.quotePhotoLabel || "照片"}]${msg.content}${marks}`;
+    }
     return isImageGenerationMediaMessage(msg)
         ? formatImageGenerationDirective(msg)
         : formatPhotoDirective(msg);
@@ -1051,6 +1067,16 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
         });
     }
 
+    if (appId === "chat") {
+        blocks.push({
+            text: `<photoMarkupCapability>\n照片标记是一个真实可执行动作，不是叙述性角色扮演。只有输出协议，界面才会真的落笔。\n当你决定已经/正在给照片画圈、写字、画爱心、星星、箭头或留下任何标记时，必须在同一回复中输出 [照片标记:x百分比:y百分比:标记意图]；指定照片组时输出 [照片标记:第N张:x百分比:y百分比:标记意图]。标记意图不受固定菜单限制，可以依性格和当下关系自由发挥；“爱心／星星／圈住／箭头”等会绘制成不规则的手绘线条，其他内容会以手写呈现。不要直接使用 emoji 冒充画笔。可以先说自然语言，再输出协议。\n禁止只说“圈了／画了／标记了”却不输出协议；若不愿实际标记，就不要声称已经完成。是否标记仍由你的性格、图片、上下文和情绪自主决定。\n</photoMarkupCapability>`,
+            role: "system",
+            depth: 0,
+            order: Number.MAX_SAFE_INTEGER - 2,
+            marker: "photoMarkupCapability",
+        });
+    }
+
     // --- Sort: depth descending, then order ascending ---
     blocks.sort((a, b) => {
         if (b.depth !== a.depth) return b.depth - a.depth;
@@ -1209,6 +1235,13 @@ export function formatRichMediaForHistory(msg: ChatMessage, userName: string, ch
             return `[表情包:${d?.label ?? "表情"}]`;
         case "quote":
             return `[引用:${d?.quotePreview ?? ""}]${msg.content}`;
+        case "photo_markup_action":
+            return `[照片标记事件:${msg.content || "做了照片标记"}${d?.photoMarkupSummary ? `；标记细节：${d.photoMarkupSummary}` : ""}]`;
+        case "private_alias_action":
+        case "group_name_action":
+            return `[聊天名称变更事件:${msg.content || d?.chatRenameValue || "名称已变更"}]`;
+        case "chat_background_change":
+            return `[聊天背景变更:${msg.content}]`;
         case "music": {
             const artist = d?.musicArtist ? `-${d.musicArtist}` : "";
             return `[音乐:${d?.musicTitle ?? d?.label ?? "未知歌曲"}${artist}]`;
@@ -2219,6 +2252,14 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
             });
         });
     }
+
+    blocks.push({
+        text: `<photoMarkupCapability>\n照片标记是一个真实可执行动作，不是叙述性角色扮演。只有输出协议，界面才会真的落笔。\n任一角色决定已经/正在给照片画圈、写字、画爱心、星星、箭头或留下任何标记时，必须在该角色的同一回复中输出 [照片标记:x百分比:y百分比:标记意图]；指定照片组时输出 [照片标记:第N张:x百分比:y百分比:标记意图]。标记意图不受固定菜单限制，各角色可依性格和关系自由发挥；“爱心／星星／圈住／箭头”等会绘制成不规则手绘线条，其他内容会以手写呈现。不要直接使用 emoji 冒充画笔。\n禁止角色只说“圈了／画了／标记了”却不输出协议；不愿实际标记时就不要声称完成。是否标记仍由各角色自主决定。\n</photoMarkupCapability>`,
+        role: "system",
+        depth: 0,
+        order: Number.MAX_SAFE_INTEGER - 2,
+        marker: "photoMarkupCapability",
+    });
 
     // Sort: depth descending, then order ascending
     blocks.sort((a, b) => {

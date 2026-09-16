@@ -57,6 +57,8 @@ import {
     type MenstrualPeriodCareEvent,
 } from "./menstrual-storage";
 import { applyAssistantTapback, applyGroupAssistantTapback } from "./chat-tapback";
+import { applyAssistantPhotoMarkupAction } from "./chat-photo-markup";
+import { applyAssistantChatRenameAction } from "./chat-rename-action";
 
 // ── Constants ──────────────────────────────────────────────
 const MAX_FOLLOW_UPS = 10;
@@ -907,6 +909,8 @@ export async function parseAndSaveResponse(
     // Detect call triggers and AI media actions, filter them out (not stored as messages)
     let triggerCall: "voice" | "video" | undefined;
     let hasTapbackAction = false;
+    let hasPhotoMarkupAction = false;
+    let hasChatRenameAction = false;
     const charName = resolveFollowUpSenderName(sessionId);
 
     // 快捷动作配对消息：tool_call 存标记原文（组装器不跳过，历史上下文与模型当初
@@ -929,6 +933,29 @@ export async function parseAndSaveResponse(
 
     const filteredParts: ParsedMessagePart[] = [];
     for (const p of parts) {
+        if (p.mediaType === "photo_markup_action") {
+            const applied = applyAssistantPhotoMarkupAction({
+                sessionId,
+                actorId: sess?.isGroup ? options?.senderCharacterId : sess?.contactId,
+                actorName: options?.senderName || charName,
+                markData: p.mediaData,
+                responseBatchId,
+            });
+            if (applied) hasPhotoMarkupAction = true;
+            continue;
+        }
+        if (p.mediaType === "private_alias_action" || p.mediaType === "group_name_action") {
+            const applied = applyAssistantChatRenameAction({
+                sessionId,
+                actorId: sess?.isGroup ? options?.senderCharacterId : sess?.contactId,
+                actorName: options?.senderName || charName,
+                actionData: p.mediaData,
+                responseBatchId,
+                liveSession: sess,
+            });
+            if (applied) hasChatRenameAction = true;
+            continue;
+        }
         if (p.mediaType === "voice_call") { triggerCall = "voice"; continue; }
         if (p.mediaType === "video_call") { triggerCall = "video"; continue; }
         if (p.mediaType === "avatar_action") {
@@ -1024,8 +1051,8 @@ export async function parseAndSaveResponse(
             window.dispatchEvent(new CustomEvent("ai-call-trigger", { detail: { sessionId, type: triggerCall } }));
         }
         return {
-            hasVisible: hasTapbackAction,
-            newCount: hasTapbackAction ? currentCount + 1 : MAX_FOLLOW_UPS,
+            hasVisible: hasTapbackAction || hasPhotoMarkupAction || hasChatRenameAction,
+            newCount: (hasTapbackAction || hasPhotoMarkupAction || hasChatRenameAction) ? currentCount + 1 : MAX_FOLLOW_UPS,
             stateValues,
         };
     }
