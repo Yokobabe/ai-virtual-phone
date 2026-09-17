@@ -1645,7 +1645,11 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     };
 
     const handleTapback = (message: ChatMessage, tapback: MessageTapback) => {
-        const storedMessageId = getStoredActionMessageId(message);
+        const groupPhotos = message.mediaData?.photoGroupId ? loadChatMessages(session.id)
+            .filter(item => item.mediaData?.photoGroupId === message.mediaData?.photoGroupId)
+            .sort((a, b) => (a.mediaData?.photoGroupIndex || 0) - (b.mediaData?.photoGroupIndex || 0)) : [];
+        const lead = groupPhotos[(groupPhotos[0]?.mediaData?.photoGroupActiveIndex ?? 0)];
+        const storedMessageId = lead?.id || getStoredActionMessageId(message);
         const stored = loadChatMessages(session.id).find(item => item.id === storedMessageId);
         if (!stored) return;
         if (session.isGroup) {
@@ -1673,7 +1677,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         previous: NonNullable<ChatMessage["mediaData"]>["photoAnnotations"] = [],
     ) => {
         const before = previous || [];
-        const after = annotations || [];
+        const actorName = userIdentity?.name || "你";
+        const after = (annotations || []).map(annotation => before.some(item => item.id === annotation.id)
+            ? annotation
+            : { ...annotation, actorId: "self", actorName, createdAt: annotation.createdAt || new Date().toISOString() });
         if (JSON.stringify(before) === JSON.stringify(after)) return;
         const mediaData = { ...target.mediaData, photoAnnotations: after };
         updateMessageMediaData(target.id, mediaData);
@@ -1684,7 +1691,6 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             : (after.length < before.length ? "移除了之前的部分标记" : describePhotoAnnotations(after));
         const count = target.mediaData?.photoGroupCount || 1;
         const index = target.mediaData?.photoGroupIndex || 0;
-        const actorName = userIdentity?.name || "你";
         const event = pushChatMessage({
             sessionId: session.id,
             role: "user",
@@ -1697,6 +1703,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 photoMarkupActorId: "self",
                 photoMarkupActorName: actorName,
                 photoMarkupSummary: summary,
+                photoMarkupTargetLabel: target.mediaData?.label,
+                photoMarkupTargetGroupCount: count,
+                photoMarkupTargetPhotoKind: target.mediaData?.photoKind,
             },
         });
         setMessages(prev => [
@@ -5513,6 +5522,11 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
     /** Reusable context menu for user/assistant bubbles */
     const renderBubbleContextMenu = (m: ChatMessage, options?: { allowMultiSelect?: boolean }) => {
+        if (m.mediaData?.photoGroupId) {
+            const photos = loadChatMessages(session.id).filter(item => item.mediaData?.photoGroupId === m.mediaData?.photoGroupId)
+                .sort((a, b) => (a.mediaData?.photoGroupIndex || 0) - (b.mediaData?.photoGroupIndex || 0));
+            m = photos[photos[0]?.mediaData?.photoGroupActiveIndex ?? 0] || m;
+        }
         const storedMessageId = getStoredActionMessageId(m);
         const tapbackPicker = (
             <div className="imessage-tapback-picker" role="group" aria-label="回应消息">
@@ -6660,6 +6674,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 label: item.mediaData?.label,
                                 photoKind: item.mediaData?.photoKind,
                                 annotations: item.mediaData?.photoAnnotations,
+                                tapback: item.mediaData?.tapback,
+                                tapbackBy: item.mediaData?.tapbackBy,
+                                tapbacks: item.mediaData?.tapbacks,
                             })),
                         },
                     } : msg;
@@ -6954,7 +6971,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                 onActionSelect={(text) => chatTextInputRef.current?.appendText(text)}
                                                 defaultTranslationExpanded={session.collapseBilingualTranslation !== false ? false : true}
                                             />
-                                            {renderMsg.mediaType !== "quote" && (renderMsg.mediaData?.tapback || renderMsg.mediaData?.tapbacks?.length) && (
+                                            {renderMsg.mediaType !== "quote" && !renderMsg.mediaData?.photoGroupItems?.length && (renderMsg.mediaData?.tapback || renderMsg.mediaData?.tapbacks?.length) && (
                                                 <IMessageTapbackBadge
                                                     tapback={renderMsg.mediaData.tapback}
                                                     tapbackBy={renderMsg.mediaData.tapbackBy || "user"}

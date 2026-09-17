@@ -5,6 +5,7 @@ import {
     type ChatMessage,
     type ChatPhotoAnnotation,
 } from "./chat-storage";
+import rough from "roughjs/bin/rough";
 
 const COLOR_NAMES: Record<string, string> = {
     "#ff3b30": "红色",
@@ -15,7 +16,7 @@ const COLOR_NAMES: Record<string, string> = {
 };
 
 function annotationCenter(annotation: ChatPhotoAnnotation): [number, number] {
-    if (annotation.kind === "text") return [annotation.x ?? .5, annotation.y ?? .5];
+    if (annotation.kind === "text" || annotation.kind === "rough_shape" || annotation.kind === "emoji") return [annotation.x ?? .5, annotation.y ?? .5];
     const points = annotation.points || [];
     if (points.length < 2) return [.5, .5];
     let x = 0;
@@ -97,10 +98,12 @@ function makeShapePoints(kind: "heart" | "star" | "circle" | "arrow", centerX: n
     return points;
 }
 
-function resolveAssistantMarkShape(text: string): "heart" | "star" | "circle" | "arrow" | null {
+function resolveAssistantMarkShape(text: string): "heart" | "star" | "circle" | "arrow" | "box" | "underline" | null {
     if (/[❤♥♡💕💗💖]|爱心|心形|红心/.test(text)) return "heart";
     if (/[⭐★☆🌟]|星星|五角星/.test(text)) return "star";
     if (/箭头|指向|指这里/.test(text)) return "arrow";
+    if (/方框|框出|框起来|矩形/.test(text)) return "box";
+    if (/下划线|划线|强调/.test(text)) return "underline";
     if (/圈|圆圈|圈住|框住|围住/.test(text)) return "circle";
     return null;
 }
@@ -110,6 +113,8 @@ const SHAPE_DESCRIPTIONS: Record<NonNullable<ReturnType<typeof resolveAssistantM
     star: "手绘星星",
     circle: "手绘圈线",
     arrow: "手绘箭头",
+    box: "手绘方框",
+    underline: "手绘下划线",
 };
 
 export function describePhotoRegion(x: number, y: number): string {
@@ -125,12 +130,20 @@ export function describePhotoAnnotations(annotations: ChatPhotoAnnotation[]): st
         const [x, y] = annotationCenter(annotation);
         const color = COLOR_NAMES[annotation.color.toLowerCase()] || annotation.color || "彩色";
         const region = describePhotoRegion(x, y);
+        const actor = annotation.actorName ? `${annotation.actorName}在` : "";
+        if (annotation.kind === "emoji") {
+            const rotation = annotation.rotation ? `、旋转${Math.round(annotation.rotation)}度` : "";
+            return `${actor}${region}贴了${annotation.emoji || "一个 emoji"}（${annotation.scale || 1}倍${rotation}），用来“${annotation.description || "二创照片"}”`;
+        }
+        if (annotation.kind === "rough_shape") {
+            return `${actor}${region}画了${color}${annotation.doodlePath ? "自由曲线" : SHAPE_DESCRIPTIONS[annotation.shape || "circle"]}${annotation.fill && annotation.fill !== "none" ? `，填色${annotation.fill}` : ""}${annotation.description ? `，用来“${annotation.description}”` : ""}`;
+        }
         if (annotation.kind === "text") {
-            return `${region}用${color}手写“${annotation.text || annotation.description || "标记"}”`;
+            return `${actor}${region}用${color}手写“${annotation.text || annotation.description || "标记"}”`;
         }
         const points = Math.floor((annotation.points?.length || 0) / 2);
         const meaning = annotation.description?.trim() ? `，表示“${annotation.description.trim()}”` : "";
-        return `${region}有一笔${color}手绘线条（${points}个轨迹点）${meaning}`;
+        return `${actor}${region}留下一笔${color}手绘线条（${points}个轨迹点）${meaning}`;
     }).join("；");
 }
 
@@ -170,13 +183,28 @@ export function applyAssistantPhotoMarkupAction(options: {
     if (!resolved || !text) return null;
     const x = options.markData?.photoMarkX ?? .12;
     const y = options.markData?.photoMarkY ?? .18;
+    const markKind = options.markData?.photoMarkKind || "handdrawn";
+    const emoji = options.markData?.photoMarkEmoji?.trim();
     const shape = resolveAssistantMarkShape(text);
-    const annotation: ChatPhotoAnnotation = {
+    const annotation: ChatPhotoAnnotation = markKind === "emoji" && emoji ? {
         id: `ai_mark_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        kind: shape ? "stroke" : "text",
+        kind: "emoji",
+        color: "#ffffff",
+        emoji,
+        x,
+        y,
+        scale: options.markData?.photoMarkScale ?? 1.5,
+        rotation: options.markData?.photoMarkRotation ?? 0,
+        description: text,
+        actorId: options.actorId,
+        actorName: options.actorName,
+        createdAt: new Date().toISOString(),
+    } : {
+        id: `ai_mark_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        kind: shape ? "rough_shape" : "text",
         color: "#ff3b30",
         width: shape ? .01 : undefined,
-        points: shape ? makeShapePoints(shape, x, y) : undefined,
+        shape: shape || undefined,
         x,
         y,
         text: shape ? undefined : text,
@@ -185,13 +213,23 @@ export function applyAssistantPhotoMarkupAction(options: {
         actorName: options.actorName,
         createdAt: new Date().toISOString(),
         renderStyle: shape ? "handdrawn" : undefined,
+        seed: Math.max(1, Math.floor(Math.random() * 0x7ffffffe)),
+        roughness: 1.8,
+        bowing: 1.25,
+        size: shape === "arrow" ? .3 : .25,
     };
+    const compositionId = annotation.id;
+    const marks = options.markData?.photoMarkStrokes?.length ? options.markData.photoMarkStrokes.map((mark, index) => ({
+        ...mark, id: `${compositionId}_${index}`, compositionId,
+        seed: Math.max(1, Math.floor(Math.random() * 0x7ffffffe)),
+        actorId: options.actorId, actorName: options.actorName, createdAt: annotation.createdAt,
+    })) : [annotation];
     const targetMediaData = {
         ...resolved.target.mediaData,
-        photoAnnotations: [...(resolved.target.mediaData?.photoAnnotations || []), annotation],
+        photoAnnotations: [...(resolved.target.mediaData?.photoAnnotations || []), ...marks],
     };
     updateMessageMediaData(resolved.target.id, targetMediaData);
-    const summary = describePhotoAnnotations([annotation]);
+    const summary = `${options.markData?.photoMarkStrokes?.length ? `创作意图：${text}；` : ""}${describePhotoAnnotations(marks)}`;
     const event = pushChatMessage({
         sessionId: options.sessionId,
         role: "assistant",
@@ -210,6 +248,9 @@ export function applyAssistantPhotoMarkupAction(options: {
             photoMarkupActorId: options.actorId,
             photoMarkupActorName: options.actorName,
             photoMarkupSummary: summary,
+            photoMarkupTargetLabel: resolved.target.mediaData?.label,
+            photoMarkupTargetGroupCount: resolved.count,
+            photoMarkupTargetPhotoKind: resolved.target.mediaData?.photoKind,
         },
     });
     return { target: { ...resolved.target, mediaData: targetMediaData }, event };
@@ -234,14 +275,52 @@ export async function compositePhotoAnnotations(imageUrl: string, annotations: C
         const context = canvas.getContext("2d");
         if (!context) return null;
         context.drawImage(image, 0, 0, width, height);
+        const roughCanvas = rough.canvas(canvas);
         for (const annotation of annotations) {
             context.save();
+            context.globalAlpha = annotation.opacity ?? 1;
             context.strokeStyle = annotation.color || "#ff3b30";
             context.fillStyle = annotation.color || "#ff3b30";
             context.lineWidth = Math.max(2, (annotation.width || .012) * Math.max(width, height));
             context.lineCap = "round";
             context.lineJoin = "round";
-            if (annotation.kind === "stroke" && (annotation.points?.length || 0) >= 4) {
+            if (annotation.kind === "emoji" && annotation.emoji) {
+                const fontSize = width * .12 * (annotation.scale || 1);
+                context.font = `${fontSize}px Apple Color Emoji, Segoe UI Emoji, sans-serif`;
+                context.textAlign = "center";
+                context.textBaseline = "middle";
+                context.translate((annotation.x ?? .5) * width, (annotation.y ?? .5) * height);
+                context.rotate(((annotation.rotation || 0) * Math.PI) / 180);
+                context.fillText(annotation.emoji, 0, 0);
+            } else if (annotation.kind === "rough_shape" && annotation.doodlePath) {
+                context.translate((annotation.x ?? .5) * width, (annotation.y ?? .5) * height);
+                context.rotate((annotation.rotation || 0) * Math.PI / 180);
+                context.translate(-(annotation.x ?? .5) * width, -(annotation.y ?? .5) * height);
+                context.scale(width / 100, height / 100);
+                roughCanvas.path(annotation.doodlePath, { stroke: annotation.color, fill: annotation.fill || "none", fillStyle: "solid", strokeWidth: (annotation.width || .01) * 100, seed: annotation.seed || 1, roughness: (annotation.roughness || 1.8) / 10 });
+            } else if (annotation.kind === "rough_shape" && annotation.shape) {
+                const cx = (annotation.x ?? .5) * width;
+                const cy = (annotation.y ?? .5) * height;
+                const size = (annotation.size || .25) * Math.min(width, height);
+                const options = { stroke: annotation.color, fill: annotation.fill || "none", fillStyle: "solid", strokeWidth: Math.max(2, (annotation.width || .01) * Math.max(width, height)), roughness: annotation.roughness || 1.8, bowing: annotation.bowing || 1.25, seed: annotation.seed || 1 };
+                if (annotation.shape === "circle") roughCanvas.ellipse(cx, cy, size, size * .78, options);
+                else if (annotation.shape === "box") roughCanvas.rectangle(cx - size / 2, cy - size * .38, size, size * .76, options);
+                else if (annotation.shape === "underline") roughCanvas.line(cx - size / 2, cy, cx + size / 2, cy, options);
+                else if (annotation.shape === "arrow") {
+                    roughCanvas.line(cx - size / 2, cy + size * .25, cx + size / 2, cy - size * .25, options);
+                    roughCanvas.line(cx + size / 2, cy - size * .25, cx + size * .18, cy - size * .28, options);
+                    roughCanvas.line(cx + size / 2, cy - size * .25, cx + size * .34, cy + size * .05, options);
+                } else if (annotation.shape === "heart") {
+                    roughCanvas.path(`M ${cx} ${cy + size * .42} C ${cx - size * .58} ${cy + size * .06}, ${cx - size * .48} ${cy - size * .44}, ${cx} ${cy - size * .12} C ${cx + size * .48} ${cy - size * .44}, ${cx + size * .58} ${cy + size * .06}, ${cx} ${cy + size * .42}`, options);
+                } else {
+                    const star = Array.from({ length: 10 }, (_, index) => {
+                        const radius = index % 2 ? size * .22 : size * .5;
+                        const angle = -Math.PI / 2 + index * Math.PI / 5;
+                        return [cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius] as [number, number];
+                    });
+                    roughCanvas.polygon(star, options);
+                }
+            } else if (annotation.kind === "stroke" && (annotation.points?.length || 0) >= 4) {
                 const points = annotation.points!;
                 context.beginPath();
                 context.moveTo(points[0] * width, points[1] * height);

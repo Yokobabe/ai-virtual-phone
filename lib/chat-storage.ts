@@ -82,7 +82,7 @@ export type ChatMessageRole = "user" | "assistant" | "system" | "tool";
 
 export type ChatPhotoAnnotation = {
     id: string;
-    kind: "stroke" | "text";
+    kind: "stroke" | "text" | "rough_shape" | "emoji";
     color: string;
     width?: number;
     /** 0..1 normalized coordinates stored as x/y pairs. */
@@ -90,6 +90,18 @@ export type ChatPhotoAnnotation = {
     x?: number;
     y?: number;
     text?: string;
+    shape?: "heart" | "star" | "circle" | "arrow" | "box" | "underline";
+    doodlePath?: string;
+    fill?: string;
+    opacity?: number;
+    compositionId?: string;
+    emoji?: string;
+    scale?: number;
+    rotation?: number;
+    seed?: number;
+    roughness?: number;
+    bowing?: number;
+    size?: number;
     /** Optional human/model description of what this mark represents. */
     description?: string;
     actorId?: string;
@@ -101,6 +113,9 @@ export type ChatPhotoAnnotation = {
 
 export type ChatPhotoGroupItem = {
     messageId: string;
+    tapback?: string;
+    tapbackBy?: "user" | "assistant";
+    tapbacks?: { actorId: string; actorName: string; emoji: string }[];
     mediaUrl?: string;
     label?: string;
     photoKind?: "photo" | "text_photo";
@@ -169,6 +184,11 @@ export type ChatMessage = {
         photoKind?: "photo" | "text_photo";
         photoAnnotations?: ChatPhotoAnnotation[];
         photoMarkText?: string;
+        photoMarkStrokes?: ChatPhotoAnnotation[];
+        photoMarkKind?: "handdrawn" | "emoji";
+        photoMarkEmoji?: string;
+        photoMarkScale?: number;
+        photoMarkRotation?: number;
         photoMarkX?: number;
         photoMarkY?: number;
         photoMarkTargetIndex?: number;
@@ -177,6 +197,9 @@ export type ChatMessage = {
         photoMarkupActorId?: string;
         photoMarkupActorName?: string;
         photoMarkupSummary?: string;
+        photoMarkupTargetLabel?: string;
+        photoMarkupTargetGroupCount?: number;
+        photoMarkupTargetPhotoKind?: "photo" | "text_photo";
         chatRenameKind?: "private_alias" | "group_name";
         chatRenameValue?: string;
         chatRenameActorId?: string;

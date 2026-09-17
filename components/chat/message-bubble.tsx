@@ -1,7 +1,9 @@
 "use client";
 import { VoiceReferenceGraphic } from "./voice-reference-graphic";
+import { PhotoMarkupEditor } from "./photo-markup-editor";
 
 import { useState, useEffect, useCallback, useRef, useMemo, memo, type ReactNode } from "react";
+import rough from "roughjs/bin/rough";
 import { findCustomStickerByName, resolveCustomStickerUrl } from "@/lib/custom-sticker-storage";
 import { isMediaStoreRef, loadMediaObjectUrl } from "@/lib/media-cache-storage";
 import { getChatImageFromIndexedDB } from "@/lib/chat-asset-storage";
@@ -19,7 +21,7 @@ import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { createPortal } from "react-dom";
-import { Blocks, Maximize2, ReceiptText } from "lucide-react";
+import { Blocks, Maximize2, ReceiptText, ChevronLeft } from "lucide-react";
 import { retryChatGeneratedImage } from "@/lib/generated-image-retry";
 import { GeneratedImageErrorDialog } from "./generated-image-error-dialog";
 import { ScanPayCard } from "@/components/chat/scan-pay-card";
@@ -165,7 +167,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, onPhot
         if (prev.msg.mediaData?.photoGroupActiveIndex !== next.msg.mediaData?.photoGroupActiveIndex) return false;
         if (prev.msg.mediaData?.photoGroupItems?.some((item, index) => {
             const nextItem = next.msg.mediaData?.photoGroupItems?.[index];
-            return !nextItem || item.mediaUrl !== nextItem.mediaUrl || item.label !== nextItem.label || item.annotations?.length !== nextItem.annotations?.length;
+            return !nextItem || item.mediaUrl !== nextItem.mediaUrl || item.label !== nextItem.label || JSON.stringify(item.annotations) !== JSON.stringify(nextItem.annotations) || item.tapback !== nextItem.tapback || item.tapbackBy !== nextItem.tapbackBy || JSON.stringify(item.tapbacks) !== JSON.stringify(nextItem.tapbacks);
         })) return false;
         if (prev.msg.mediaData?.photoAnnotations?.length !== next.msg.mediaData?.photoAnnotations?.length) return false;
         if (prev.msg.mediaUrl !== next.msg.mediaUrl) return false;
@@ -613,9 +615,20 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
     htmlFrameVariant?: ChatHtmlFrameVariant;
 }) {
     const bilingual = splitBilingualText(text);
-    const [expanded, setExpanded] = useState(defaultExpanded);
+    const [showTranslated, setShowTranslated] = useState(false);
+    const [originalWidth, setOriginalWidth] = useState<number | null>(null);
+    const originalRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
-        setExpanded(defaultExpanded);
+        setShowTranslated(false);
+    }, [text]);
+    useEffect(() => {
+        if (!defaultExpanded || !originalRef.current) return;
+        const element = originalRef.current;
+        const measure = () => setOriginalWidth(Math.ceil(element.getBoundingClientRect().width));
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(element);
+        return () => observer.disconnect();
     }, [text, defaultExpanded]);
     const renderContent = (content: string, extraClass?: string) => {
         if (mode === "plain") return <PlainTextContent content={content} className={extraClass} />;
@@ -630,29 +643,38 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
         return renderContent(text, className);
     }
 
+    const toggleTranslation = (event: React.MouseEvent<HTMLDivElement>) => {
+        if (defaultExpanded) return;
+        if ((event.target as HTMLElement).closest("a,button,input,textarea,select,[role='button']")) return;
+        event.stopPropagation();
+        setShowTranslated(value => !value);
+    };
+
     return (
-        <div className={`chat-bilingual-block ${className ?? ""}`.trim()}>
-            <div className="chat-bilingual-section">
-                {renderContent(bilingual.original, "chat-bilingual-content")}
-            </div>
-            <button
-                type="button"
-                className="chat-bilingual-toggle"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    setExpanded(v => !v);
-                }}
-                aria-expanded={expanded}
-            >
-                {expanded ? "收起译文" : "译文"}
-            </button>
-            {expanded && (
-                <>
-                    <div className="chat-bilingual-divider" />
-                    <div className="chat-bilingual-section chat-bilingual-section-translation">
-                        {renderContent(bilingual.translated, "chat-bilingual-content")}
-                    </div>
-                </>
+        <div
+            className={`chat-bilingual-block ${defaultExpanded ? "chat-bilingual-block-auto" : "chat-bilingual-block-switch"} ${className ?? ""}`.trim()}
+            onClick={toggleTranslation}
+            role={defaultExpanded ? undefined : "button"}
+            tabIndex={defaultExpanded ? undefined : 0}
+            aria-label={defaultExpanded ? undefined : (showTranslated ? "显示原文" : "显示译文")}
+            onKeyDown={event => {
+                if (defaultExpanded || (event.key !== "Enter" && event.key !== " ")) return;
+                event.preventDefault();
+                setShowTranslated(value => !value);
+            }}
+        >
+            {defaultExpanded ? <>
+                <div ref={originalRef} className="chat-bilingual-section chat-bilingual-section-original">
+                    {renderContent(bilingual.original, "chat-bilingual-content")}
+                </div>
+                <div className="chat-bilingual-divider" style={originalWidth ? { width: `${originalWidth}px` } : undefined} />
+                <div className="chat-bilingual-section chat-bilingual-section-translation">
+                    {renderContent(bilingual.translated, "chat-bilingual-content")}
+                </div>
+            </> : (
+                <div className={`chat-bilingual-section ${showTranslated ? "chat-bilingual-section-translation" : "chat-bilingual-section-original"}`}>
+                    {renderContent(showTranslated ? bilingual.translated : bilingual.original, "chat-bilingual-content")}
+                </div>
             )}
         </div>
     );
@@ -1267,11 +1289,84 @@ function GeneratedImagePromptDialog({
     );
 }
 
-function PhotoAnnotationLayer({ annotations }: { annotations?: ChatPhotoAnnotation[] }) {
+function RoughPhotoShape({ annotation }: { annotation: ChatPhotoAnnotation }) {
+    const paths = useMemo(() => {
+        if (!annotation.shape && !annotation.doodlePath) return [];
+        const generator = rough.generator();
+        const cx = (annotation.x ?? .5) * 1000;
+        const cy = (annotation.y ?? .5) * 1000;
+        const size = (annotation.size || .25) * 1000;
+        const options = {
+            stroke: annotation.color,
+            strokeWidth: (annotation.width || .01) * 1000,
+            roughness: annotation.roughness || 1.8,
+            bowing: annotation.bowing || 1.25,
+            seed: annotation.seed || 1,
+            fill: annotation.fill || "none",
+            fillStyle: "solid",
+        };
+        if (annotation.doodlePath) return generator.toPaths(generator.path(annotation.doodlePath, { ...options, strokeWidth: options.strokeWidth / 10, roughness: options.roughness / 10 }));
+        let drawable;
+        if (annotation.shape === "circle") drawable = generator.ellipse(cx, cy, size, size * .78, options);
+        else if (annotation.shape === "box") drawable = generator.rectangle(cx - size / 2, cy - size * .38, size, size * .76, options);
+        else if (annotation.shape === "underline") drawable = generator.line(cx - size / 2, cy, cx + size / 2, cy, options);
+        else if (annotation.shape === "arrow") drawable = generator.path(`M ${cx - size / 2} ${cy + size * .25} L ${cx + size / 2} ${cy - size * .25} M ${cx + size / 2} ${cy - size * .25} L ${cx + size * .18} ${cy - size * .28} M ${cx + size / 2} ${cy - size * .25} L ${cx + size * .34} ${cy + size * .05}`, options);
+        else if (annotation.shape === "heart") drawable = generator.path(`M ${cx} ${cy + size * .42} C ${cx - size * .58} ${cy + size * .06}, ${cx - size * .48} ${cy - size * .44}, ${cx} ${cy - size * .12} C ${cx + size * .48} ${cy - size * .44}, ${cx + size * .58} ${cy + size * .06}, ${cx} ${cy + size * .42}`, options);
+        else drawable = generator.polygon(Array.from({ length: 10 }, (_, index) => {
+            const radius = index % 2 ? size * .22 : size * .5;
+            const angle = -Math.PI / 2 + index * Math.PI / 5;
+            return [cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius] as [number, number];
+        }), options);
+        return generator.toPaths(drawable);
+    }, [annotation]);
+    const cx = (annotation.x ?? .5) * 1000;
+    const cy = (annotation.y ?? .5) * 1000;
+    return <g opacity={annotation.opacity ?? 1} transform={`rotate(${annotation.rotation || 0} ${cx} ${cy})${annotation.doodlePath ? " scale(10)" : ""}`}>
+        {paths.map((path, index) => <path key={index} d={path.d} fill={path.fill || "none"} stroke={path.stroke} strokeWidth={path.strokeWidth} />)}
+    </g>;
+}
+
+function PhotoAnnotationLayer({ annotations, selectedId }: { annotations?: ChatPhotoAnnotation[]; selectedId?: string | null }) {
+    const layerRef = useRef<SVGSVGElement>(null);
+    const [emojiAspect, setEmojiAspect] = useState(1);
+    const hasMarks = Boolean(annotations?.length);
+    useEffect(() => {
+        const layer = layerRef.current;
+        if (!layer) return;
+        // Coordinates follow the photo; glyphs must retain equal physical X/Y scale.
+        const observer = new ResizeObserver(([entry]) => {
+            const { width, height } = entry.contentRect;
+            if (width > 0 && height > 0) setEmojiAspect(width / height);
+        });
+        observer.observe(layer);
+        return () => observer.disconnect();
+    }, [hasMarks]);
     if (!annotations?.length) return null;
     return (
-        <svg className="chat-photo-annotation-layer" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
-            {annotations.map(annotation => annotation.kind === "stroke" && annotation.points?.length ? (
+        <svg ref={layerRef} className="chat-photo-annotation-layer" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+            {annotations.map(annotation => annotation.kind === "rough_shape" ? (
+                <RoughPhotoShape key={annotation.id} annotation={annotation} />
+            ) : annotation.kind === "emoji" && annotation.emoji ? (
+                <g key={annotation.id} transform={`translate(${(annotation.x ?? .5) * 1000} ${(annotation.y ?? .5) * 1000}) scale(1 ${emojiAspect}) rotate(${annotation.rotation || 0})`}>
+                    {selectedId === annotation.id && <circle
+                        cx={0}
+                        cy={0}
+                        r={76 * (annotation.scale || 1)}
+                        fill="none"
+                        stroke="rgba(255,255,255,.92)"
+                        strokeWidth="5"
+                        strokeDasharray="14 10"
+                    />}
+                    <text
+                        x={0}
+                        y={0}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fontSize={120 * (annotation.scale || 1)}
+                        fontFamily="Apple Color Emoji, Segoe UI Emoji, sans-serif"
+                    >{annotation.emoji}</text>
+                </g>
+            ) : annotation.kind === "stroke" && annotation.points?.length ? (
                 <g key={annotation.id}>
                     <polyline
                         points={Array.from({ length: Math.floor(annotation.points.length / 2) }, (_, index) => `${annotation.points![index * 2] * 1000},${annotation.points![index * 2 + 1] * 1000}`).join(" ")}
@@ -1299,58 +1394,8 @@ function PhotoAnnotationLayer({ annotations }: { annotations?: ChatPhotoAnnotati
     );
 }
 
-function PhotoAnnotationEditor({ imageUrl, fallbackText, initial, onSave, onClose }: {
-    imageUrl?: string;
-    fallbackText?: string;
-    initial?: ChatPhotoAnnotation[];
-    onSave: (annotations: ChatPhotoAnnotation[]) => void;
-    onClose: () => void;
-}) {
-    const [annotations, setAnnotations] = useState<ChatPhotoAnnotation[]>(initial || []);
-    const [color, setColor] = useState("#ff3b30");
-    const [description, setDescription] = useState("");
-    const [current, setCurrent] = useState<ChatPhotoAnnotation | null>(null);
-    const surfaceRef = useRef<SVGSVGElement>(null);
-    const point = (event: React.PointerEvent<SVGSVGElement>) => {
-        const rect = event.currentTarget.getBoundingClientRect();
-        return [Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))];
-    };
-    return createPortal(
-        <div className="chat-photo-markup" onClick={onClose}>
-            <div className="chat-photo-markup-stage" onClick={event => event.stopPropagation()}>
-                {imageUrl ? <img src={imageUrl} alt="" draggable={false} /> : <div className="chat-photo-markup-text-card">{fallbackText || "文字图片"}</div>}
-                <PhotoAnnotationLayer annotations={current ? [...annotations, current] : annotations} />
-                <svg
-                    ref={surfaceRef}
-                    className="chat-photo-markup-touch"
-                    viewBox="0 0 1000 1000"
-                    preserveAspectRatio="none"
-                    onPointerDown={event => {
-                        event.currentTarget.setPointerCapture(event.pointerId);
-                        const [x, y] = point(event);
-                        setCurrent({ id: `mark_${Date.now()}`, kind: "stroke", color, width: 0.012, points: [x, y], description: description.trim() || undefined });
-                    }}
-                    onPointerMove={event => {
-                        if (!current) return;
-                        const [x, y] = point(event);
-                        setCurrent(prev => prev ? { ...prev, points: [...(prev.points || []), x, y] } : prev);
-                    }}
-                    onPointerUp={() => { if (current) setAnnotations(prev => [...prev, current]); setCurrent(null); }}
-                    onPointerCancel={() => setCurrent(null)}
-                />
-            </div>
-            <div className="chat-photo-markup-toolbar" onClick={event => event.stopPropagation()}>
-                <input value={description} onChange={event => setDescription(event.target.value)} placeholder="这笔画的是什么？（可选）" maxLength={40} />
-                <div className="chat-photo-markup-colors">
-                    {["#ff3b30", "#ffcc00", "#34c759", "#007aff", "#ffffff"].map(value => <button key={value} type="button" aria-label={value} data-active={color === value || undefined} style={{ background: value }} onClick={() => setColor(value)} />)}
-                </div>
-                <button type="button" onClick={() => setAnnotations(prev => prev.slice(0, -1))}>撤销</button>
-                <button type="button" onClick={() => setAnnotations([])}>清除</button>
-                <button type="button" className="primary" onClick={() => onSave(annotations)}>完成</button>
-            </div>
-        </div>,
-        document.body,
-    );
+function PhotoAnnotationEditor(props: Omit<React.ComponentProps<typeof PhotoMarkupEditor>, "renderLayer">) {
+    return <PhotoMarkupEditor {...props} renderLayer={(annotations, selectedId) => <PhotoAnnotationLayer annotations={annotations} selectedId={selectedId} />} />;
 }
 
 function PhotoGroupBubble({ msg, items, onUpdate, onPhotoAnnotationsSave }: { msg: ChatMessage; items: ChatPhotoGroupItem[]; onUpdate?: (updated: ChatMessage) => void; onPhotoAnnotationsSave?: MessageBubbleProps["onPhotoAnnotationsSave"] }) {
@@ -1359,10 +1404,10 @@ function PhotoGroupBubble({ msg, items, onUpdate, onPhotoAnnotationsSave }: { ms
     const [dragX, setDragX] = useState(0);
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailIndex, setDetailIndex] = useState(0);
-    const [focusOpen, setFocusOpen] = useState(false);
     const [marking, setMarking] = useState(false);
-    const dragStart = useRef<number | null>(null);
+    const dragGesture = useRef<{ x: number; y: number; lastY: number; mode: "pending" | "photo" | "page" } | null>(null);
     const suppressStackClick = useRef(false);
+    const mediaSourcesKey = items.map(item => `${item.messageId}:${item.mediaUrl || ""}`).join("|");
 
     useEffect(() => {
         let cancelled = false;
@@ -1374,6 +1419,18 @@ function PhotoGroupBubble({ msg, items, onUpdate, onPhotoAnnotationsSave }: { ms
             return { ...item, mediaUrl: url || undefined };
         })).then(next => { if (!cancelled) setResolved(next); });
         return () => { cancelled = true; revokes.forEach(url => URL.revokeObjectURL(url)); };
+        // Annotation-only updates must not revoke and recreate the blob URLs.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mediaSourcesKey]);
+
+    useEffect(() => {
+        setResolved(previous => items.map(item => {
+            const existing = previous.find(candidate => candidate.messageId === item.messageId);
+            const mediaUrl = isMediaStoreRef(item.mediaUrl || "")
+                ? (existing?.mediaUrl && !isMediaStoreRef(existing.mediaUrl) ? existing.mediaUrl : undefined)
+                : item.mediaUrl;
+            return { ...item, mediaUrl };
+        }));
     }, [items]);
 
     useEffect(() => {
@@ -1398,6 +1455,18 @@ function PhotoGroupBubble({ msg, items, onUpdate, onPhotoAnnotationsSave }: { ms
         }
         setIndex(nextIndex);
     };
+    const scrollPageBy = (origin: HTMLElement, deltaY: number) => {
+        let node: HTMLElement | null = origin.parentElement;
+        while (node) {
+            const style = window.getComputedStyle(node);
+            if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) {
+                node.scrollTop -= deltaY;
+                return;
+            }
+            node = node.parentElement;
+        }
+        window.scrollBy(0, -deltaY);
+    };
     const active = resolved[detailIndex];
     const saveAnnotations = (annotations: ChatPhotoAnnotation[]) => {
         if (!active) return;
@@ -1417,14 +1486,41 @@ function PhotoGroupBubble({ msg, items, onUpdate, onPhotoAnnotationsSave }: { ms
     return (
         <>
             <div className="chat-photo-stack-wrap">
-                <div className="chat-photo-stack-count"><span className="chat-photo-stack-grid-icon" aria-hidden="true"><i/><i/><i/><i/></span>{index + 1} / {resolved.length} 张照片</div>
+                <button type="button" className="chat-photo-stack-count" aria-label={`查看全部 ${resolved.length} 张照片`} onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); setDetailIndex(index); setDetailOpen(true); }}><span className="chat-photo-stack-grid-icon" aria-hidden="true"><i/><i/><i/><i/></span>{index + 1} / {resolved.length} 张照片</button>
                 <div
                     className="chat-photo-stack"
-                    onPointerDown={event => { dragStart.current = event.clientX; suppressStackClick.current = false; event.currentTarget.setPointerCapture(event.pointerId); }}
-                    onPointerMove={event => { if (dragStart.current !== null) setDragX(Math.min(0, event.clientX - dragStart.current)); }}
-                    onPointerUp={() => { if (dragX < -42) { suppressStackClick.current = true; move(1); } dragStart.current = null; setDragX(0); }}
-                    onPointerCancel={() => { dragStart.current = null; setDragX(0); }}
-                    onClick={event => { event.stopPropagation(); if (suppressStackClick.current) { suppressStackClick.current = false; return; } setDetailIndex(index); setFocusOpen(false); setDetailOpen(true); }}
+                    onPointerDown={event => {
+                        dragGesture.current = { x: event.clientX, y: event.clientY, lastY: event.clientY, mode: "pending" };
+                        suppressStackClick.current = false;
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                    }}
+                    onPointerMove={event => {
+                        const gesture = dragGesture.current;
+                        if (!gesture) return;
+                        const dx = event.clientX - gesture.x;
+                        const dy = event.clientY - gesture.y;
+                        if (gesture.mode === "pending" && Math.hypot(dx, dy) >= 10) {
+                            // The photo owns a leftward gesture unless the movement is clearly vertical.
+                            gesture.mode = dx < -4 || Math.abs(dx) >= Math.abs(dy) * .72 ? "photo" : "page";
+                        }
+                        if (gesture.mode === "photo") {
+                            event.preventDefault();
+                            setDragX(Math.min(0, dx));
+                        } else if (gesture.mode === "page") {
+                            event.preventDefault();
+                            scrollPageBy(event.currentTarget, event.clientY - gesture.lastY);
+                        }
+                        gesture.lastY = event.clientY;
+                    }}
+                    onPointerUp={() => {
+                        const mode = dragGesture.current?.mode;
+                        if (mode === "photo" && dragX < -42) { suppressStackClick.current = true; move(1); }
+                        else if (mode === "page") suppressStackClick.current = true;
+                        dragGesture.current = null;
+                        setDragX(0);
+                    }}
+                    onPointerCancel={() => { dragGesture.current = null; setDragX(0); }}
+                    onClick={event => { event.stopPropagation(); suppressStackClick.current = false; }}
                 >
                     {Array.from({ length: Math.min(resolved.length, 9) }, (_, depthIndex) => Math.min(resolved.length, 9) - 1 - depthIndex).map(depth => {
                         const itemIndex = (index + depth) % resolved.length;
@@ -1439,27 +1535,18 @@ function PhotoGroupBubble({ msg, items, onUpdate, onPhotoAnnotationsSave }: { ms
                             <PhotoAnnotationLayer annotations={item.annotations} />
                         </div>;
                     })}
+                    {resolved[index] && <div className="photo-front-reaction" style={{ transform: `translateX(${dragX}px)` }}><IMessageTapbackBadge tapback={resolved[index].tapback} tapbackBy={resolved[index].tapbackBy} reactions={resolved[index].tapbacks} /></div>}
                 </div>
             </div>
             {detailOpen && createPortal(
-                <div className="chat-photo-group-overlay" onClick={() => { setFocusOpen(false); setDetailOpen(false); }}>
-                    <div className="chat-photo-group-header"><button type="button" onClick={() => setDetailOpen(false)}>‹</button><strong>{resolved.length} 张照片</strong><span /></div>
+                <div className="chat-photo-group-overlay" onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
+                    <div className="chat-photo-group-header"><button className="photo-glass-button" aria-label="返回聊天" onClick={() => setDetailOpen(false)}><ChevronLeft /></button><strong>{resolved.length} 张照片</strong><span /></div>
                     <div className="chat-photo-group-grid" onClick={event => event.stopPropagation()}>
-                        {resolved.map((item, itemIndex) => <button key={item.messageId} type="button" onClick={() => { setDetailIndex(itemIndex); setFocusOpen(true); }} data-active={detailIndex === itemIndex || undefined}>
+                        {resolved.map((item, itemIndex) => <button key={item.messageId} type="button" onClick={() => { setDetailIndex(itemIndex); setMarking(true); }} data-active={detailIndex === itemIndex || undefined}>
                             {item.mediaUrl ? <img src={item.mediaUrl} alt={item.label || ""} /> : <span>{item.label || "文字图片"}</span>}
                             <PhotoAnnotationLayer annotations={item.annotations} />
                         </button>)}
                     </div>
-                    {focusOpen && active && <div className="chat-photo-group-focus" onClick={event => event.stopPropagation()}>
-                        <button type="button" className="back" aria-label="返回照片列表" onClick={() => setFocusOpen(false)}>‹</button>
-                        <button type="button" className="prev" onClick={() => setDetailIndex(value => (value - 1 + resolved.length) % resolved.length)}>‹</button>
-                        <div className="chat-photo-group-focus-media">
-                            {active.mediaUrl ? <img src={active.mediaUrl} alt={active.label || ""} /> : <div>{active.label || "文字图片"}</div>}
-                            <PhotoAnnotationLayer annotations={active.annotations} />
-                        </div>
-                        <button type="button" className="next" onClick={() => setDetailIndex(value => (value + 1) % resolved.length)}>›</button>
-                        <button type="button" className="markup" onClick={() => setMarking(true)}>标记</button>
-                    </div>}
                 </div>,
                 document.body,
             )}

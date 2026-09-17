@@ -19,6 +19,7 @@ import { buildCharacterTimeContext, buildGroupTimeContext, type CharacterTimeCon
 import { formatShoppingPaymentRequestHistory } from "./shopping-payment-request";
 import { buildGroupAdminBracketText } from "./group-admin";
 import { describePhotoAnnotations } from "./chat-photo-markup";
+import { PHOTO_DOODLE_GUIDANCE } from "./photo-doodle";
 
 export type LLMMessageRole = "system" | "user" | "assistant" | "tool";
 export type LLMToolCallPayload = { id: string; name: string; args: Record<string, unknown>; thoughtSignature?: string };
@@ -1069,7 +1070,7 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
 
     if (appId === "chat") {
         blocks.push({
-            text: `<photoMarkupCapability>\n照片标记是一个真实可执行动作，不是叙述性角色扮演。只有输出协议，界面才会真的落笔。\n当你决定已经/正在给照片画圈、写字、画爱心、星星、箭头或留下任何标记时，必须在同一回复中输出 [照片标记:x百分比:y百分比:标记意图]；指定照片组时输出 [照片标记:第N张:x百分比:y百分比:标记意图]。标记意图不受固定菜单限制，可以依性格和当下关系自由发挥；“爱心／星星／圈住／箭头”等会绘制成不规则的手绘线条，其他内容会以手写呈现。不要直接使用 emoji 冒充画笔。可以先说自然语言，再输出协议。\n禁止只说“圈了／画了／标记了”却不输出协议；若不愿实际标记，就不要声称已经完成。是否标记仍由你的性格、图片、上下文和情绪自主决定。\n</photoMarkupCapability>`,
+            text: `<photoMarkupCapability>\n照片标记/贴图是一个真实可执行动作，不是叙述性角色扮演。你必须先看清当前照片、现有标记和照片组序号，再按自己的性格决定是否二创。\n手绘使用 [照片标记:x百分比:y百分比:标记意图]；指定照片组用 [照片标记:第N张:x百分比:y百分比:标记意图]。爱心、星星、圈、箭头、框和下划线会由真实手绘渲染器落笔，其他短文字会以手写呈现。\nEmoji 二创使用 [照片贴图:x百分比:y百分比:缩放0.5到4:旋转角度:emoji:意图]；指定照片组用 [照片贴图:第N张:x百分比:y百分比:缩放:旋转:emoji:意图]。可放大、缩小、旋转，例如给猫戴帽子、用幽灵挡脸；位置与含义必须结合你实际看到的画面，不要盲贴。\n系统会永久记录你看的是哪张照片、原图描述、组内序号、你画/贴了什么及位置。禁止只声称完成却不输出协议；是否标记、画什么、是否和别人争抢二创均由你的性格和关系决定，但不要连续滥用。\n坐标说明：x、y 是贴图中心在整张图中的百分比，左上=(0,0)，右下=(100,100)。缩放1代表贴图约占图宽12%，2代表24%，3代表36%；根据目标头部/脸部实际大小选择，别总填1。旋转是度数，正数顺时针，负数逆时针。示例：[照片贴图:第2张:58:22:2.4:-18:👻:遮住右上方的人脸]。示例坐标不能照搬；看不清图片时不要声称准确定位。\n${PHOTO_DOODLE_GUIDANCE}</photoMarkupCapability>`,
             role: "system",
             depth: 0,
             order: Number.MAX_SAFE_INTEGER - 2,
@@ -1236,7 +1237,7 @@ export function formatRichMediaForHistory(msg: ChatMessage, userName: string, ch
         case "quote":
             return `[引用:${d?.quotePreview ?? ""}]${msg.content}`;
         case "photo_markup_action":
-            return `[照片标记事件:${msg.content || "做了照片标记"}${d?.photoMarkupSummary ? `；标记细节：${d.photoMarkupSummary}` : ""}]`;
+            return `[照片二创事件:${msg.content || "做了照片标记"}${d?.photoMarkupTargetLabel ? `；原图内容：“${d.photoMarkupTargetLabel}”` : ""}${d?.photoMarkupTargetGroupCount && d.photoMarkupTargetGroupCount > 1 ? `；照片组位置：第${(d.photoMarkTargetIndex ?? 0) + 1}/${d.photoMarkupTargetGroupCount}张` : ""}${d?.photoMarkupSummary ? `；实际操作：${d.photoMarkupSummary}` : ""}]`;
         case "private_alias_action":
         case "group_name_action":
             return `[聊天名称变更事件:${msg.content || d?.chatRenameValue || "名称已变更"}]`;
@@ -2254,7 +2255,7 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
     }
 
     blocks.push({
-        text: `<photoMarkupCapability>\n照片标记是一个真实可执行动作，不是叙述性角色扮演。只有输出协议，界面才会真的落笔。\n任一角色决定已经/正在给照片画圈、写字、画爱心、星星、箭头或留下任何标记时，必须在该角色的同一回复中输出 [照片标记:x百分比:y百分比:标记意图]；指定照片组时输出 [照片标记:第N张:x百分比:y百分比:标记意图]。标记意图不受固定菜单限制，各角色可依性格和关系自由发挥；“爱心／星星／圈住／箭头”等会绘制成不规则手绘线条，其他内容会以手写呈现。不要直接使用 emoji 冒充画笔。\n禁止角色只说“圈了／画了／标记了”却不输出协议；不愿实际标记时就不要声称完成。是否标记仍由各角色自主决定。\n</photoMarkupCapability>`,
+        text: `<photoMarkupCapability>\n照片标记/贴图是真实可执行动作。各角色必须先看清当前照片、已有二创与照片组序号，再按性格自行决定是否参与、争抢、接着画或拒绝。\n手绘协议：[照片标记:x百分比:y百分比:标记意图]；指定组内照片：[照片标记:第N张:x百分比:y百分比:标记意图]。爱心、星星、圈、箭头、框和下划线由手绘渲染器落笔，其他短文字以手写呈现。\nEmoji 二创协议：[照片贴图:x百分比:y百分比:缩放0.5到4:旋转角度:emoji:意图]；指定组内照片：[照片贴图:第N张:x百分比:y百分比:缩放:旋转:emoji:意图]。可缩放旋转，必须结合真实画面位置和语义。\n系统会永久记录执行角色、原图内容、组内第几张、实际操作及位置。禁止只声称完成却不输出协议；不要连续滥用。\n坐标说明：x、y 是贴图中心在整张图中的百分比，左上=(0,0)，右下=(100,100)。缩放1代表贴图约占图宽12%，2代表24%，3代表36%；根据目标头部/脸部实际大小选择，别总填1。旋转是度数，正数顺时针，负数逆时针。示例：[照片贴图:第2张:58:22:2.4:-18:👻:遮住右上方的人脸]。示例坐标不能照搬；看不清图片时不要声称准确定位。\n${PHOTO_DOODLE_GUIDANCE}</photoMarkupCapability>`,
         role: "system",
         depth: 0,
         order: Number.MAX_SAFE_INTEGER - 2,

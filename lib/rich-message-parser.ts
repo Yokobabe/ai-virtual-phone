@@ -10,6 +10,7 @@
  */
 
 import type { ChatMessage } from "./chat-storage";
+import { parsePhotoDoodle } from "./photo-doodle";
 import { canUseEcho } from "./chat-echo";
 import type { StateValue } from "./chat-storage";
 import { parseStateValues, mergeStateValues } from "./state-value-parser";
@@ -182,6 +183,46 @@ const RICH_PATTERNS: {
             content: "",
             mediaType: "group_name_action",
             mediaData: { chatRenameKind: "group_name", chatRenameValue: m[1].trim() },
+        }),
+    },
+    {
+        regex: /\[照片涂鸦\]([\s\S]*?)\[\/照片涂鸦\]/,
+        build: (m) => ({ content: "", mediaType: "photo_markup_action", mediaData: parsePhotoDoodle(m[1]) }),
+    },
+    {
+        // Emoji collage with scale and rotation. Example:
+        // [照片贴图:第3张:70:25:1.6:-12:👻:挡住脸]
+        regex: new RegExp(`\\[照片贴图${C}第?(\\d{1,2})张${C}(\\d{1,3})${C}(\\d{1,3})${C}([\\d.]+)${C}(-?\\d{1,3})${C}([^：:\\]\\r\\n]+)${C}([^\\]]+)\\]`),
+        build: (m) => ({
+            content: "",
+            mediaType: "photo_markup_action",
+            mediaData: {
+                photoMarkKind: "emoji",
+                photoMarkTargetIndex: Math.max(0, Number(m[1]) - 1),
+                photoMarkX: Math.max(0, Math.min(100, Number(m[2]))) / 100,
+                photoMarkY: Math.max(0, Math.min(100, Number(m[3]))) / 100,
+                photoMarkScale: Math.max(.5, Math.min(4, Number(m[4]))),
+                photoMarkRotation: Math.max(-180, Math.min(180, Number(m[5]))),
+                photoMarkEmoji: m[6].trim(),
+                photoMarkText: m[7].trim(),
+            },
+        }),
+    },
+    {
+        // [照片贴图:70:25:1.6:-12:👻:挡住脸]
+        regex: new RegExp(`\\[照片贴图${C}(\\d{1,3})${C}(\\d{1,3})${C}([\\d.]+)${C}(-?\\d{1,3})${C}([^：:\\]\\r\\n]+)${C}([^\\]]+)\\]`),
+        build: (m) => ({
+            content: "",
+            mediaType: "photo_markup_action",
+            mediaData: {
+                photoMarkKind: "emoji",
+                photoMarkX: Math.max(0, Math.min(100, Number(m[1]))) / 100,
+                photoMarkY: Math.max(0, Math.min(100, Number(m[2]))) / 100,
+                photoMarkScale: Math.max(.5, Math.min(4, Number(m[3]))),
+                photoMarkRotation: Math.max(-180, Math.min(180, Number(m[4]))),
+                photoMarkEmoji: m[5].trim(),
+                photoMarkText: m[6].trim(),
+            },
         }),
     },
     {
@@ -655,7 +696,11 @@ function parseSegment(segment: string, parts: ParsedMessagePart[]) {
 export function parseAIResponse(rawText: string, previousState: StateValue[]): ParsedAIResponse {
     // 0. FIRST: extract ```html blocks and <style>+HTML before any processing
     const htmlBlockPlaceholders: { placeholder: string; original: string }[] = [];
-    let protected_ = rawText;
+    // Keep formatted drawing JSON intact when chat paragraphs are split below.
+    let protected_ = rawText.replace(/\[照片涂鸦\]([\s\S]*?)\[\/照片涂鸦\]/g, (block, json) => {
+        try { return `[照片涂鸦]${JSON.stringify(JSON.parse(json))}[/照片涂鸦]`; }
+        catch { return block; }
+    });
     // Protect ```html...``` blocks
     protected_ = protected_.replace(/```html\s*\n[\s\S]*?```/g, (match) => {
         const placeholder = `\x00HTML_BLOCK_${htmlBlockPlaceholders.length}\x00`;

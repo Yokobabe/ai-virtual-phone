@@ -44,6 +44,7 @@
     "rehype-raw": "^7.0.0",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
+    "roughjs": "^4.6.6",
     "three": "^0.183.2",
     "undici": "^7.26.0",
     "web-push": "^3.6.7"
