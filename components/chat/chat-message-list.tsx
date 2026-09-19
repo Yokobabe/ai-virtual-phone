@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Check } from "lucide-react";
 import { loadChatSessions, loadChatContacts, ChatSession, createOrGetSession, createGroupSession, pushChatMessage, addChatContact, loadChatMessages, getLastVisibleSessionMessage, getChatMessagePreview } from "@/lib/chat-storage";
 import { loadCharacters } from "@/lib/character-storage";
 import { Character } from "@/lib/character-types";
+import { CHAT_SESSION_AVATARS_UPDATED_EVENT, withChatCharacterAvatar } from "@/lib/chat-session-avatar";
 import { resolveUserIdentity } from "@/lib/settings-storage";
 import type { UserIdentity } from "@/components/settings/user-identity";
 import { PENDING_REPLY_PREFIX } from "@/lib/friend-request-engine";
@@ -152,10 +153,12 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
         window.addEventListener("weixin-messages-updated", refreshSessions);
         window.addEventListener("chat-messages-updated", refreshSessions);
         window.addEventListener("chat-unread-updated", refreshSessions);
+        window.addEventListener(CHAT_SESSION_AVATARS_UPDATED_EVENT, refreshSessions);
         return () => {
             window.removeEventListener("weixin-messages-updated", refreshSessions);
             window.removeEventListener("chat-messages-updated", refreshSessions);
             window.removeEventListener("chat-unread-updated", refreshSessions);
+            window.removeEventListener(CHAT_SESSION_AVATARS_UPDATED_EVENT, refreshSessions);
         };
     }, []);
 
@@ -736,7 +739,8 @@ function ContactPicker({ onClose, onSelect }: { onClose: () => void; onSelect: (
 
 function SessionItem({ session, onSelect, isPinned }: { session: ChatSession, onSelect: () => void, isPinned?: boolean }) {
     const chars = loadCharacters();
-    const character = chars.find(c => c.id === session.contactId);
+    const storedCharacter = chars.find(c => c.id === session.contactId);
+    const character = storedCharacter ? withChatCharacterAvatar(session, storedCharacter) : undefined;
     const lastVisibleMessage = getLastVisibleSessionMessage(session.id);
     const lastOfflineTurn = getLastChatOfflineTurn(session.id);
     // 线下记录比线上消息新时（含只在线下聊过的会话），列表展示线下摘要
@@ -755,7 +759,7 @@ function SessionItem({ session, onSelect, isPinned }: { session: ChatSession, on
             ...((session.participantIds || [])
                 .map(id => chars.find(c => c.id === id))
                 .filter(Boolean) as Character[])
-                .map(c => ({ id: c.id, name: c.name, avatar: c.avatar || "" })),
+                .map(c => ({ id: c.id, name: c.name, avatar: withChatCharacterAvatar(session, c).avatar || "" })),
         ].slice(0, 4)
         : [];
 

@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Palette, RotateCcw } from "lucide-react";
 import { loadChatSessions, type ChatSession } from "@/lib/chat-storage";
 import { loadCharacters } from "@/lib/character-storage";
+import { getChatCharacterAvatar } from "@/lib/chat-session-avatar";
 import { extractAvatarNameColor, DEFAULT_AVATAR_NAME_COLOR } from "@/lib/avatar-name-color";
 import { BUBBLE_COLORS_EVENT, resolveBubbleColors, validColor, hex, type BubbleColors } from "@/lib/chat-bubble-colors";
 import { loadBubbleColors, saveBubbleColors, readColorStore, deleteColorHistory, renameColorHistory, type ColorHistory, type ColorScope } from "@/lib/chat-bubble-color-store";
@@ -76,7 +77,8 @@ export function BubbleColorSettings({ session }: { session: ChatSession }) {
         let active=true;
         const char=loadCharacters().find(c=>c.id===(session.isGroup?session.participantIds?.[0]:session.contactId));
         setSample(undefined);
-        if(char?.avatar)void extractAvatarNameColor(char.avatar,true).then(color=>{if(active&&color!==DEFAULT_AVATAR_NAME_COLOR)setSample(color);});
+        const avatar=getChatCharacterAvatar(loadChatSessions().find(item=>item.id===session.id)||session,char);
+        if(avatar)void extractAvatarNameColor(avatar,true).then(color=>{if(active&&color!==DEFAULT_AVATAR_NAME_COLOR)setSample(color);});
         panel.current?.querySelector<HTMLButtonElement>("button")?.focus();
         return()=>{active=false;};
     },[open,session.contactId,session.isGroup,session.participantIds]);

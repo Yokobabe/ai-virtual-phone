@@ -11,6 +11,7 @@ type ImageGenerationRequest = {
   size?: string;
   quality?: string;
   referenceImageDataUrl?: string;
+  referenceImageDataUrls?: string[];
 };
 
 type ExtractedImage =
@@ -123,7 +124,9 @@ async function runImageGeneration(input: ImageGenerationRequest): Promise<{ stat
     const baseUrl = input.baseUrl?.trim();
     const model = input.model?.trim();
     const prompt = input.prompt?.trim();
-    const hasReference = Boolean(input.referenceImageDataUrl?.trim());
+    const references = input.referenceImageDataUrls?.length ? input.referenceImageDataUrls : input.referenceImageDataUrl?.trim() ? [input.referenceImageDataUrl] : [];
+    if (!Array.isArray(references) || references.some(ref => typeof ref !== "string")) return { status: 400, body: { error: "参考图格式无效" } };
+    const hasReference = references.length > 0;
 
     if (!apiKey) return { status: 400, body: { error: "缺少 API Key" } };
     if (!baseUrl) return { status: 400, body: { error: "缺少 Base URL" } };
@@ -135,14 +138,16 @@ async function runImageGeneration(input: ImageGenerationRequest): Promise<{ stat
     let body: BodyInit;
 
     if (hasReference) {
-      const converted = dataUrlToBlob(input.referenceImageDataUrl || "");
-      if (!converted) return { status: 400, body: { error: "参考图格式无效" } };
       const form = new FormData();
       form.set("model", model);
       form.set("prompt", prompt);
       if (input.size && input.size !== "auto") form.set("size", input.size);
       if (input.quality && input.quality !== "auto") form.set("quality", input.quality);
-      form.append("image", converted.blob, `reference.${converted.mimeType.split("/")[1] || "png"}`);
+      for (const [index, ref] of references.entries()) {
+        const converted = dataUrlToBlob(ref);
+        if (!converted) return { status: 400, body: { error: "参考图格式无效" } };
+        form.append(references.length > 1 ? "image[]" : "image", converted.blob, `reference-${index + 1}.${converted.mimeType.split("/")[1] || "png"}`);
+      }
       body = form;
     } else {
       headers["Content-Type"] = "application/json";

@@ -35,6 +35,10 @@ export type ChatContact = {
 
 export type ChatSession = {
     bubbleColors?: import("./chat-bubble-colors").BubbleColors;
+    /** Character avatars as shown inside this chat app only. Character profiles keep their own avatar. */
+    characterAvatars?: Record<string, string | null>;
+    /** Per-chat avatar memory used by autonomous avatar changes and "change back". */
+    characterAvatarHistories?: Record<string, import("./character-types").CharacterAvatarHistoryEntry[]>;
     id: string;
     contactId: string;
     lastMessageId?: string;
@@ -182,7 +186,19 @@ export type ChatMessage = {
         photoGroupLeadMessageId?: string;
         photoGroupLeadLabel?: string;
         photoKind?: "photo" | "text_photo";
+        /** One structured multi-photo intent, generated as a single contact sheet. */
+        multiImagePlan?: {
+            displayImageCount: 2 | 4 | 6 | 9;
+            visualIntent: string;
+            shots: string[];
+            characterExpressionStyle: "infer_from_context" | "expressive" | "subtle";
+            useReferenceImage: boolean;
+        };
         photoAnnotations?: ChatPhotoAnnotation[];
+        /** Stable provenance for a photo forwarded from the album; not access permission. */
+        albumPhotoId?: string;
+        albumContentVersion?: string;
+        albumVariantVersion?: string;
         photoMarkText?: string;
         photoMarkStrokes?: ChatPhotoAnnotation[];
         photoMarkKind?: "handdrawn" | "emoji";
@@ -300,7 +316,7 @@ export type ChatMessage = {
         imageGenerationMediaRef?: string;
         imageGenerationPrompt?: string;
         imageGenerationUsedReference?: boolean;
-        imageGenerationStatus?: "pending" | "failed" | "generated";
+        imageGenerationStatus?: "pending" | "failed" | "generated" | "fallback";
         imageGenerationError?: string;
         mediaCompressedAt?: string;
         mediaCleanedAt?: string;

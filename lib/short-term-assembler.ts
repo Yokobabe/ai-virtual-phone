@@ -6,6 +6,7 @@
 import { isReadingDiscussMessage, isSystemInstructionMessage, loadChatSessions, loadChatMessages, type ChatMessage } from "./chat-storage";
 import { buildGroupAdminBracketText } from "./group-admin";
 import { loadMomentPosts, loadMomentComments } from "./moments-storage";
+import { albumDiscussionMemory } from "./photo-album-discussion";
 import { loadCharacters } from "./character-storage";
 import { resolveUserIdentity } from "./settings-storage";
 import { loadMemoryConfig } from "./memory-storage";
@@ -51,7 +52,7 @@ function formatPhotoDirectiveForPrompt(msg: ChatMessage): string {
 
 export type NativeTimelineEntry = {
     id: string;
-    sourceApp: "chat" | "moments" | "story" | "vn" | "map" | "game" | "diary" | "xiaohongshu" | "interview_magazine" | "cocreate" | "checkphone" | "custom_app";
+    sourceApp: "chat" | "moments" | "story" | "vn" | "map" | "game" | "diary" | "xiaohongshu" | "interview_magazine" | "cocreate" | "checkphone" | "custom_app" | "album";
     sourceDetail?: "direct" | "group" | "system" | "story" | "chat_offline" | "game" | "diary_entry" | "notewall" | "xiaohongshu" | "black_market_theater" | "interview_issue" | "interview_shared_issue" | "cocreate_project" | "checkphone" | "custom_app_event"; // chat sub-type: 1:1 vs group chat vs system note
     authorType?: "user" | "character" | "npc"; // who authored this entry
     postAuthorType?: "user" | "character"; // for moments: who owns the parent post
@@ -791,6 +792,9 @@ export function loadNativeTimeline(
     }
 
     // Sort by timestamp ascending
+    entries.push(...albumDiscussionMemory(characterId)
+        .filter(e => !options?.afterTimestamp || e.timestamp > options.afterTimestamp)
+        .map(e => ({ ...e, sourceApp: "album" as const })));
     entries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     return entries;
 }
@@ -1038,6 +1042,8 @@ export function prepareShortTermContext(
     }
 
     const customAppEntries = timeline.filter(e => e.sourceApp === "custom_app");
+    const albumEntries = timeline.filter(e => e.sourceApp === "album");
+    if (albumEntries.length) raw.push({ tag: "recent_album", order: 2.7, entries: albumEntries });
     if (customAppEntries.length > 0) {
         raw.push({ tag: "recent_custom_app", order: FEATURE_ORDER.custom_app, entries: customAppEntries });
     }
@@ -1213,6 +1219,9 @@ export function prepareGroupShortTermContext(
         });
         timeline = filterTimelineByAllowedSources(timeline, allowed);
         for (const entry of timeline) {
+            // Current-group album context is injected separately with source-session scope.
+            // A member's private/shared upload album must not enter the multi-role prompt.
+            if (entry.sourceApp === "album") continue;
             if (entry.sourceApp === "chat" && entry.sourceDetail === "group" && entry.groupSessionId === options?.excludeGroupSessionId) {
                 continue;
             }
@@ -1296,6 +1305,8 @@ export function prepareGroupShortTermContext(
     }
 
     const customAppEntries = timeline.filter(e => e.sourceApp === "custom_app");
+    const albumEntries = timeline.filter(e => e.sourceApp === "album");
+    if (albumEntries.length) raw.push({ tag: "recent_album", order: 2.7, entries: albumEntries });
     if (customAppEntries.length > 0) {
         raw.push({ tag: "recent_custom_app", order: FEATURE_ORDER.custom_app, entries: customAppEntries });
     }

@@ -9,6 +9,7 @@ import { parseAIResponse, type ParsedMessagePart } from "@/lib/rich-message-pars
 import { applyAssistantPhotoMarkupAction, describePhotoAnnotations } from "@/lib/chat-photo-markup";
 import { applyAssistantChatRenameAction } from "@/lib/chat-rename-action";
 import { applyAvatarAction } from "@/lib/chat-avatar-action";
+import { CHAT_SESSION_AVATARS_UPDATED_EVENT, withChatCharacterAvatar } from "@/lib/chat-session-avatar";
 import { useChatCharacter } from "./use-chat-character";
 import { isKnownStickerLabel } from "@/lib/sticker-data";
 import { translateReasoningText } from "@/lib/reasoning-translate";
@@ -54,7 +55,7 @@ import { TransferTargetModal } from "./transfer-target-modal";
 import { GiftPickerModal } from "./gift-picker-modal";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { deleteWeixinCloudMessagesFromCloud, emitWeixinSyncToast, syncAllWeixinBotRuntimesToCloud } from "@/lib/weixin-cloud-sync";
-import { loadBindingConfig, loadPresets, loadRegexes, resolveBinding, resolveUserIdentity } from "@/lib/settings-storage";
+import { loadBindingConfig, loadImageGenerationSettings, loadPresets, loadRegexes, resolveBinding, resolveUserIdentity } from "@/lib/settings-storage";
 import { generateGroupChatCompletion, generateGroupOfflineChatCompletion, parseGroupChatResponse, buildEditableGroupRoundText } from "@/lib/group-chat-engine";
 import { appendChatOfflineTurn, deleteChatOfflineTurn, deleteChatOfflineTurnsFrom, extractThinkingTag, loadChatOfflineTurns, parseOfflineResponse, saveChatOfflineTurns, updateChatOfflineTurn, type ChatOfflineTurn } from "@/lib/chat-offline-storage";
 import { applyDisplayRegex, applyEditRegex } from "@/lib/llm-prompt-assembler";
@@ -82,9 +83,12 @@ import { MacroEngine } from "@/lib/macro-engine";
 import {
     createPendingChatGeneratedImageData,
     generateAndApplyChatGeneratedImage,
+    generateAndApplyChatGeneratedImageGroup,
+    isMultiImageGenerationExecutor,
     isPendingChatGeneratedImageMessage,
 } from "@/lib/generated-image-retry";
 import { scrollElementWithinContainer } from "@/lib/dom-scroll";
+import { hasUsableImageGenerationConfig, shouldHidePendingAssistantImage } from "@/lib/image-delivery-protocol";
 import { ChatFallbackAvatar } from "./chat-fallback-avatar";
 import { GroupAvatar } from "./group-avatar";
 import { GroupSenderName } from "./group-sender-name";
@@ -304,6 +308,14 @@ function reasoningPreviewLine(text: string): string {
 
 function isHiddenChatFlowMessage(msg: ChatMessage, displayContent?: string): boolean {
     if (msg.mediaType === "tool_result" || msg.mediaType === "tool_call") return true;
+    // Generated photos are published to storage first so generation can be retried and
+    // cancelled safely, but they should not enter the visible chat flow until the real
+    // image (or the final text-photo fallback) is ready.
+    if (shouldHidePendingAssistantImage({
+        role: msg.role,
+        mediaType: msg.mediaType,
+        imageGenerationStatus: msg.mediaData?.imageGenerationStatus,
+    })) return true;
     return !isChatVisualMedia(msg)
         && !getChatFlowVisibleContent(msg, displayContent)
         && uiRole(msg) !== "system"
@@ -1225,7 +1237,21 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [transientMessages, setTransientMessages] = useState<ChatMessage[]>([]);
     const [stickerReady, setStickerReady] = useState(false);
-    const character = useChatCharacter(session.contactId);
+    const storedCharacter = useChatCharacter(session.contactId);
+    const [sessionAvatarRevision, setSessionAvatarRevision] = useState(0);
+    useEffect(() => {
+        const refresh = (event: Event) => {
+            const detail = (event as CustomEvent<{ sessionId?: string }>).detail;
+            if (!detail?.sessionId || detail.sessionId === session.id) setSessionAvatarRevision(value => value + 1);
+        };
+        window.addEventListener(CHAT_SESSION_AVATARS_UPDATED_EVENT, refresh);
+        return () => window.removeEventListener(CHAT_SESSION_AVATARS_UPDATED_EVENT, refresh);
+    }, [session.id]);
+    const character = useMemo(() => {
+        if (!storedCharacter) return storedCharacter;
+        const currentSession = loadChatSessions().find(item => item.id === session.id) || session;
+        return withChatCharacterAvatar(currentSession, storedCharacter);
+    }, [session, session.id, sessionAvatarRevision, storedCharacter]);
     const [isGenerating, setIsGenerating] = useState(false);
     const [offlineMode, setOfflineMode] = useState(false);
     const [theaterMode, setTheaterMode] = useState(() => kvGet(CHAT_THEATER_MODE_PREFIX + session.id) === "1");
@@ -1899,10 +1925,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         const map = new Map<string, Character>();
         for (const id of session.participantIds || []) {
             const c = chars.find(ch => ch.id === id);
-            if (c) map.set(id, c);
+            if (c) map.set(id, withChatCharacterAvatar(loadChatSessions().find(item => item.id === session.id) || session, c));
         }
         return map;
-    }, [session.isGroup, session.participantIds, groupIdentityRevision]);
+    }, [session, session.id, session.isGroup, session.participantIds, groupIdentityRevision, sessionAvatarRevision]);
 
     // Flat array of group characters for components that need it
     const groupCharacters = useMemo(() => [...groupCharMap.values()], [groupCharMap]);
@@ -3126,6 +3152,21 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         if (!description) return draft;
 
         throwIfGenerationStopped(guard);
+        const imageSettings = loadImageGenerationSettings();
+        const hasUsableImageApi = hasUsableImageGenerationConfig(imageSettings);
+        if (!hasUsableImageApi) {
+            return {
+                ...draft,
+                mediaType: "image",
+                mediaData: {
+                    ...part.mediaData,
+                    label: description,
+                    photoKind: "text_photo",
+                    imageGenerationStatus: "fallback",
+                    imageGenerationError: undefined,
+                },
+            };
+        }
         return {
             ...draft,
             mediaType: "image",
@@ -3139,7 +3180,12 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         guard?: GenerationRunGuard,
     ): Promise<ChatMessage | null> => {
         if (!isPendingChatGeneratedImageMessage(message)) return Promise.resolve(null);
-        return generateAndApplyChatGeneratedImage(message, characterId || session.contactId, { signal: guard?.signal })
+        if (message.mediaData?.multiImagePlan && !isMultiImageGenerationExecutor(message)) return Promise.resolve(null);
+        const replacement = message.mediaData?.multiImagePlan
+            ? generateAndApplyChatGeneratedImageGroup(message, characterId || session.contactId, { signal: guard?.signal })
+                .then(updated => updated[0] ?? null)
+            : generateAndApplyChatGeneratedImage(message, characterId || session.contactId, { signal: guard?.signal });
+        return replacement
             .catch(error => {
                 if (!isAbortLikeError(error)) {
                     console.warn("[ImageGeneration] Failed to generate chat image:", error);

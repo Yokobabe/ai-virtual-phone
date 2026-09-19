@@ -20,6 +20,7 @@ import { formatShoppingPaymentRequestHistory } from "./shopping-payment-request"
 import { buildGroupAdminBracketText } from "./group-admin";
 import { describePhotoAnnotations } from "./chat-photo-markup";
 import { PHOTO_DOODLE_GUIDANCE } from "./photo-doodle";
+import { albumChatContext } from "./photo-album-discussion";
 
 export type LLMMessageRole = "system" | "user" | "assistant" | "tool";
 export type LLMToolCallPayload = { id: string; name: string; args: Record<string, unknown>; thoughtSignature?: string };
@@ -1164,6 +1165,10 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
         }
     }
 
+    if (input.appId === "chat" || !input.appId) {
+        const albumContext = albumChatContext(input.character.id);
+        if (albumContext) finalPayload.push({ role: "system", content: albumContext, _debugMeta: { marker: "shared_album_context" } });
+    }
     return finalPayload;
 }
 

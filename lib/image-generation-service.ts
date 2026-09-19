@@ -314,27 +314,31 @@ async function generateImageDirect(params: {
   settings: ImageGenerationSettings;
   prompt: string;
   referenceImageDataUrl: string | null;
+  referenceImageDataUrls?: string[];
   signal?: AbortSignal;
   /** 走通用代理:请求发往代理地址,真实上游放进 x-upstream-base-url 头 */
   proxyBaseUrl?: string;
 }): Promise<ImageGenerationApiResponse> {
   const { settings, prompt, referenceImageDataUrl, signal, proxyBaseUrl } = params;
   throwIfAborted(signal);
-  const hasReference = Boolean(referenceImageDataUrl);
+  const references = params.referenceImageDataUrls?.length ? params.referenceImageDataUrls : referenceImageDataUrl ? [referenceImageDataUrl] : [];
+  const hasReference = references.length > 0;
   const url = buildImageUrl(proxyBaseUrl || settings.baseUrl, hasReference ? "edits" : "generations");
   const headers: Record<string, string> = { Authorization: `Bearer ${settings.apiKey}` };
   if (proxyBaseUrl) headers["x-upstream-base-url"] = normalizeBaseUrl(settings.baseUrl);
   let body: BodyInit;
 
   if (hasReference) {
-    const converted = dataUrlToBlob(referenceImageDataUrl || "");
-    if (!converted) throw new Error("参考图格式无效");
     const form = new FormData();
     form.set("model", settings.model);
     form.set("prompt", prompt);
     if (settings.size && settings.size !== "auto") form.set("size", settings.size);
     if (settings.quality && settings.quality !== "auto") form.set("quality", settings.quality);
-    form.append("image", converted.blob, `reference.${imageExtension(converted.mimeType)}`);
+    references.forEach((ref, index) => {
+      const converted = dataUrlToBlob(ref);
+      if (!converted) throw new Error("参考图格式无效");
+      form.append(references.length > 1 ? "image[]" : "image", converted.blob, `reference-${index + 1}.${imageExtension(converted.mimeType)}`);
+    });
     body = form;
   } else {
     headers["Content-Type"] = "application/json";
@@ -382,6 +386,7 @@ async function generateImageViaServerOrProxy(params: {
   settings: ImageGenerationSettings;
   prompt: string;
   referenceImageDataUrl: string | null;
+  referenceImageDataUrls?: string[];
   signal?: AbortSignal;
 }): Promise<ImageGenerationApiResponse> {
   if (IMAGE_GEN_PROXY_URL) {
@@ -415,6 +420,7 @@ async function generateImageViaServer(params: {
   settings: ImageGenerationSettings;
   prompt: string;
   referenceImageDataUrl: string | null;
+  referenceImageDataUrls?: string[];
   signal?: AbortSignal;
 }): Promise<ImageGenerationApiResponse> {
   const { settings, prompt, referenceImageDataUrl, signal } = params;
@@ -440,6 +446,7 @@ async function generateImageViaServer(params: {
         size: settings.size,
         quality: settings.quality,
         referenceImageDataUrl: referenceImageDataUrl || undefined,
+        referenceImageDataUrls: params.referenceImageDataUrls,
       }),
     });
     throwIfAborted(signal);
@@ -503,6 +510,9 @@ export async function generateImageFromConfiguredApi(params: {
   description: string;
   characterId?: string;
   useReferenceImage?: boolean;
+  referenceImageDataUrl?: string;
+  referenceImageDataUrls?: string[];
+  persistResult?: boolean;
   settings?: ImageGenerationSettings;
   signal?: AbortSignal;
 }): Promise<ImageGenerationResult | null> {
@@ -513,25 +523,27 @@ export async function generateImageFromConfiguredApi(params: {
   if (!description || !settings.apiKey.trim() || !settings.baseUrl.trim() || !settings.model.trim()) return null;
 
   const reference = params.characterId ? settings.characterReferences[params.characterId] : undefined;
-  const rawReferenceImageDataUrl = params.useReferenceImage && reference?.assetId
+  const rawReferenceImageDataUrl = params.referenceImageDataUrl || (params.useReferenceImage && reference?.assetId
     ? await getChatImageFromIndexedDB(reference.assetId)
-    : null;
+    : null);
   throwIfAborted(params.signal);
   const referenceImageDataUrl = rawReferenceImageDataUrl
     ? await normalizeReferenceImageForEdit(rawReferenceImageDataUrl)
     : null;
+  const referenceImageDataUrls = params.referenceImageDataUrls?.length
+    ? await Promise.all(params.referenceImageDataUrls.map(normalizeReferenceImageForEdit)) : undefined;
   throwIfAborted(params.signal);
   const prompt = mergePrompt(description, settings.extraPrompt);
 
   const data = settings.requestMode === "direct"
-    ? await generateImageDirect({ settings, prompt, referenceImageDataUrl, signal: params.signal })
-    : await generateImageViaServerOrProxy({ settings, prompt, referenceImageDataUrl, signal: params.signal });
+    ? await generateImageDirect({ settings, prompt, referenceImageDataUrl, referenceImageDataUrls, signal: params.signal })
+    : await generateImageViaServerOrProxy({ settings, prompt, referenceImageDataUrl, referenceImageDataUrls, signal: params.signal });
 
   throwIfAborted(params.signal);
   const mimeType = data.mimeType || "image/png";
   const blob = base64ToBlob(data.b64, mimeType);
   throwIfAborted(params.signal);
-  const mediaRef = await storeMediaBlob(blob, mimeType, "image");
+  const mediaRef = params.persistResult === false ? "" : await storeMediaBlob(blob, mimeType, "image");
   throwIfAborted(params.signal);
   return {
     mediaRef,
@@ -539,7 +551,7 @@ export async function generateImageFromConfiguredApi(params: {
     blob,
     mimeType,
     prompt,
-    usedReferenceImage: Boolean(referenceImageDataUrl),
+    usedReferenceImage: Boolean(referenceImageDataUrl || referenceImageDataUrls?.length),
     revisedPrompt: data.revisedPrompt,
   };
 }

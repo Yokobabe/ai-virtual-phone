@@ -82,6 +82,7 @@ import { getInternalCapability, getInternalCapabilitySubToolDefinitions } from "
 import { isMediaStoreRef, loadMediaBlob } from "./media-cache-storage";
 import { getChatImageFromIndexedDB } from "./chat-asset-storage";
 import { compositePhotoAnnotations } from "./chat-photo-markup";
+import { buildImageDeliveryChatPrompt } from "./image-delivery-protocol";
 import {
     DEFAULT_CHAT_BILINGUAL_PROMPT,
     DEFAULT_GROUP_CHAT_BILINGUAL_PROMPT,
@@ -2049,6 +2050,7 @@ export async function buildChatPromptMessages(
         llmMessages.push({
             role: "system",
             content: buildIMessageTapbackPromptInstruction() + "\n" + buildPokeUsagePrompt(promptHistory) + "\n" + avatarInstruction + "\n" + buildEchoPrompt()
+                + (promptProfile?.output === "plain_text" || promptProfile?.output === "json" ? "" : `\n${buildImageDeliveryChatPrompt()}`)
                 + `\n当前用户手机里给你的私聊备注是“${session.alias || character.name}”。你可以依自己的性格、关系变化和当下情境，自主决定偶尔修改这个备注；这不是用户一提就必须照做的功能，也不要频繁修改。真正决定修改时输出 [修改备注:新备注]，系统才会实际保存；禁止只用文字声称改好了却不输出协议。该动作只能修改你自己的私聊备注。`,
         });
     }

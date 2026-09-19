@@ -1,5 +1,7 @@
 import type { UserIdentity } from "@/components/settings/user-identity";
 import { loadCharacters } from "./character-storage";
+import { loadChatSessions } from "./chat-storage";
+import { getChatCharacterAvatar } from "./chat-session-avatar";
 import { getCharacterWorldGroup } from "./character-world-storage";
 import { kvGet, kvSet, registerDynamicPrefix } from "./kv-db";
 
@@ -38,6 +40,7 @@ export function buildCurrentAvatarSnapshot(params: {
     userIdentity?: UserIdentity | null;
 }): CurrentAvatarSubject[] {
     const characters = loadCharacters();
+    const session = loadChatSessions().find(item => item.id === params.sessionId);
     const byId = new Map(characters.map(character => [character.id, character]));
     const conversationIds = new Set((params.participantIds?.length
         ? params.participantIds
@@ -63,12 +66,12 @@ export function buildCurrentAvatarSnapshot(params: {
     });
     for (const id of conversationIds) {
         const character = byId.get(id);
-        if (character) drafts.push({ id: `character:${id}`, name: character.name, kind: "character", avatarUrl: normalizeAvatar(character.avatar), scope: "conversation" });
+        if (character) drafts.push({ id: `character:${id}`, name: character.name, kind: "character", avatarUrl: normalizeAvatar(getChatCharacterAvatar(session, character)), scope: "conversation" });
     }
     for (const id of [...new Set(relatedIds)].slice(0, 4)) {
         if (conversationIds.has(id)) continue;
         const character = byId.get(id);
-        if (character) drafts.push({ id: `character:${id}`, name: character.name, kind: "character", avatarUrl: normalizeAvatar(character.avatar), scope: "related" });
+        if (character) drafts.push({ id: `character:${id}`, name: character.name, kind: "character", avatarUrl: normalizeAvatar(getChatCharacterAvatar(session, character)), scope: "related" });
     }
 
     const key = CURRENT_AVATAR_SNAPSHOT_PREFIX + params.sessionId;

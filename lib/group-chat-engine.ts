@@ -12,6 +12,8 @@ import { buildCurrentAvatarSnapshot } from "./chat-current-avatar-context";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
 import { runChatPluginTransform } from "./chat-plugin-hooks";
 import { buildChatPluginPromptFragments } from "./chat-plugin-storage";
+import { buildImageDeliveryChatPrompt } from "./image-delivery-protocol";
+import { groupAlbumContext } from "./photo-album-discussion";
 import {
     sendLLMRequest,
     sendLLMStreamRequest,
@@ -509,9 +511,12 @@ async function buildGroupChatPromptMessages(
         }), config.enableImageRecognition);
         await appendCurrentChatBackgroundContext(llmMessages, session, config.enableImageRecognition);
     }
+    const sharedAlbumContext = groupAlbumContext(session.id);
+    if (sharedAlbumContext) llmMessages.push({ role: "system", content: sharedAlbumContext });
     if (!isOfflineMode) llmMessages.push({
         role: "system",
         content: buildGroupTapbackPrompt(promptHistory) + "\n" + buildPokeUsagePrompt(promptHistory) + "\n" + avatarInstructions + "\n" + buildEchoPrompt()
+            + (promptProfile?.output === "plain_text" || promptProfile?.output === "json" ? "" : `\n${buildImageDeliveryChatPrompt()}`)
             + `\n当前群聊名称是“${session.groupName || "群聊"}”。群成员可以依各自性格、关系和正在发生的事情，自主决定偶尔修改群名；不要机械执行，也不要频繁改名。真正决定修改时，该角色输出 [修改群名:新群名]，系统才会实际保存；禁止只用文字声称改好了却不输出协议。`,
     });
     if (promptProfile?.output === "plain_text") {

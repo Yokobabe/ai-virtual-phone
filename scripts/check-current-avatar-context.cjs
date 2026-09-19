@@ -13,10 +13,13 @@ let characters = [
     { id: "c", name: "Unrelated", avatar: "data:image/png;base64,C1" },
 ];
 const world = { relations: [{ fromCharacterId: "a", toCharacterId: "b" }] };
+const sessions = [{ id: "private", contactId: "a" }, { id: "group", isGroup: true, participantIds: ["a", "c"] }];
 const sandbox = {
     exports: {}, Set, Map, JSON,
     require: id => {
         if (id === "./character-storage") return { loadCharacters: () => characters };
+        if (id === "./chat-storage") return { loadChatSessions: () => sessions };
+        if (id === "./chat-session-avatar") return { getChatCharacterAvatar: (session, character) => Object.prototype.hasOwnProperty.call(session?.characterAvatars || {}, character.id) ? session.characterAvatars[character.id] : character.avatar };
         if (id === "./character-world-storage") return { getCharacterWorldGroup: id => id === "a" ? world : null };
         if (id === "./kv-db") return {
             kvGet: key => store.get(key) || null,
@@ -47,5 +50,9 @@ assert.match(formatCurrentAvatarTruth(snapshot), /User：当前使用自定义�
 snapshot = buildCurrentAvatarSnapshot({ sessionId: "group", participantIds: ["a", "c"], userIdentity: identity });
 assert.equal(snapshot.map(item => item.name).join("|"), "User|A|Unrelated");
 assert.equal(snapshot.some(item => item.name === "B"), false);
+
+sessions[0].characterAvatars = { a: "data:image/png;base64,CHAT_A" };
+snapshot = buildCurrentAvatarSnapshot({ sessionId: "private", viewerCharacterId: "a", userIdentity: identity });
+assert.equal(snapshot.find(item => item.name === "A").avatarUrl, "data:image/png;base64,CHAT_A");
 
 console.log("PASS: current user/character/group avatar truth, change detection, visual/no-visual wording, direct-relation scope.");

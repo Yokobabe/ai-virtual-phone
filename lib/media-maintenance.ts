@@ -1,7 +1,10 @@
 "use client";
 
 import { chatDb } from "./chat-db";
-import { updateChatMessage, type ChatMessage } from "./chat-storage";
+import { collectPhotoAlbumAssets } from "./photo-album-storage";
+import { relocatePhotoMedia } from "./photo-album-core";
+import { getAlbumDiscussion, saveAlbumDiscussion } from "./photo-album-discussion";
+import { updateChatMessage, loadChatMessages, type ChatMessage } from "./chat-storage";
 import { DATA_MODULES } from "./data-management/modules";
 import { estimateValueBytes } from "./data-management/serializers";
 import { openIndexedDbAtLeast } from "./idb-open";
@@ -220,6 +223,7 @@ async function persistChatMediaPatch(
 }
 
 async function compactChatImage(message: ChatMessage, nowIso: string): Promise<{ changed: boolean; freedBytes: number }> {
+  const albumAsset = collectPhotoAlbumAssets({ includeExcluded: true }).find(a => a.source.kind === "chat" && a.source.messageId === message.id);
   const mediaUrl = message.mediaUrl;
   const mediaRef = message.mediaData?.imageGenerationMediaRef;
   let sourceBlob: Blob | null = null;
@@ -263,13 +267,14 @@ async function compactChatImage(message: ChatMessage, nowIso: string): Promise<{
   const nextBlob = compressed ?? sourceBlob;
   const nextMime = nextBlob.type || sourceMime;
   const nextRef = compressed || !sourceRef ? await storeMediaBlob(nextBlob, nextMime, "image") : sourceRef;
-  if (sourceRef && nextRef === sourceRef) refsToDelete.delete(sourceRef);
-  const deletedSeen = new Set<string>();
-  for (const ref of refsToDelete) {
-    await deleteMediaRefWithSize(ref, deletedSeen);
+  const latest = loadChatMessages(message.sessionId).find(m => m.id === message.id);
+  if (!latest || latest.isRetracted || latest.mediaUrl !== message.mediaUrl || latest.mediaData?.imageGenerationMediaRef !== message.mediaData?.imageGenerationMediaRef) {
+    if (nextRef !== sourceRef) await deleteMediaRef(nextRef).catch(() => undefined);
+    return { changed: false, freedBytes: 0 };
   }
+  if (sourceRef && nextRef === sourceRef) refsToDelete.delete(sourceRef);
   const nextMediaData: ChatMessage["mediaData"] = {
-    ...message.mediaData,
+    ...latest.mediaData,
     fileType: "image",
     mediaCompressedAt: nowIso,
   };
@@ -281,11 +286,17 @@ async function compactChatImage(message: ChatMessage, nowIso: string): Promise<{
     mediaUrl: nextRef,
     mediaData: nextMediaData,
   };
+  if (albumAsset) {
+    saveAlbumDiscussion(getAlbumDiscussion(albumAsset));
+    relocatePhotoMedia(albumAsset.id, albumAsset.mediaRef, nextRef);
+  }
   const cached = updateChatMessage(message.id, {
     mediaUrl: nextMessage.mediaUrl,
     mediaData: nextMessage.mediaData,
   });
   await chatDb.messages.put(cached ?? nextMessage);
+  const deletedSeen = new Set<string>();
+  for (const ref of refsToDelete) await deleteMediaRefWithSize(ref, deletedSeen);
   const beforeBytes = oldBytes || sourceBlob.size;
   return { changed: compressed !== null || mediaUrl !== nextRef, freedBytes: Math.max(0, beforeBytes - nextBlob.size) };
 }
@@ -303,7 +314,12 @@ async function compactChatXiaohongshuShareImage(message: ChatMessage, nowIso: st
   return compressed;
 }
 
+function isAlbumFavoriteMessage(messageId: string): boolean {
+  return collectPhotoAlbumAssets({ includeExcluded: true }).some(a => a.favorite && a.source.kind === "chat" && a.source.messageId === messageId);
+}
+
 export async function cleanChatImage(message: ChatMessage, nowIso: string): Promise<number> {
+  if (isAlbumFavoriteMessage(message.id)) return 0;
   const seen = new Set<string>();
   let freedBytes = 0;
   freedBytes += await deleteMediaRefWithSize(message.mediaUrl, seen);
@@ -340,6 +356,7 @@ export async function cleanChatXiaohongshuShareImage(message: ChatMessage, nowIs
 async function runChatImageMaintenance(result: MediaMaintenanceResult, nowMs: number, nowIso: string): Promise<void> {
   const messages = await chatDb.messages.toArray().catch(() => []);
   for (const message of messages) {
+    if (isAlbumFavoriteMessage(message.id)) continue;
     const isRegularImage = isChatImageMessage(message);
     const isXiaohongshuShareImage = isChatXiaohongshuShareImage(message);
     if (!isRegularImage && !isXiaohongshuShareImage) continue;

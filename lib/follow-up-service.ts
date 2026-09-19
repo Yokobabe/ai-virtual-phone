@@ -217,6 +217,20 @@ export async function requestBackgroundChatReply(sessionId: string): Promise<{ o
         const latestMessages = loadChatMessages(session.id);
         backgroundGeneratingSessions.add(session.id);
         window.dispatchEvent(new CustomEvent("followup-started", { detail: { sessionId: session.id } }));
+        if (session.isGroup) {
+            const { generateGroupChatCompletion } = await import("./group-chat-engine");
+            const replies = await generateGroupChatCompletion(session, latestMessages);
+            for (const reply of replies) {
+                if (isBackgroundGenerationCancelled(session.id)) return { ok: false, skipped: "cancelled" };
+                await saveBackgroundCompletionRounds(
+                    [{ text: reply.responseText, rawResponseText: reply.responseText }],
+                    session.id, 0, undefined, latestMessages,
+                    { senderCharacterId: reply.characterId, senderName: reply.characterName },
+                );
+            }
+            window.dispatchEvent(new CustomEvent("followup-fired", { detail: { sessionId: session.id } }));
+            return { ok: true };
+        }
         const rounds = await generateBackgroundCompletionRounds(
             session,
             latestMessages,

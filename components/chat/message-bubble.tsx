@@ -1578,7 +1578,7 @@ function SingleImageBubble({
     const rawUrl = msg.mediaUrl || "";
     // 媒体维护压缩后 mediaUrl 是 media-store:// 引用，直接当 <img src> 会裂图，
     // 与 MediaFileBubble 相同：先解析为 object URL 再渲染。
-    const [resolvedUrl, setResolvedUrl] = useState<string>(isMediaStoreRef(rawUrl) ? "" : rawUrl);
+    const [resolvedUrl, setResolvedUrl] = useState<string>(isMediaStoreRef(rawUrl) || rawUrl.startsWith("asset://") ? "" : rawUrl);
     const [refExpired, setRefExpired] = useState(false);
     const [showPromptEditor, setShowPromptEditor] = useState(false);
     const [promptDraft, setPromptDraft] = useState("");
@@ -1592,6 +1592,15 @@ function SingleImageBubble({
     const [marking, setMarking] = useState(false);
 
     useEffect(() => {
+        if (rawUrl.startsWith("asset://")) {
+            let active = true;
+            setResolvedUrl("");
+            setRefExpired(false);
+            getChatImageFromIndexedDB(rawUrl.slice(8)).then(url => {
+                if (active) { setResolvedUrl(url || ""); setRefExpired(!url); }
+            }).catch(() => { if (active) setRefExpired(true); });
+            return () => { active = false; };
+        }
         if (!isMediaStoreRef(rawUrl)) {
             setResolvedUrl(rawUrl);
             setRefExpired(false);
@@ -1702,7 +1711,7 @@ function SingleImageBubble({
         );
     }
     // media-store 引用解析中：占个位，避免闪一下重试卡
-    if (isMediaStoreRef(rawUrl) && !refExpired) {
+    if ((isMediaStoreRef(rawUrl) || rawUrl.startsWith("asset://")) && !refExpired) {
         return <div className="chat-photo-card w-[180px] aspect-square rounded-none" />;
     }
     if (isPending) {

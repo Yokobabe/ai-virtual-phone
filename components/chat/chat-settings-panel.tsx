@@ -39,6 +39,7 @@ import { clearChatOfflineTurns } from "@/lib/chat-offline-storage";
 import { removeChatSessionCompletely } from "@/lib/chat-session-remove";
 import { triggerDeleteFriendReaction } from "@/lib/friend-request-engine";
 import { loadCharacters } from "@/lib/character-storage";
+import { withChatCharacterAvatar } from "@/lib/chat-session-avatar";
 import { isAgentComputerConfigured } from "@/lib/agent-computer";
 import { CharacterComputerPage } from "./character-computer-page";
 import { resolveUserIdentity, loadBindingConfig, loadPresets, resolveBinding } from "@/lib/settings-storage";
@@ -527,7 +528,9 @@ export function ChatSettingsPanel({
     const [groupAvatar, setGroupAvatar] = useState(session.groupAvatar);
 
     const characters = loadCharacters();
-    const character = characters.find(c => c.id === session.contactId);
+    const avatarSession = loadChatSessions().find(item => item.id === session.id) || session;
+    const storedCharacter = characters.find(c => c.id === session.contactId);
+    const character = storedCharacter ? withChatCharacterAvatar(avatarSession, storedCharacter) : undefined;
 
     const characterName = session.isGroup
         ? (groupName || session.groupName || "群聊")
@@ -535,7 +538,7 @@ export function ChatSettingsPanel({
 
     // Group members
     const groupChars = session.isGroup
-        ? (session.participantIds || []).map(id => characters.find(c => c.id === id)).filter(Boolean)
+        ? (session.participantIds || []).map(id => characters.find(c => c.id === id)).filter(Boolean).map(c => withChatCharacterAvatar(avatarSession, c!))
         : [];
     const userIdentity = resolveUserIdentity(undefined, session.isGroup ? "group_chat" : "chat");
 

@@ -10,6 +10,8 @@
  */
 
 import type { ChatMessage } from "./chat-storage";
+import type { MultiImageChatPlan, MultiImageExpressionStyle } from "./image-delivery-protocol";
+import { isImageGridCount } from "./image-grid-split";
 import { parsePhotoDoodle } from "./photo-doodle";
 import { canUseEcho } from "./chat-echo";
 import type { StateValue } from "./chat-storage";
@@ -58,6 +60,32 @@ export function isInvisibleOrWhitespaceOnly(text: string): boolean {
 }
 
 const C = "\\s*[：:]\\s*"; // half-width or full-width colon, allowing surrounding spaces
+
+function parseMultiImageChatPlan(raw: string): MultiImageChatPlan | null {
+    try {
+        const value = JSON.parse(raw.trim()) as Record<string, unknown>;
+        const displayImageCount = Number(value.count);
+        if (!isImageGridCount(displayImageCount)) return null;
+        const visualIntent = typeof value.visualIntent === "string" ? value.visualIntent.trim() : "";
+        const shots = Array.isArray(value.shots)
+            ? value.shots.map(shot => typeof shot === "string" ? shot.trim() : "").filter(Boolean)
+            : [];
+        if (!visualIntent || shots.length !== displayImageCount) return null;
+        const requestedStyle = value.characterExpressionStyle;
+        const characterExpressionStyle: MultiImageExpressionStyle = requestedStyle === "expressive" || requestedStyle === "subtle"
+            ? requestedStyle
+            : "infer_from_context";
+        return {
+            displayImageCount,
+            visualIntent,
+            shots,
+            characterExpressionStyle,
+            useReferenceImage: value.useReferenceImage === true,
+        };
+    } catch {
+        return null;
+    }
+}
 
 function parseMuteMinutes(num?: string, unit?: string): number {
     const n = parseInt(num || "", 10);
@@ -253,6 +281,23 @@ const RICH_PATTERNS: {
                 photoMarkText: m[3].trim(),
             },
         }),
+    },
+    {
+        regex: /\[多图\]([\s\S]*?)\[\/多图\]/,
+        build: (m) => {
+            const multiImagePlan = parseMultiImageChatPlan(m[1]);
+            return multiImagePlan
+                ? {
+                    content: "",
+                    mediaType: "image",
+                    mediaData: {
+                        label: multiImagePlan.visualIntent,
+                        useReferenceImage: multiImagePlan.useReferenceImage,
+                        multiImagePlan,
+                    },
+                }
+                : { content: "" };
+        },
     },
     {
         regex: new RegExp(`\\[照片标记${C}([^\\]]+)\\]`),
@@ -697,7 +742,11 @@ export function parseAIResponse(rawText: string, previousState: StateValue[]): P
     // 0. FIRST: extract ```html blocks and <style>+HTML before any processing
     const htmlBlockPlaceholders: { placeholder: string; original: string }[] = [];
     // Keep formatted drawing JSON intact when chat paragraphs are split below.
-    let protected_ = rawText.replace(/\[照片涂鸦\]([\s\S]*?)\[\/照片涂鸦\]/g, (block, json) => {
+    let protected_ = rawText.replace(/\[多图\]([\s\S]*?)\[\/多图\]/g, (block, json) => {
+        try { return `[多图]${JSON.stringify(JSON.parse(json))}[/多图]`; }
+        catch { return block; }
+    });
+    protected_ = protected_.replace(/\[照片涂鸦\]([\s\S]*?)\[\/照片涂鸦\]/g, (block, json) => {
         try { return `[照片涂鸦]${JSON.stringify(JSON.parse(json))}[/照片涂鸦]`; }
         catch { return block; }
     });
@@ -784,18 +833,47 @@ export function parseAIResponse(rawText: string, previousState: StateValue[]): P
     // Markup is an independent action message. The chat runtime resolves it against
     // the latest photo/current group cover, updates that photo, and stores a visible
     // action notice so the mark remains part of conversational memory.
-    const annotated: ParsedMessagePart[] = [...cleaned];
+    const annotated: ParsedMessagePart[] = cleaned.flatMap(part => {
+        const plan = part.mediaData?.multiImagePlan;
+        if (part.mediaType !== "image" || !plan || !isImageGridCount(plan.displayImageCount)) return [part];
+        const groupId = `photo_group_ai_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        return plan.shots.map((shot, index): ParsedMessagePart => ({
+            content: "",
+            mediaType: "image",
+            mediaData: {
+                ...part.mediaData,
+                label: shot,
+                photoGroupId: groupId,
+                photoGroupIndex: index,
+                photoGroupCount: plan.displayImageCount,
+                photoKind: "text_photo",
+            },
+        }));
+    });
 
     // Consecutive photo directives in one reply form one swipeable photo set.
     // The images remain separate stored messages so vision history, generation retry,
     // deletion and storage maintenance keep their existing per-image behavior.
     for (let start = 0; start < annotated.length;) {
         if (annotated[start].mediaType !== "image") { start += 1; continue; }
+        if (annotated[start].mediaData?.photoGroupId) {
+            const groupId = annotated[start].mediaData?.photoGroupId;
+            while (start < annotated.length && annotated[start].mediaData?.photoGroupId === groupId) start += 1;
+            continue;
+        }
         let end = start + 1;
-        while (end < annotated.length && annotated[end].mediaType === "image") end += 1;
+        while (end < annotated.length && annotated[end].mediaType === "image" && !annotated[end].mediaData?.photoGroupId) end += 1;
         const count = end - start;
-        if (count > 1) {
+        if (isImageGridCount(count)) {
             const groupId = `photo_group_ai_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const shots = annotated.slice(start, end).map(part => part.mediaData?.label?.trim() || "独立照片");
+            const multiImagePlan: MultiImageChatPlan = {
+                displayImageCount: count,
+                visualIntent: shots.join("；"),
+                shots,
+                characterExpressionStyle: "infer_from_context",
+                useReferenceImage: annotated.slice(start, end).some(part => part.mediaData?.useReferenceImage === true),
+            };
             for (let index = start; index < end; index += 1) {
                 annotated[index] = {
                     ...annotated[index],
@@ -805,6 +883,8 @@ export function parseAIResponse(rawText: string, previousState: StateValue[]): P
                         photoGroupIndex: index - start,
                         photoGroupCount: count,
                         photoKind: "text_photo",
+                        useReferenceImage: multiImagePlan.useReferenceImage,
+                        multiImagePlan,
                     },
                 };
             }
