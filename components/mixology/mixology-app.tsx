@@ -6,26 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-    Archive,
-    ChevronLeft,
-    Copy,
-    Download,
-    GlassWater,
-    ImageDown,
-    Martini,
-    MoreHorizontal,
-    Pencil,
-    Play,
-    Plus,
-    RefreshCw,
-    Share2,
-    SlidersHorizontal,
-    Trash2,
-    Upload,
-    Users,
-    Wine,
-    X,
-} from "lucide-react";
+    Archive, ChevronLeft, Copy, Download, GlassWater, ImageDown, Martini, MoreHorizontal, Pencil, Play, Plug, Plus, RefreshCw, Share2, SlidersHorizontal, Trash2, Upload, Users, Wine, X } from "lucide-react";
 import {
     clearMixMaterialPublished,
     clearMixRecipePublished,
@@ -48,7 +29,7 @@ import {
     saveMixRecipe,
     type MixProfile,
 } from "@/lib/mixology/storage";
-import { runMixSessionStart, startMixSession } from "@/lib/mixology/engine";
+import { mixRoundCount, runMixSessionStart, startMixSession } from "@/lib/mixology/engine";
 import { disposeMixSandboxesForMaterial } from "@/lib/mixology/mechanism-runtime";
 import { mixKindRunsActiveCode } from "@/lib/mixology/types";
 import {
@@ -69,12 +50,14 @@ import {
 } from "@/lib/mixology/types";
 import { fetchCurrentAccount } from "@/lib/account-client";
 import { MixHallGoneError, shareHallMaterial, shareHallRecipe, updateHallMaterial, updateHallRecipe } from "@/lib/mixology/hall-client";
-import { exportMixMaterial, exportMixMaterialPng, exportMixRecipeFile, importMixRecipePack, parseMixMaterialsFromJson, parseMixMaterialsFromPng, parseMixRecipeFile } from "@/lib/mixology/transfer";
+import { exportMixMaterial, exportMixMaterialPng, exportMixRecipeFile, importMixRecipePack, mixTrustedMechanismNames, parseMixMaterialsFromJson, parseMixMaterialsFromPng, parseMixRecipeFile } from "@/lib/mixology/transfer";
 import { MixMaterialEditor } from "./mixology-editor";
 import { MixMatAutoCover, mixMatHasAutoCover } from "./mixology-preview";
 import { MixologyGame } from "./mixology-game";
 import { CommentThread, MixologyHall } from "./mixology-hall";
 import { AuthorAvatar, KindGlyph, MatCard, MaterialDetail, MixConfirm, MixTagList, SealedNote, formatMixTime } from "./mixology-shared";
+import { MixConnectorSheet } from "./connector-sheet";
+import { compatibilityWarnings, type MixImportSource } from "@/lib/mixology/compatibility";
 import { MixSlotEditor } from "./slot-editor";
 import { describeMixCondition } from "@/lib/mixology/state";
 
@@ -125,6 +108,8 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
     // 创作者资料：发布到酒材/配方页时的署名与头像（酒柜头部可编辑）
     const [profile, setProfile] = useState<MixProfile>(() => loadMixProfile());
     const [profileOpen, setProfileOpen] = useState(false);
+    // 连接器管理：玩家自己的外部接口配置（机括 mix.call 用），酒柜页头部打开
+    const [connectorsOpen, setConnectorsOpen] = useState(false);
     const [profileName, setProfileName] = useState("");
     const [profileAvatar, setProfileAvatar] = useState("");
     const avatarFileRef = useRef<HTMLInputElement | null>(null);
@@ -323,6 +308,11 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
 
     const [sharing, setSharing] = useState(false);
     const importFileRef = useRef<HTMLInputElement | null>(null);
+    const [importOpen, setImportOpen] = useState(false);
+    const [importSource, setImportSource] = useState<MixImportSource>("native");
+    const [importPreview, setImportPreview] = useState<MixMaterial[] | null>(null);
+    const [importError, setImportError] = useState("");
+    const [importBusy, setImportBusy] = useState(false);
     const editorFileRef = useRef<HTMLInputElement | null>(null);
     // 换 key 强制重挂编辑器：表单各字段只在挂载时按 initial 初始化一次
     const [editorSeq, setEditorSeq] = useState(0);
@@ -336,8 +326,8 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
         try {
             const isPng = file.type === "image/png" || /\.png$/i.test(file.name);
             const materials = isPng
-                ? parseMixMaterialsFromPng(await file.arrayBuffer())
-                : parseMixMaterialsFromJson(await file.text());
+                ? parseMixMaterialsFromPng(await file.arrayBuffer(), editor.initial?.compatibility?.source ?? "native")
+                : parseMixMaterialsFromJson(await file.text(), editor.initial?.compatibility?.source ?? "native", file.name);
             // 一件都认不出时解析函数自己会抛错，所以走到这里 materials 一定非空
             const picked = materials.find((m) => m.kind === editor.kind);
             if (!picked) {
@@ -346,22 +336,35 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
                 return;
             }
             const keep = editor.initial;
-            setEditor({
-                kind: editor.kind,
-                initial: keep
-                    ? {
-                        ...picked,
-                        id: keep.id,
-                        createdAt: keep.createdAt,
-                        publishedId: keep.publishedId,
-                        publishedAt: keep.publishedAt,
-                        author: keep.author,
-                        authorAvatar: keep.authorAvatar,
-                    } as MixMaterial
-                    : picked,
-            });
-            setEditorSeq((n) => n + 1);
-            showToast(`表单已换成「${picked.name}」的内容，还没保存。`);
+            const apply = () => {
+                setEditor({
+                    kind: editor.kind,
+                    initial: keep
+                        ? {
+                            ...picked,
+                            id: keep.id,
+                            createdAt: keep.createdAt,
+                            publishedId: keep.publishedId,
+                            publishedAt: keep.publishedAt,
+                            author: keep.author,
+                            authorAvatar: keep.authorAvatar,
+                        } as MixMaterial
+                        : picked,
+                });
+                setEditorSeq((n) => n + 1);
+                showToast(`表单已换成「${picked.name}」的内容，还没保存。`);
+            };
+            // 编辑器里上传的文件带信任模式：和酒柜导入同一道明示，别让这条路绕过去
+            if (picked.kind === "mechanism" && picked.trusted === true) {
+                setConfirm({
+                    title: "这个文件是信任模式的机括",
+                    body: <>「{picked.name}」的代码<b>会直接在对局页面里运行，不进沙盒</b>：能画进正文、能联网，也能读写这台小手机上的数据。<br />只在你信任来源时载入。</>,
+                    confirmText: "我知道，载入",
+                    run: apply,
+                });
+                return;
+            }
+            apply();
         } catch (error) {
             showToast(error instanceof Error ? error.message : "读取失败");
         }
@@ -369,26 +372,74 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
 
     const handleImportFile = async (file: File | undefined) => {
         if (!file) return;
+        setImportError("");
+        setImportPreview(null);
+        setImportBusy(true);
         try {
-            const isPng = file.type === "image/png" || /\.png$/i.test(file.name);
-            if (!isPng) {
+            if (file.size > 16_000_000) throw new Error("文件过大，请选择 16 MB 以内的角色卡或预设。");
+            const isPng = file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(file.name);
+            if (!isPng && importSource === "native") {
                 // 配方文件（整杯打包）：配方与材料按他人作品落库——搭配可换、内容不可改、不能发布
                 const pack = parseMixRecipeFile(await file.text());
                 if (pack) {
-                    showToast(importMixRecipePack(pack));
-                    refresh();
+                    const finishPack = () => {
+                        showToast(importMixRecipePack(pack));
+                        refresh();
+                        setImportOpen(false);
+                    };
+                    // 整杯打包里夹着信任模式的机括：和单件导入一样，入柜前明示
+                    const trustedInPack = mixTrustedMechanismNames(pack.materials);
+                    if (trustedInPack.length) {
+                        setConfirm({
+                            title: "这杯配方里有信任模式的机括",
+                            body: <>{trustedInPack.map((n) => `「${n}」`).join("、")}的代码<b>会直接在对局页面里运行，不进沙盒</b>：能画进正文、能联网，也能读写这台小手机上的数据。<br />只在你信任来源时导入。</>,
+                            confirmText: "我知道，导入",
+                            run: finishPack,
+                        });
+                        return;
+                    }
+                    finishPack();
                     return;
                 }
             }
             const materials = isPng
-                ? parseMixMaterialsFromPng(await file.arrayBuffer())
-                : parseMixMaterialsFromJson(await file.text());
-            materials.forEach(saveMixMaterial);
-            refresh();
-            showToast(materials.length > 1 ? `已导入 ${materials.length} 件材料。` : `「${materials[0].name}」已入柜。`);
+                ? parseMixMaterialsFromPng(await file.arrayBuffer(), importSource)
+                : parseMixMaterialsFromJson(await file.text(), importSource, file.name);
+            if (importSource !== "native") {
+                if (isPng) {
+                    const cover = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(String(reader.result));
+                        reader.onerror = () => reject(new Error("无法读取角色封面。"));
+                        reader.readAsDataURL(file);
+                    });
+                    for (const material of materials) if (material.kind === "character") material.cover = cover;
+                }
+                setImportPreview(materials);
+                return;
+            }
+            const finish = () => {
+                materials.forEach(saveMixMaterial);
+                refresh();
+                setImportOpen(false);
+                showToast(materials.length > 1 ? `已导入 ${materials.length} 件材料。` : `「${materials[0].name}」已入柜。`);
+            };
+            // 文件里带信任模式的机括：入柜前明示（它不进沙盒，能碰本机数据）
+            const trustedOnes = mixTrustedMechanismNames(materials);
+            if (trustedOnes.length) {
+                setConfirm({
+                    title: "文件里有信任模式的机括",
+                    body: <>{trustedOnes.map((n) => `「${n}」`).join("、")}的代码<b>会直接在对局页面里运行，不进沙盒</b>：能画进正文、能联网，也能读写这台小手机上的数据。<br />只在你信任来源时导入。</>,
+                    confirmText: "我知道，导入",
+                    run: finish,
+                });
+                return;
+            }
+            finish();
         } catch (error) {
-            showToast(error instanceof Error ? error.message : "导入失败");
-        }
+            const message = error instanceof Error ? error.message : "导入失败";
+            setImportError(message);
+        } finally { setImportBusy(false); }
     };
 
     const handleShareMaterial = async (material: MixMaterial) => {
@@ -592,7 +643,8 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
                             <span className="mix-profile-name">{profile.name || "起个笔名"}</span>
                             <Pencil size={12} />
                         </button>
-                        <button type="button" className="mix-icon-btn" onClick={() => importFileRef.current?.click()} aria-label="导入材料" title="从文件导入"><Upload size={17} /></button>
+                        <button type="button" className="mix-icon-btn" onClick={() => setConnectorsOpen(true)} aria-label="连接器" title="连接器：给机括用的外部接口"><Plug size={17} /></button>
+                        <button type="button" className="mix-icon-btn" onClick={() => { setImportOpen(true); setImportPreview(null); setImportError(""); }} aria-label="导入材料" title="从文件导入"><Upload size={17} /></button>
                     </>
                 ) : null}
                 {tab === "menu" || tab === "hall" ? (
@@ -859,7 +911,7 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
                                         )}
                                         <div className="mix-session-info">
                                             <div className="mix-session-name">{session.charName} · {session.recipe.name}</div>
-                                            <div className="mix-session-sub">{session.turns.length} 条 · {formatMixTime(session.updatedAt)}</div>
+                                            <div className="mix-session-sub">{mixRoundCount(session.turns)} 轮 · {formatMixTime(session.updatedAt)}</div>
                                         </div>
                                         <button
                                             type="button"
@@ -868,7 +920,7 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
                                                 e.stopPropagation();
                                                 setConfirm({
                                                     title: "删除这场酒局？",
-                                                    body: <>「{session.charName} · {session.recipe.name}」的 {session.turns.length} 条对话会一起消失，无法找回。</>,
+                                                    body: <>「{session.charName} · {session.recipe.name}」的 {mixRoundCount(session.turns)} 轮对话会一起消失，无法找回。</>,
                                                     confirmText: "删除",
                                                     tone: "danger",
                                                     run: () => { deleteMixSession(session.id); refresh(); },
@@ -978,6 +1030,37 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
                                     </button>
                                 </>
                             ) : null}
+                            {/* 官方件不可改：想改就复制一份自建的——进酒柜、直接打开编辑器 */}
+                            {isMixBuiltinId(detail.id) ? (
+                                <button
+                                    type="button"
+                                    className="mix-icon-btn"
+                                    onClick={() => {
+                                        const now = Date.now();
+                                        const copy = {
+                                            ...detail,
+                                            id: createMixId("mixmat"),
+                                            name: `${detail.name.replace(/^官方\s*·\s*/, "")} 副本`,
+                                            author: undefined,
+                                            tags: (detail.tags ?? []).filter((t) => t !== "官方"),
+                                            publishedId: undefined,
+                                            publishedAt: undefined,
+                                            imported: undefined,
+                                            createdAt: now,
+                                            updatedAt: now,
+                                        } as MixMaterial;
+                                        saveMixMaterial(copy);
+                                        refresh();
+                                        setDetail(null);
+                                        setEditor({ kind: copy.kind, initial: copy });
+                                        showToast(`已复制为自建材料「${copy.name}」，可以随意改了。`);
+                                    }}
+                                    aria-label="复制为自建"
+                                    title="复制为自建：得到一份可编辑的副本"
+                                >
+                                    <Copy size={16} />
+                                </button>
+                            ) : null}
                             {!isMixBuiltinId(detail.id) && !detail.imported ? (
                                 <>
                                     <button
@@ -1067,6 +1150,7 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
             ) : null}
 
             {/* 创作者资料编辑 */}
+            {connectorsOpen ? <MixConnectorSheet onClose={() => setConnectorsOpen(false)} onToast={showToast} /> : null}
             {profileOpen ? (
                 <div className="mix-sheet-mask" onClick={() => setProfileOpen(false)}>
                     <div className="mix-sheet" onClick={(e) => e.stopPropagation()}>
@@ -1243,13 +1327,26 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
                                             preview={mixMatHasAutoCover(material) ? <MixMatAutoCover material={material} /> : undefined}
                                             badge={isMixBuiltinId(material.id) ? "官方" : undefined}
                                             onClick={() => {
-                                                setBarSlots((prev) => {
-                                                    const current = mixSlotEntries(prev, slotPicker);
-                                                    // 已经在这一格里就不重复加
-                                                    if (current.some((e) => e.materialId === material.id)) return prev;
-                                                    return { ...prev, [slotPicker]: [...current, { materialId: material.id }] };
-                                                });
-                                                setSlotPicker(null);
+                                                const add = () => {
+                                                    setBarSlots((prev) => {
+                                                        const current = mixSlotEntries(prev, slotPicker);
+                                                        // 已经在这一格里就不重复加
+                                                        if (current.some((e) => e.materialId === material.id)) return prev;
+                                                        return { ...prev, [slotPicker]: [...current, { materialId: material.id }] };
+                                                    });
+                                                    setSlotPicker(null);
+                                                };
+                                                // 信任模式的机括不进沙盒：装进配方前让人知道自己在装什么（与插件安装同一规矩）
+                                                if (material.kind === "mechanism" && material.trusted) {
+                                                    setConfirm({
+                                                        title: "这件机括是信任模式",
+                                                        body: <>「{material.name}」的代码<b>直接在对局页面里运行，不进沙盒</b>：它能画进正文、能自己联网，也能读写这台小手机上的数据。<br />只在你信任作者、清楚它做了什么时装入。</>,
+                                                        confirmText: "我知道，装入",
+                                                        run: add,
+                                                    });
+                                                    return;
+                                                }
+                                                add();
                                             }}
                                             key={material.id}
                                         />
@@ -1452,10 +1549,40 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
                 </div>
             ) : null}
 
+            {importOpen ? (
+                <div className="mix-sheet-mask" onClick={() => { if (!importBusy) setImportOpen(false); }}>
+                    <div className="mix-sheet" role="dialog" aria-modal="true" aria-label="导入角色与预设" onClick={e => e.stopPropagation()}>
+                        <div className="mix-sheet-head">
+                            <div className="mix-sheet-title">导入角色与预设</div>
+                            <button type="button" className="mix-icon-btn" disabled={importBusy} onClick={() => setImportOpen(false)} aria-label="关闭导入"><X size={18} /></button>
+                        </div>
+                        <div className="mix-sheet-body">
+                            <div className="mix-import-sources" aria-label="文件来源">
+                                {([ ["native", "特调原生"], ["tavern", "酒馆兼容"], ["janitor", "JanitorAI"] ] as const).map(([value, label]) => (
+                                    <button type="button" key={value} aria-pressed={importSource === value} disabled={importBusy} onClick={() => { setImportSource(value); setImportPreview(null); setImportError(""); }}>{label}</button>
+                                ))}
+                            </div>
+                            <p className="mix-import-note">{importSource === "native" ? "导入特调材料 JSON、配方包或特调 PNG 卡。" : importSource === "tavern" ? "导入酒馆角色卡 PNG / JSON，或预设 / 世界书 JSON。预设放入「基底」，世界书放入「风味」。" : "导入从 JanitorAI 获得的带数据角色卡，或含角色名、人设和开场白的 JSON。普通头像、聊天链接不含完整角色；此入口不连接 JanitorAI 模型。"}</p>
+                            <button type="button" className="mix-brew-btn" disabled={importBusy} onClick={() => importFileRef.current?.click()}>{importBusy ? "正在读取…" : "选择文件"}</button>
+                            {importError ? <p role="alert" className="mix-import-note">{importError}</p> : null}
+                            {importPreview ? <div className="mix-import-preview">
+                                <h3>即将入柜</h3>
+                                {importPreview.map(m => <p key={m.id}><strong>{m.name}</strong> · {m.compatibility?.format === "preset" ? "酒馆预设 → 基底" : m.compatibility?.format === "worldbook" ? "世界书 → 风味" : `角色卡${m.kind === "character" ? ` · ${m.openings.length} 个开场` : ""}`}</p>)}
+                                <ul>{compatibilityWarnings(importPreview).map(w => <li key={w}>{w}</li>)}</ul>
+                                <button type="button" className="mix-brew-btn" onClick={() => {
+                                    try { importPreview.forEach(saveMixMaterial); refresh(); setImportOpen(false); setImportPreview(null); showToast("已入柜，可以在吧台搭配使用。"); }
+                                    catch (error) { setImportError(error instanceof Error ? error.message : "保存失败，请检查本地存储空间。"); }
+                                }}>确认入柜</button>
+                            </div> : null}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
             <input
                 ref={importFileRef}
                 type="file"
-                accept="application/json,.json,image/png,.png"
+                accept="application/json,.json,image/png,.png,image/jpeg,.jpg,.jpeg"
                 style={{ display: "none" }}
                 onChange={(e) => { void handleImportFile(e.target.files?.[0]); e.target.value = ""; }}
             />

@@ -6,20 +6,21 @@ import { downloadFile } from "@/lib/download-utils";
 import {
     MIX_SLOT_ORDER,
     createMixId,
+    type MixCharacterCard,
     type MixMaterial,
     type MixMaterialKind,
     type MixRecipe,
     type MixSlotEntry,
 } from "./types";
 import { getMixMaterial, isMixBuiltinId, loadMixRecipes, MIX_CABINET_UPDATED_EVENT, saveMixMaterial, saveMixRecipe } from "./storage";
+import { normalizeMixCardProfile } from "./card-freeform";
+import { parseCompatibilityJson, type MixImportSource } from "./compatibility";
 
 const FILE_MARK = "float-mixology-material";
 const FILE_VERSION = 1;
 
 /** PNG 卡的文本块关键字——自有格式，故意与酒馆卡（chara/ccv3）不同 */
 const PNG_KEYWORD = "float-mixology-card";
-/** 第三方角色卡格式的关键字（SillyTavern V2/V3 等），一律拒收 */
-const THIRD_PARTY_PNG_KEYWORDS = ["chara", "ccv3"];
 
 type MixTransferFile = {
     mark: typeof FILE_MARK;
@@ -36,7 +37,7 @@ function safeFileName(name: string): string {
 
 // ── PNG 卡：自有格式的图内嵌数据 ──────────────────────
 // 数据以 base64 JSON 写进 PNG 的 tEXt 块（关键字 float-mixology-card），
-// 图即是卡。解析时若发现酒馆系关键字（chara/ccv3）直接报错拒收。
+// 图即是卡。酒馆系关键字（chara/ccv3）由显式选择的兼容入口解析。
 
 const PNG_SIG = [137, 80, 78, 71, 13, 10, 26, 10];
 
@@ -51,6 +52,7 @@ function readPngTextChunks(u8: Uint8Array): Map<string, string> {
     let offset = 8;
     while (offset + 12 <= u8.length) {
         const length = dv.getUint32(offset);
+        if (length > u8.length - offset - 12) throw new Error("PNG 数据块不完整，请使用原始导出文件。");
         const type = String.fromCharCode(u8[offset + 4], u8[offset + 5], u8[offset + 6], u8[offset + 7]);
         const data = u8.subarray(offset + 8, offset + 8 + length);
         if (type === "tEXt") {
@@ -122,13 +124,13 @@ function insertPngTextChunk(u8: Uint8Array, keyword: string, text: string): Uint
     return out;
 }
 
-/** 从 PNG 卡解析材料；酒馆卡等第三方格式一律报错 */
-export function parseMixMaterialsFromPng(buffer: ArrayBuffer): MixMaterial[] {
+/** 从 PNG 卡解析材料，原生与第三方入口分别识别自己的数据。 */
+export function parseMixMaterialsFromPng(buffer: ArrayBuffer, source: MixImportSource = "native"): MixMaterial[] {
     const u8 = new Uint8Array(buffer);
-    if (!isPng(u8)) throw new Error("这不是一个有效的 PNG 文件。");
+    if (!isPng(u8)) throw new Error("这份文件不是 PNG 角色卡（可能是改了后缀的 JPEG 头像）。请使用含角色数据的原始 PNG 或 JSON；普通图片只能作封面。");
     const chunks = readPngTextChunks(u8);
     const ours = chunks.get(PNG_KEYWORD);
-    if (ours) {
+    if (ours && source === "native") {
         let json: string;
         try {
             json = decodeURIComponent(escape(atob(ours.trim())));
@@ -137,10 +139,15 @@ export function parseMixMaterialsFromPng(buffer: ArrayBuffer): MixMaterial[] {
         }
         return parseMixMaterialsFromJson(json);
     }
-    if (THIRD_PARTY_PNG_KEYWORDS.some((kw) => chunks.has(kw))) {
-        throw new Error("不支持第三方角色卡格式。");
+    const external = chunks.get("ccv3") || chunks.get("chara");
+    if (external) {
+        if (source === "native") throw new Error("这是第三方角色卡，请选择「酒馆兼容」或「JanitorAI」入口。");
+        let value: unknown;
+        try { value = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(external.trim()), c => c.charCodeAt(0)))); }
+        catch { throw new Error("角色卡数据损坏，请重新下载原始文件。"); }
+        return parseCompatibilityJson(value, source);
     }
-    throw new Error("这张 PNG 里没有特调卡数据。");
+    throw new Error("这张图片没有当前入口支持的角色数据。请提供角色卡导出文件；普通头像无法还原人设。");
 }
 
 /** 把封面 dataURL 画成 PNG 底图；无封面时画一张纯色占位卡 */
@@ -245,10 +252,11 @@ function repairJsonText(text: string): string | null {
  * 兼容三种写法：本工具导出的带壳文件、裸材料对象、以及一次多件的数组。
  * 导入一律换新 id，避免覆盖酒柜里的同名旧件。
  */
-export function parseMixMaterialsFromJson(text: string): MixMaterial[] {
+export function parseMixMaterialsFromJson(text: string, source: MixImportSource = "native", fileName = ""): MixMaterial[] {
+    if (text.length > 8_000_000) throw new Error("JSON 文件过大，请使用 8 MB 以内的角色或预设文件。");
     let parsed: unknown;
     try {
-        parsed = JSON.parse(text);
+        parsed = JSON.parse(text.replace(/^\uFEFF/, ""));
     } catch {
         const repaired = repairJsonText(text);
         try {
@@ -258,6 +266,7 @@ export function parseMixMaterialsFromJson(text: string): MixMaterial[] {
         }
     }
 
+    if (source !== "native") return parseCompatibilityJson(parsed, source, fileName);
     const candidates: unknown[] = [];
     const collect = (value: unknown) => {
         if (Array.isArray(value)) {
@@ -289,8 +298,10 @@ export function parseMixMaterialsFromJson(text: string): MixMaterial[] {
             if (openings.length === 0) continue;
             // 文件导入一律视为自己的本地作品：换新 id、剥掉发布关联与导入标记，
             // 修改/导出/发布全部照常（酒材页入柜的"别人的作品"限制与此无关）
-            materials.push({
-                ...(record as unknown as MixMaterial),
+            // 资料两种写法只留声明的那种（一框式清分框字段，分框清整段正文），
+            // 手写/旧版工具拼出来的文件两边都有时不至于各读各的
+            materials.push(normalizeMixCardProfile({
+                ...(record as unknown as MixCharacterCard),
                 id: createMixId("mixmat"),
                 publishedId: undefined,
                 publishedAt: undefined,
@@ -299,7 +310,7 @@ export function parseMixMaterialsFromJson(text: string): MixMaterial[] {
                 openings,
                 createdAt: now,
                 updatedAt: now,
-            } as MixMaterial);
+            } as MixCharacterCard));
             continue;
         }
         materials.push({
@@ -326,7 +337,7 @@ export function parseMixMaterialsFromJson(text: string): MixMaterial[] {
             return Boolean(data && typeof data === "object" && "first_mes" in (data as Record<string, unknown>));
         };
         if (candidates.some(isThirdPartyCard)) {
-            throw new Error("不支持第三方角色卡格式。");
+            throw new Error("这是第三方角色卡，请选择「酒馆兼容」或「JanitorAI」入口。");
         }
         throw new Error("文件里没有能认出来的材料。");
     }
@@ -423,6 +434,16 @@ export function parseMixRecipeFile(text: string): { recipe: MixRecipe; materials
  * 已导入的同 id 覆盖更新；配方同理，自己的原杯不覆盖。
  * 返回给用户看的结果说明。
  */
+/**
+ * 一批材料里信任模式机括的名字。信任模式不进沙盒、直接在页面里跑，
+ * 每一条入柜路径（文件、大厅、资源市场）落库前都得拿这个名单向用户明示。
+ */
+export function mixTrustedMechanismNames(materials: MixMaterial[]): string[] {
+    return materials
+        .filter((m) => m.kind === "mechanism" && m.trusted === true)
+        .map((m) => m.name);
+}
+
 export function importMixRecipePack(pack: { recipe: MixRecipe; materials: MixMaterial[] }, author?: string): string {
     const signed = author?.trim() || undefined;
     let kept = 0;

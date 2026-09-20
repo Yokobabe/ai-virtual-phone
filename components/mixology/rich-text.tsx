@@ -22,7 +22,7 @@ const FRAME_MIN_HEIGHT = 24;
  */
 const FRAME_MAX_HEIGHT = 12000;
 
-function RichFrame({ html, inert }: { html: string; inert?: boolean }) {
+function RichFrame({ html, inert, safeHtml }: { html: string; inert?: boolean; safeHtml?: boolean }) {
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
     const [frameId] = useState(() => `mrf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
     const [height, setHeight] = useState(FRAME_MIN_HEIGHT);
@@ -31,10 +31,13 @@ function RichFrame({ html, inert }: { html: string; inert?: boolean }) {
 
     const srcDoc = useMemo(() => {
         // 默认浅色字 + 透明底：内容浮在深色封面蒙版上直接可读，作者可全量覆盖
-        const base = /<html[\s>]/i.test(html)
+        const nonce = safeHtml ? crypto.randomUUID().replaceAll("-", "") : "";
+        const base = safeHtml
+            ? `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'"><style>body{margin:0;color:#f2f0f7;font:14px/1.8 system-ui;background:transparent;overflow-wrap:anywhere}</style></head><body>${html}</body></html>`
+            : /<html[\s>]/i.test(html)
             ? html
             : `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><style>body{margin:0;color:#f2f0f7;font:14px/1.8 system-ui,-apple-system,sans-serif;background:transparent;word-break:break-word}</style></head><body>${html}</body></html>`;
-        const bridge = `<script>(function(){
+        const bridge = `<script${safeHtml ? ` nonce="${nonce}"` : ""}>(function(){
   var frameId=${JSON.stringify(frameId)};
   function measure(){var b=document.body;if(!b)return ${FRAME_MIN_HEIGHT};var r=b.getBoundingClientRect();var h=r.height;
     for(var i=0;i<b.children.length;i++){var c=b.children[i].getBoundingClientRect();if(c.width||c.height)h=Math.max(h,c.bottom-r.top);}
@@ -46,7 +49,7 @@ function RichFrame({ html, inert }: { html: string; inert?: boolean }) {
   setTimeout(send,60);setTimeout(send,400);
 })();</` + `script>`;
         return /<\/body>/i.test(base) ? base.replace(/<\/body>/i, `${bridge}</body>`) : base + bridge;
-    }, [html, frameId]);
+    }, [html, frameId, safeHtml]);
 
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
@@ -90,7 +93,7 @@ function RichFrame({ html, inert }: { html: string; inert?: boolean }) {
  * 画布是异步撑高的：高度量好后由 iframe 里的桥 postMessage 上来，需要维持滚动落点的
  * 宿主（对局界面）直接监听那条消息，见 components/mixology/mixology-game.tsx。
  */
-export function MixRichText({ text, inert }: { text: string; inert?: boolean }) {
-    if (mixTextHasHtml(text)) return <RichFrame html={text} inert={inert} />;
+export function MixRichText({ text, inert, safeHtml }: { text: string; inert?: boolean; safeHtml?: boolean }) {
+    if (mixTextHasHtml(text)) return <RichFrame html={text} inert={inert} safeHtml={safeHtml} />;
     return <div className="mix-detail-value">{text}</div>;
 }
