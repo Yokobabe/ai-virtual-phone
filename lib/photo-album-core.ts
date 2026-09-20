@@ -9,19 +9,26 @@ type Identity = { photoId: string; contentVersion: string; mediaRef?: string; te
 type SeenVersion = { contentVersion: string; variantVersion: string; description: string; visual?: string; comments: string[]; seenAt: string };
 export type PhotoSeen = SeenVersion & { characterId: string; assetId: string; photoId: string; access: boolean; accessChangedAt?: string; actions?: string[]; actionNotes?: Array<{ at: string; text: string }>; history?: SeenVersion[] };
 type Core = { identities: Record<string, Identity>; definitions: Record<string, PhotoDefinition>; seen: Record<string, PhotoSeen> };
-function read(): Core { try { const s = JSON.parse(kvGet(KEY) || "{}"); return { identities: s.identities || {}, definitions: s.definitions || {}, seen: s.seen || {} }; } catch { return { identities: {}, definitions: {}, seen: {} }; } }
+let cachedRaw: string | undefined;
+let cachedCore: Core;
+function read(): Core {
+  const raw = kvGet(KEY) || "{}";
+  if (raw === cachedRaw && cachedCore) return cachedCore;
+  try { const s = JSON.parse(raw); cachedCore = { identities: s.identities || {}, definitions: s.definitions || {}, seen: s.seen || {} }; }
+  catch { cachedCore = { identities: {}, definitions: {}, seen: {} }; }
+  cachedRaw = raw; return cachedCore;
+}
 function write(s: Core) { kvSet(KEY, JSON.stringify(s)); }
 const now = () => new Date().toISOString();
 const versionId = () => `pv-${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
-const refKeys = new Map<string, string>();
-function refKey(ref?: string): string | undefined {
+const refKeys = new Map<string, { ref: string; key: string }>();
+function refKey(ref?: string, assetId?: string): string | undefined {
   if (!ref?.startsWith("data:")) return ref;
-  const cached = refKeys.get(ref); if (cached) return cached;
+  const cached = assetId ? refKeys.get(assetId) : undefined; if (cached?.ref === ref) return cached.key;
   let a = 2166136261, b = 5381;
   for (let i = 0; i < ref.length; i++) { a = Math.imul(a ^ ref.charCodeAt(i), 16777619); b = Math.imul(b, 33) ^ ref.charCodeAt(i); }
   const key = `inline:${ref.length}:${a >>> 0}:${b >>> 0}`;
-  if (refKeys.size >= 8) refKeys.delete(refKeys.keys().next().value!);
-  refKeys.set(ref, key); return key;
+  if (assetId) refKeys.set(assetId, { ref, key }); return key;
 }
 export const photoIdOf = (asset: PhotoAlbumAsset) => asset.canonicalPhotoId || asset.id;
 export const contentVersionOf = (asset: PhotoAlbumAsset) => asset.contentVersion || asset.mediaRef || asset.label;
@@ -29,11 +36,13 @@ export const variantVersionOf = (asset: PhotoAlbumAsset) => asset.variantVersion
 
 /** Source presentation IDs never change. Physical relocation must use relocatePhotoMedia. */
 export function attachPhotoVersions(assets: PhotoAlbumAsset[]): PhotoAlbumAsset[] {
+  const present = new Set(assets.map(a => a.id));
+  for (const id of refKeys.keys()) if (!present.has(id)) refKeys.delete(id);
   const state = read(); let changed = false;
   const result = assets.map(asset => {
     const previous = state.identities[asset.id];
     const textContent = asset.mediaKind === "text_photo" ? asset.label : undefined;
-    const mediaRef = refKey(asset.mediaRef);
+    const mediaRef = refKey(asset.mediaRef, asset.id);
     const replaced = previous && (refKey(previous.mediaRef) !== mediaRef || previous.textContent !== textContent);
     const localMarks = JSON.stringify(asset.albumAnnotations);
     const resetAlbumMarks = replaced ? localMarks : previous?.resetAlbumMarks === localMarks ? localMarks : undefined;

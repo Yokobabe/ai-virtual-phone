@@ -16,6 +16,11 @@ const modules = {
 const sandbox = { exports: {}, require: k => modules[k], Date, Math, JSON, Set, window: undefined };
 vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/photo-album-discussion.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, sandbox);
 const d = sandbox.exports, asset = assets[0];
+const cached = d.loadAlbumDiscussions();
+assert.equal(d.loadAlbumDiscussions(), cached, 'Unchanged storage reuses parsed discussions');
+stored = '{"external":{"assetId":"external"}}';
+assert.equal(d.loadAlbumDiscussions().external.assetId, 'external', 'External storage writes invalidate cache');
+stored = '{}';
 d.queueAlbumReview(asset);
 assert.ok(d.getAlbumDiscussion(asset).dueAt <= Date.now());
 d.addUserAlbumComment(asset, ' 好好吃 ');
@@ -54,7 +59,7 @@ console.log('PASS: discussion persistence, delayed review, access boundaries and
   './memory-injector': {formatCoreMemories:()=>'',formatLongTermMemories:()=>''},
   './bg-timer': {bgSetInterval:()=>()=>{}},
  };
- const engine = {exports:{},require:k=>bindings[k],Date,Math,JSON,Set};
+ const engine = {exports:{},require:k=>bindings[k],Date,Math,JSON,Set,AbortController};
  vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/photo-album-review.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,engine);
  await engine.exports.reviewNextAlbumPhoto();
  assert.equal(calls,1);

@@ -1,5 +1,7 @@
 import { ALBUM_REVIEW_REQUESTED, queueAlbumReview, albumParticipants, albumPhotoContext, getAlbumDiscussion, loadAlbumDiscussions, saveAlbumDiscussion } from "./photo-album-discussion";
-import { collectPhotoAlbumAssets, resolvePhotoAlbumMedia } from "./photo-album-storage";
+import { collectPhotoAlbumAssets, resolvePhotoAlbumMedia, getPhotoAlbumSourceUpdatedEvents, PHOTO_ALBUM_UPDATED_EVENT } from "./photo-album-storage";
+import { loadChatSessions } from "./chat-storage";
+import { kvGet } from "./kv-db";
 import { loadCharacters } from "./character-storage";
 import { loadApiConfigs, loadBindingConfig, loadPresets, loadRegexes, loadWorldBooks, resolveBinding, resolveUserIdentity } from "./settings-storage";
 import { assemblePromptPayload } from "./llm-prompt-assembler";
@@ -15,12 +17,37 @@ import { executeAlbumAction } from "./photo-album-actions";
 
 let stop: (() => void) | undefined;
 let busy = false;
+let dirty = true;
+let rescanAt = 0;
+let quietUntil = 0;
+let activeAssetIds: Set<string> | undefined;
+let controller: AbortController | undefined;
+function chatHasPriority() {
+  return typeof document !== "undefined" && (document.hidden || Date.now() < quietUntil || loadChatSessions().some(s => {
+    try {
+      const startedAt = Number(JSON.parse(kvGet(`chat-generating:${s.id}`) || "null")?.startedAt);
+      return startedAt > 0 && Date.now() - startedAt < 5 * 60_000;
+    } catch { return false; }
+  }));
+}
 export function startAlbumReviewService() {
   if (stop) return;
-  const tick = () => { void reviewNextAlbumPhoto().catch(() => undefined); };
+  dirty = true; activeAssetIds = undefined; quietUntil = Date.now() + 15_000;
+  const tick = () => {
+    if (chatHasPriority()) { controller?.abort(); return; }
+    const due = Object.values(loadAlbumDiscussions()).some(t => (!activeAssetIds || activeAssetIds.has(t.assetId)) && t.dueAt > 0 && t.dueAt <= Date.now());
+    if (!dirty && Date.now() < rescanAt && !due) return;
+    void reviewNextAlbumPhoto().catch(() => undefined);
+  };
+  const changed = () => { dirty = true; quietUntil = Math.max(quietUntil, Date.now() + 3_000); controller?.abort(); };
+  const typing = () => { quietUntil = Date.now() + 15_000; controller?.abort(); };
+  const events = [...getPhotoAlbumSourceUpdatedEvents(), PHOTO_ALBUM_UPDATED_EVENT];
+  events.forEach(e => window.addEventListener(e, changed));
+  window.addEventListener("input", typing, true);
+  window.addEventListener("keydown", typing, true);
   const cancel = bgSetInterval(tick, 5_000);
   window.addEventListener(ALBUM_REVIEW_REQUESTED, tick);
-  stop = () => { cancel(); window.removeEventListener(ALBUM_REVIEW_REQUESTED, tick); };
+  stop = () => { cancel(); controller?.abort(); events.forEach(e => window.removeEventListener(e, changed)); window.removeEventListener("input", typing, true); window.removeEventListener("keydown", typing, true); window.removeEventListener(ALBUM_REVIEW_REQUESTED, tick); };
   tick();
 }
 export function stopAlbumReviewService() { stop?.(); stop = undefined; }
@@ -33,13 +60,24 @@ export async function reviewNextAlbumPhoto() {
 }
 
 async function runAlbumReview() {
-  if (busy) return;
+  if (busy || chatHasPriority()) return;
   busy = true;
+  controller = new AbortController();
+  const signal = controller.signal;
   try {
     const assets = collectPhotoAlbumAssets();
+    activeAssetIds = new Set(assets.map(a => a.id));
     reconcilePhotoAccess(assets, albumParticipants);
     // Prepare thoughts as photos enter the album, independently of opening or commenting.
-    assets.forEach(queueAlbumReview);
+    if (dirty || Date.now() >= rescanAt || typeof window === "undefined") {
+      dirty = false;
+      rescanAt = Date.now() + 60_000;
+      for (let i = 0; i < assets.length; i++) {
+        if (signal.aborted || chatHasPriority()) { dirty = true; return; }
+        queueAlbumReview(assets[i], assets);
+        if (typeof window !== "undefined" && i % 8 === 7) await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
     const all = loadAlbumDiscussions();
     const asset = assets.find(a => all[a.id]?.dueAt > 0 && all[a.id].dueAt <= Date.now());
     if (!asset) return;
@@ -50,6 +88,7 @@ async function runAlbumReview() {
     const reviewedThrough = new Date().toISOString();
     let failed = false;
     for (const characterId of albumParticipants(asset)) {
+      if (signal.aborted || chatHasPriority()) return;
       const character = loadCharacters().find(c => c.id === characterId);
       if (!character) continue;
       const thread = getAlbumDiscussion(asset);
@@ -102,7 +141,9 @@ async function runAlbumReview() {
             } finally { if (media.revoke) URL.revokeObjectURL(media.url); }
           }
         }
-        const raw = await sendLLMRequest(config, preset, messages, regexes, { characterName: character.name, userName: userIdentity?.name }, { appId: "album", appTags: ["album"], skipOutputRegex: true });
+        if (signal.aborted || chatHasPriority()) return;
+        const raw = await sendLLMRequest(config, preset, messages, regexes, { characterName: character.name, userName: userIdentity?.name }, { appId: "album", appTags: ["album"], skipOutputRegex: true, signal });
+        if (signal.aborted || chatHasPriority()) return;
         const parsed = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
         if (!parsed || typeof parsed !== "object" || !["thought", "reply"].some(k => k in parsed)) throw new Error("Invalid album response");
         if (!native && (!hasThought || reroll) && (typeof parsed.thought !== "string" || !parsed.thought.trim())) throw new Error("Missing album thought");
@@ -139,10 +180,10 @@ async function runAlbumReview() {
           reviewed: { ...current.reviewed, [characterId]: reviewedThrough }, error: undefined });
         recordPhotoSeen(live, characterId, attachedImage && typeof parsed.visual === "string" ? parsed.visual : knownVisual, comments.filter(c => c.kind !== "annotation").map(c => `${c.authorName}：${c.text}`));
         if (native && !delay && parsed.action && ["forward", "avatar"].includes(parsed.action.kind)) {
-          await executeAlbumAction(characterId, live.id, parsed.action.kind, typeof parsed.action.text === "string" ? parsed.action.text : "", variantVersionOf(live));
+          await executeAlbumAction(characterId, live.id, parsed.action.kind, typeof parsed.action.text === "string" ? parsed.action.text : "", variantVersionOf(live), signal);
         }
         incrementEventCounter(characterId);
-      } catch { failed = true; }
+      } catch { if (signal.aborted) return; failed = true; }
     }
     const live = collectPhotoAlbumAssets().find(a => a.id === asset.id);
     if (!live || contentVersionOf(live) !== contentVersionOf(asset)) return;
@@ -153,5 +194,5 @@ async function runAlbumReview() {
     const deadlines = Object.entries(current.deferred || {}).filter(([id]) => participants.includes(id)).map(([,d]) => d.dueAt);
     saveAlbumDiscussion({ ...current, dueAt: failed ? Date.now() + 5 * 60_000 : (newer || Object.keys(current.thoughtRequests || {}).length) ? Date.now() : deadlines.length ? Math.min(...deadlines) : 0,
       error: failed ? "角色暂时未能查看相册，评论已保存。" : undefined });
-  } finally { busy = false; }
+  } finally { busy = false; controller = undefined; }
 }
