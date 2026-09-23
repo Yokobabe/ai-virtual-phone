@@ -112,7 +112,7 @@ export function PhotoInputModal({ onSend, onClose }: PhotoInputModalProps) {
 interface RedPacketModalProps {
     mode: "red_packet" | "transfer";
     isGroup?: boolean;
-    onSend: (amount: number, label: string, count?: number) => void;
+    onSend: (amount: number, label: string, count?: number, currency?: string) => void;
     onClose: () => void;
 }
 
@@ -120,6 +120,7 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
     const [amount, setAmount] = useState("");
     const [label, setLabel] = useState("");
     const [count, setCount] = useState("1");
+    const [currency, setCurrency] = useState("CNY");
 
     const isRedPacket = mode === "red_packet";
     const title = isRedPacket ? "发红包" : "转账";
@@ -131,7 +132,7 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
         const num = parseFloat(amount);
         if (!num || num <= 0) return;
         const cnt = isRedPacket ? (isGroup ? Math.max(1, parseInt(count, 10) || 1) : 1) : undefined;
-        onSend(num, label.trim() || defaultLabel, cnt);
+        onSend(num, label.trim() || defaultLabel, cnt, isRedPacket ? "CNY" : currency);
     };
 
     return (
@@ -156,7 +157,7 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
                             <span
                                 className="ts-24 font-bold imessage-money-compose-currency"
                                 style={{ color }}
-                            >¥</span>
+                            >{currency === "CNY" || isRedPacket ? "¥" : currency}</span>
                             <input
                                 value={amount}
                                 onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
@@ -167,6 +168,7 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
                                 style={{ borderBottom: `2px solid ${color}` }}
                                         />
                         </div>
+                        {!isRedPacket && <select value={currency} onChange={e => setCurrency(e.target.value)} className="ui-input mt-2 w-full" aria-label="转账币种"><option value="CNY">人民币 CNY</option><option value="USD">美元 USD</option><option value="EUR">欧元 EUR</option><option value="GBP">英镑 GBP</option><option value="JPY">日元 JPY</option><option value="HKD">港币 HKD</option></select>}
                     </div>
                     {isRedPacket && isGroup && (
                         <div>

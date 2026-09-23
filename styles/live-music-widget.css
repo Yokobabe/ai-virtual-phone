@@ -39,10 +39,7 @@
 .live-music-queue>button[aria-pressed="true"] { box-shadow:0 0 0 2px rgba(255,255,255,.7); }
 .live-music-queue .live-music-empty { flex:1; display:flex; align-items:center; gap:12px; padding:10px; background:rgba(255,255,255,.05); font-size:12px; text-align:left; line-height:1.6; }
 .live-music-empty small { opacity:.72; }
-.live-music-widget .live-music-theme { display:grid; place-items:center; flex-shrink:0; width:24px; height:32px; opacity:.7; }
-.live-music-theme svg { width:16px; height:16px; }
-.live-music-square .live-music-theme { position:absolute; top:40px; right:4px; }
-.live-music-widget[data-glass-theme="dark"] { --music-glass-surface:rgba(26,30,38,.7); --music-glass-ink:#f5f7fb; --music-glass-line:rgba(255,255,255,.24); --music-glass-control:rgba(255,255,255,.12); }
+.live-music-toggle:disabled { opacity:.45; }
 @media(prefers-color-scheme:dark) {
   .live-music-widget[data-glass-theme="auto"] { --music-glass-surface:rgba(26,30,38,.7); --music-glass-ink:#f5f7fb; --music-glass-line:rgba(255,255,255,.24); --music-glass-control:rgba(255,255,255,.12); }
 }

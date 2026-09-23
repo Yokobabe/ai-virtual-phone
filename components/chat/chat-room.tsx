@@ -52,6 +52,7 @@ import { VoiceCallScreen } from "./voice-call-screen";
 import { VideoCallScreen } from "./video-call-screen";
 import { GroupCallScreen } from "./group-call-screen";
 import { TransferTargetModal } from "./transfer-target-modal";
+import { normalizeCurrency } from "@/lib/exchange-rates";
 import { GiftPickerModal } from "./gift-picker-modal";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { deleteWeixinCloudMessagesFromCloud, emitWeixinSyncToast, syncAllWeixinBotRuntimesToCloud } from "@/lib/weixin-cloud-sync";
@@ -1934,6 +1935,15 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const groupCharacters = useMemo(() => [...groupCharMap.values()], [groupCharMap]);
     const tintCharacters = useMemo(() => session.isGroup ? groupCharacters : character ? [character] : [], [session.isGroup, groupCharacters, character]);
     const groupBubbleTint = useGroupBubbleTint(tintCharacters, session.id, chatAppearance.dark);
+    const reactionStyleForActor = useCallback((actorId: string): React.CSSProperties => {
+        const isUser = actorId === "self" || actorId === "user";
+        const characterId = actorId === "legacy-assistant" ? session.contactId : actorId;
+        const tint = groupBubbleTint(isUser ? undefined : characterId, isUser) as Record<string, string | number>;
+        return {
+            "--im26-tapback-fill": tint["--im26-base-blue"] || tint["--im26-base-incoming"] || tint["--bubble-surface-color"],
+            "--im26-tapback-glyph": tint["--bubble-text-ink"],
+        } as React.CSSProperties;
+    }, [groupBubbleTint, session.contactId]);
     const quoteStyle = (source?: ChatMessage): React.CSSProperties | undefined => {
         if (!source) return undefined;
         const tint = groupBubbleTint(source.senderCharacterId || session.contactId, source.role === "user") as Record<string, string | number>;
@@ -3197,11 +3207,16 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     };
 
     // ── Music Card Click-to-Play ──
-    const handleMusicCardPlay = async (title: string, artist?: string) => {
+    const handleMusicCardPlay = async (title: string, artist?: string, sharedTrack?: import("@/lib/music-storage").MusicTrack) => {
         const musicBridge = getMusicControlBridge();
         if (!musicBridge) { showChatToast("音乐播放器未就绪"); return; }
         showPersistentChatToast("加载音乐中...");
         try {
+            if (sharedTrack) {
+                const result = await musicBridge.playTrack(sharedTrack);
+                showChatToast(result.message);
+                return;
+            }
             const found = await findPlayableMatch(title, artist);
             if (!found) {
                 showChatToast("没有找到该音乐哦~");
@@ -3878,7 +3893,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         const amount = actionType === "accept_red_packet"
             ? Number(data?.claimedAmounts?.[userName] ?? data?.amount ?? 0)
             : Number(data?.amount ?? 0);
-        const safeAmount = Number.isFinite(amount) ? Math.max(0, Math.round(amount * 100) / 100) : 0;
+        const currency = normalizeCurrency(data?.currency);
+        const safeAmount = currency !== "CNY"
+            ? (typeof data?.cnyAmount === "number" && Number.isFinite(data.cnyAmount) ? data.cnyAmount : 0)
+            : Number.isFinite(amount) ? Math.max(0, Math.round(amount * 100) / 100) : 0;
         if (safeAmount <= 0) return msg;
         const result = creditWalletBalance(
             safeAmount,
@@ -6246,7 +6264,16 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         <div
             ref={wrapperRef}
             className={`session-${session.id} chat-room-wrapper page-shell inset-0 flex flex-col z-20`}
-            style={{ ...chatRoomBackgroundStyle, "--chat-send-surface": groupBubbleTint(undefined,true)["--chat-send-surface" as keyof React.CSSProperties], "--chat-send-ink": groupBubbleTint(undefined,true)["--chat-send-ink" as keyof React.CSSProperties] } as React.CSSProperties}
+            style={{
+                ...chatRoomBackgroundStyle,
+                "--chat-send-surface": groupBubbleTint(undefined,true)["--chat-send-surface" as keyof React.CSSProperties],
+                "--chat-send-ink": groupBubbleTint(undefined,true)["--chat-send-ink" as keyof React.CSSProperties],
+                // Reactions belong to their actor, never to the media container underneath.
+                "--tapback-user-surface": reactionStyleForActor("self")["--im26-tapback-fill" as keyof React.CSSProperties],
+                "--tapback-user-ink": reactionStyleForActor("self")["--im26-tapback-glyph" as keyof React.CSSProperties],
+                "--tapback-char-surface": reactionStyleForActor("legacy-assistant")["--im26-tapback-fill" as keyof React.CSSProperties],
+                "--tapback-char-ink": reactionStyleForActor("legacy-assistant")["--im26-tapback-glyph" as keyof React.CSSProperties],
+            } as React.CSSProperties}
             onPointerDown={(e) => {
                 const target = e.target as HTMLElement;
                 if (showHeaderCallMenu && !target.closest(".imessage-header-call-control")) {
@@ -7016,12 +7043,14 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                 onMusicPlay={handleMusicCardPlay}
                                                 onActionSelect={(text) => chatTextInputRef.current?.appendText(text)}
                                                 defaultTranslationExpanded={session.collapseBilingualTranslation !== false ? false : true}
+                                                reactionStyleForActor={reactionStyleForActor}
                                             />
                                             {renderMsg.mediaType !== "quote" && !renderMsg.mediaData?.photoGroupItems?.length && (renderMsg.mediaData?.tapback || renderMsg.mediaData?.tapbacks?.length) && (
                                                 <IMessageTapbackBadge
                                                     tapback={renderMsg.mediaData.tapback}
                                                     tapbackBy={renderMsg.mediaData.tapbackBy || "user"}
                                                     reactions={renderMsg.mediaData.tapbacks}
+                                                    reactionStyleForActor={reactionStyleForActor}
                                                 />
                                             )}
                                         </div>
@@ -7436,10 +7465,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             {richModal === "transfer" && (
                 <RedPacketModal
                     mode="transfer"
-                    onSend={(amount, label) => {
+                    onSend={(amount, label, _count, currency = "CNY") => {
                         if (session.isGroup && transferTarget) {
                             const sent = sendRichMessage("transfer", {
-                                amount, label, status: "pending",
+                                amount, label, currency: normalizeCurrency(currency), status: "pending",
                                 senderName: userIdentity?.name || "你",
                                 recipientId: transferTarget.id,
                                 recipientName: transferTarget.name,
@@ -7449,7 +7478,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 setTransferTarget(null);
                             }
                         } else {
-                            const sent = sendRichMessage("transfer", { amount, label, status: "pending" });
+                            const sent = sendRichMessage("transfer", { amount, label, currency: normalizeCurrency(currency), status: "pending" });
                             if (sent) setRichModal(null);
                         }
                     }}
@@ -7541,6 +7570,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 <MediaDetailModal
                     msg={mediaDetailMsg}
                     userName={userIdentity?.name || "你"}
+                    charName={character?.name || session.alias || undefined}
                     groupSize={session.isGroup ? (session.participantIds?.length || 0) + (session.isSpectator ? 0 : 1) : undefined}
                     onAccept={(updatedMsg, sysText, actionType) => {
                         const walletUpdatedMsg = updatedMsg.role === "assistant"

@@ -21,11 +21,19 @@ paletteContext.exports.sample('red-fixture');assert.equal(sampledState.color,'rg
 pixel=[30,90,230,255];paletteContext.exports.sample('blue-fixture');assert.equal(sampledState.color,'rgb(21,39,81)');cleanup();
 assert.ok([84,36,24,21,39,81].every(c=>c<90),'Darkened covers preserve white text contrast');
 function buttons(node,out=[]){if(!node||typeof node!=='object')return out;if(node.type==='button')out.push(node);React.Children.forEach(node.props?.children,c=>buttons(c,out));return out;}
-let nodes=buttons(Widget({wide:true}));assert.equal(nodes.length,7);nodes[2].props.onClick();nodes[3].props.onClick();nodes[0].props.onClick();assert.equal(toggled,1);assert.deepEqual(played,['0']);assert.equal(opened,1);
-let saved;buttons(Widget({widgetId:'fixture',config:{glassTheme:'light',keep:true},onConfigChange:(id,c)=>saved=c}))[1].props.onClick();assert.equal(saved.glassTheme,'dark');assert.equal(saved.keep,true);
-buttons(Widget({wide:true,preview:true})).forEach(n=>{assert.equal(n.props.disabled,true);n.props.onClick();});assert.equal(toggled,1);assert.equal(played.length,1);assert.equal(opened,1);
+player.openFullPlayer=()=>assert.fail('Widget navigation must open Music App, not the full player');
+context.CustomEvent=class {constructor(type,init){this.type=type;this.detail=init.detail;}};
+context.window.dispatchEvent=e=>{assert.equal(e.type,'open-app');assert.equal(e.detail.appId,'music');opened++;};
+let nodes=buttons(Widget({wide:true}));assert.equal(nodes.length,6);
+nodes[1].props.onClick();assert.equal(toggled,1);assert.equal(opened,0);
+nodes.slice(2).forEach(n=>n.props.onClick());assert.deepEqual(played,['0','1','2','3']);assert.equal(opened,0);
+nodes[0].props.onClick();assert.equal(opened,1);
+assert.equal(Widget({config:{glassTheme:'dark'}}).props['data-glass-theme'],'auto');
+player.isPlaying=true;assert.equal(buttons(Widget({}))[1].props['aria-label'],'暂停音乐');player.isPlaying=false;
+buttons(Widget({wide:true,preview:true})).forEach(n=>{assert.equal(n.props.disabled,true);n.props.onClick();});assert.equal(toggled,1);assert.equal(played.length,4);assert.equal(opened,1);
 const fullSquare=renderToStaticMarkup(React.createElement(Widget,{}));const fullWide=renderToStaticMarkup(React.createElement(Widget,{wide:true}));
-player={...player,currentTrack:null,queue:[]};nodes=buttons(Widget({wide:true}));nodes[2].props.onClick();assert.equal(opened,2);
+player={...player,currentTrack:null};buttons(Widget({wide:true}))[1].props.onClick();assert.equal(played.at(-1),'0');assert.equal(opened,1);
+player={...player,queue:[]};nodes=buttons(Widget({wide:true}));assert.equal(nodes[1].props.disabled,true);nodes[1].props.onClick();assert.equal(opened,1);nodes[0].props.onClick();assert.equal(opened,2);
 const empty=renderToStaticMarkup(React.createElement(Widget,{wide:true}));
 assert.ok(!fs.readFileSync(path.join(root,'components/widgets/live-music-widget.tsx'),'utf8').includes('new Audio('),'Must reuse the existing audio engine');
 async function main(){

@@ -1012,19 +1012,23 @@
   pointer-events: none;
 }
 
-.chat-room-wrapper[data-imessage-private] .chat-bubble-role-user > .imessage-tapback-badge,
-.chat-room-wrapper[data-imessage-private] .chat-quote-message-user .chat-quote-reply > .imessage-tapback-badge {
-  left: -12px;
-  --im26-tapback-fill: var(--im26-blue);
-  --im26-tapback-glyph: #fff;
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-badge[data-tapback-by="user"],
+.chat-room-wrapper[data-imessage-private] .group-tapback-layer[data-tapback-by="user"] {
+  --im26-tapback-fill: var(--tapback-user-surface, var(--im26-base-blue));
+  --im26-tapback-glyph: var(--tapback-user-ink, #fff);
 }
 
-.chat-room-wrapper[data-imessage-private] .chat-bubble-role-assistant > .imessage-tapback-badge,
-.chat-room-wrapper[data-imessage-private] .chat-quote-message-assistant .chat-quote-reply > .imessage-tapback-badge {
-  right: -12px;
-  --im26-tapback-fill: var(--im26-incoming);
-  --im26-tapback-glyph: var(--im26-ink);
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-badge[data-tapback-by="assistant"],
+.chat-room-wrapper[data-imessage-private] .group-tapback-layer[data-tapback-by="assistant"] {
+  --im26-tapback-fill: var(--tapback-char-surface, var(--im26-base-incoming));
+  --im26-tapback-glyph: var(--tapback-char-ink, var(--im26-ink));
 }
+
+.chat-room-wrapper[data-imessage-private] .chat-bubble-role-user > .imessage-tapback-badge,
+.chat-room-wrapper[data-imessage-private] .chat-quote-message-user .chat-quote-reply > .imessage-tapback-badge { left: -12px; }
+
+.chat-room-wrapper[data-imessage-private] .chat-bubble-role-assistant > .imessage-tapback-badge,
+.chat-room-wrapper[data-imessage-private] .chat-quote-message-assistant .chat-quote-reply > .imessage-tapback-badge { right: -12px; }
 
 .chat-room-wrapper[data-imessage-private] .imessage-tapback-shape {
   position: absolute;

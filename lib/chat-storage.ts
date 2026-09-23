@@ -176,6 +176,10 @@ export type ChatMessage = {
         screenEffect?: "echo";
         mentions?: { characterId: string; name: string }[];
         amount?: number;          // 红包/转账金额
+        currency?: string;        // 转账原币种，如 USD/EUR/GBP/JPY/CNY
+        exchangeRateToCny?: number; // 发送/领取时固定的联网参考汇率
+        cnyAmount?: number;       // 已固定的人民币折算金额
+        exchangeRateAt?: string;
         count?: number;           // 红包个数
         label?: string;           // 红包留言/转账备注/照片描述/位置名/表情名
         photoGroupId?: string;    // 同一次发送的照片组 ID
@@ -293,6 +297,8 @@ export type ChatMessage = {
         adminMuteMinutes?: number;// 禁言时长（分钟）
         musicTitle?: string;      // 音乐标题
         musicArtist?: string;     // 音乐歌手
+        musicTrack?: import("./music-storage").MusicTrack; // Fixed recording; never persist an expiring play URL.
+        musicResolution?: "pending" | "resolved" | "unresolved";
         xiaohongshuAuthor?: string;       // 小红书分享作者
         xiaohongshuTitle?: string;        // 小红书分享标题
         xiaohongshuBody?: string;         // 小红书分享正文
@@ -1326,6 +1332,25 @@ export function pushChatMessage(msg: Omit<ChatMessage, "id" | "createdAt" | "sta
         window.dispatchEvent(new CustomEvent(CHAT_MESSAGE_PUSHED_EVENT, { detail: { message: newMsg } }));
     }
     emitChatPluginEvent("message.persisted", { message: newMsg });
+
+    if (newMsg.mediaType === "music_share" && !newMsg.mediaData?.musicTrack && typeof window !== "undefined") {
+        // All new shares (foreground/background/group) pass through this persistence boundary.
+        // Resolve metadata only: sharing must never interrupt playback.
+        const { musicTitle: title, musicArtist: artist } = newMsg.mediaData || {};
+        if (title) {
+            newMsg.mediaData = { ...newMsg.mediaData, musicResolution: "pending" };
+            dbPutMessage(newMsg);
+            void import("./music-share-resolution").then(module => module.resolveSharedSong(title, artist)).catch(() => null).then(track => {
+                const current = _messagesCache.find(item => item.id === newMsg.id);
+                if (!current || current.isRetracted || current.mediaType !== "music_share"
+                    || current.mediaData?.musicTitle !== title || current.mediaData?.musicArtist !== artist
+                    || current.mediaData?.musicTrack) return;
+                updateMessageMediaData(current.id, { ...current.mediaData,
+                    musicResolution: track ? "resolved" : "unresolved", ...(track ? { musicTrack: track } : {}) });
+                window.dispatchEvent(new CustomEvent("chat-messages-updated", { detail: { sessionId: current.sessionId } }));
+            });
+        }
+    }
 
     return newMsg;
 }

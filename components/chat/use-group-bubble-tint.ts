@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { extractAvatarNameColor, DEFAULT_AVATAR_NAME_COLOR } from "@/lib/avatar-name-color";
 import { loadChatSessions } from "@/lib/chat-storage";
 import { loadBubbleColors } from "@/lib/chat-bubble-color-store";
@@ -20,7 +20,7 @@ export function useGroupBubbleTint(characters: readonly { id: string; avatar?: s
         })).then(entries=>{if(active)setSamples(Object.fromEntries(entries));});
         return ()=>{active=false;};
     },[characters,config.charMode]);
-    return (id?:string,user=false):CSSProperties=>{
+    return useCallback((id?:string,user=false):CSSProperties=>{
         const sample = id ? samples[id] : undefined;
         const currentSample = sample && sample.src === characters.find(c => c.id === id)?.avatar && sample.color !== DEFAULT_AVATAR_NAME_COLOR ? sample.color : undefined;
         const colors = resolveBubbleColors(config, dark, user, currentSample);
@@ -32,5 +32,5 @@ export function useGroupBubbleTint(characters: readonly { id: string; avatar?: s
             "--bubble-surface-opacity": colors.opacity,
             ...(user ? { "--chat-send-surface": colors.background, "--chat-send-ink": colors.text } : {}),
         } as CSSProperties;
-    };
+    },[characters,config,dark,samples]);
 }

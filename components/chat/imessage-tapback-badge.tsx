@@ -1,22 +1,24 @@
 import { getTapbackGlyph, getTapbackLabel, normalizeGroupTapbacks, type GroupTapback } from "@/lib/chat-tapback";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
 interface IMessageTapbackBadgeProps {
     tapback?: string;
     tapbackBy?: "user" | "assistant";
     reactions?: GroupTapback[];
+    reactionStyleForActor?: (actorId: string) => CSSProperties | undefined;
 }
 
-export function IMessageTapbackBadge({ tapback, tapbackBy = "user", reactions }: IMessageTapbackBadgeProps) {
+export function IMessageTapbackBadge({ tapback, tapbackBy = "user", reactions, reactionStyleForActor }: IMessageTapbackBadgeProps) {
     const validReactions = normalizeGroupTapbacks(reactions);
-    if (validReactions.length) return <GroupTapbackStack reactions={validReactions} />;
+    if (validReactions.length) return <GroupTapbackStack reactions={validReactions} reactionStyleForActor={reactionStyleForActor} />;
     if (!tapback) return null;
     return (
         <span
             className="imessage-tapback-badge"
             data-tapback={tapback}
             data-tapback-by={tapbackBy}
+            style={reactionStyleForActor?.(tapbackBy === "user" ? "self" : "legacy-assistant")}
             role="img"
             aria-label={`Tapback：${getTapbackLabel(tapback)}`}
         >
@@ -41,7 +43,7 @@ function TapbackShape({ tail = true }: { tail?: boolean } = {}) {
             </svg>;
 }
 
-function GroupTapbackStack({ reactions }: { reactions: GroupTapback[] }) {
+function GroupTapbackStack({ reactions, reactionStyleForActor }: { reactions: GroupTapback[]; reactionStyleForActor?: (actorId: string) => CSSProperties | undefined }) {
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLButtonElement>(null);
     const closeRef = useRef<HTMLButtonElement>(null);
@@ -57,7 +59,7 @@ function GroupTapbackStack({ reactions }: { reactions: GroupTapback[] }) {
         <button ref={ref} type="button" className="imessage-tapback-badge group-tapback-stack" style={{ width: 28.6 + (displayed.length - 1) * 8 }} aria-label={`${reactions.length} 人回应，查看详情`} aria-expanded={open}
             onPointerDown={event => event.stopPropagation()} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }} onClick={event => { event.stopPropagation(); setOpen(value => !value); }}>
             <span className="group-tapback-visuals">
-            {displayed.map((item, index) => <span className="group-tapback-layer" key={item.actorId} style={{ left: index * 8, zIndex: displayed.length - index }} aria-hidden="true"><TapbackShape tail={index === 0} /><span className="imessage-tapback-glyph">{item.emoji}</span></span>)}
+            {displayed.map((item, index) => <span className="group-tapback-layer" data-tapback-by={item.actorId === "self" ? "user" : "assistant"} key={item.actorId} style={{ left: index * 8, zIndex: displayed.length - index, ...reactionStyleForActor?.(item.actorId) }} aria-hidden="true"><TapbackShape tail={index === 0} /><span className="imessage-tapback-glyph">{item.emoji}</span></span>)}
             {reactions.length > 3 && <span className="group-tapback-overflow">+{reactions.length - 3}</span>}
             </span>
         </button>

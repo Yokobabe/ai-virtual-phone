@@ -232,8 +232,8 @@ export function loadNativeTimeline(
                     const sn = msg.mediaData?.senderName;
                     const rn = msg.mediaData?.recipientName;
                     content = sn && rn
-                        ? `[转账:${msg.mediaData?.amount ?? 0}:${msg.mediaData?.label || "转账"}:${sn}:${rn}]`
-                        : `[转账:${msg.mediaData?.amount ?? 0}:${msg.mediaData?.label || "转账"}]`;
+                        ? `[转账:${msg.mediaData?.amount ?? 0}:${msg.mediaData?.currency || "CNY"}:${msg.mediaData?.label || "转账"}:${sn}:${rn}]`
+                        : `[转账:${msg.mediaData?.amount ?? 0}:${msg.mediaData?.currency || "CNY"}:${msg.mediaData?.label || "转账"}]`;
                 }
                 else if (msg.mediaType === "contact_card") {
                     content = `[名片:${msg.mediaData?.contactCardName || msg.mediaData?.label || "联系人"}]`;
@@ -342,7 +342,7 @@ export function loadNativeTimeline(
                 else if (msg.mediaType === "audio") content = `[语音条:${msg.mediaData?.label || "语音消息"}]`;
                 else if (msg.mediaType === "image") content = formatPhotoDirectiveForPrompt(msg);
                 else if (msg.mediaType === "red_packet") content = `[红包:${msg.mediaData?.amount ?? 0}:${msg.mediaData?.label || "恭喜发财"}]`;
-                else if (msg.mediaType === "transfer") content = `[转账:${msg.mediaData?.amount ?? 0}:${msg.mediaData?.label || "转账"}]`;
+                else if (msg.mediaType === "transfer") content = `[转账:${msg.mediaData?.amount ?? 0}:${msg.mediaData?.currency || "CNY"}:${msg.mediaData?.label || "转账"}]`;
                 else if (msg.mediaType === "contact_card") {
                     content = `[名片:${msg.mediaData?.contactCardName || msg.mediaData?.label || "联系人"}]`;
                 }

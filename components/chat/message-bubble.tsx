@@ -32,6 +32,7 @@ import { ChatPluginSlot } from "@/components/chat/chat-plugin-slot";
 import { CHAT_PLUGIN_SLOTS_CHANGED_EVENT, getChatPluginRuntime } from "@/lib/chat-plugin-runtime";
 import { IMessageTapbackBadge } from "./imessage-tapback-badge";
 import { ApplePayBrand } from "./apple-pay-brand";
+import { currencySymbol, normalizeCurrency, fetchCnyRate, cnyAmount } from "@/lib/exchange-rates";
 import { LocationCard } from "./location-map";
 import { getQuotePreview } from "@/lib/chat-quote-preview";
 
@@ -48,10 +49,11 @@ interface MessageBubbleProps {
     groupSize?: number;
     onShowDetail?: (msg: ChatMessage) => void;
     characterId?: string;
-    onMusicPlay?: (title: string, artist?: string) => void;
+    onMusicPlay?: (title: string, artist?: string, track?: import("@/lib/music-storage").MusicTrack) => void;
     onActionSelect?: (text: string) => void;
     displayContent?: string;
     defaultTranslationExpanded?: boolean;
+    reactionStyleForActor?: (actorId: string) => React.CSSProperties | undefined;
 }
 
 /** 聊天插件自定义消息气泡：把裸 DOM 容器交给注册了该 kind 的插件渲染 */
@@ -95,7 +97,7 @@ function PluginKindBubble({ msg, kind }: { msg: ChatMessage; kind: string }) {
  * Renders a message bubble based on its mediaType.
  * Falls back to ReactMarkdown for plain text messages.
  */
-export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, onPhotoAnnotationsSave, charName, userName, onSystemMessage, groupSize, onShowDetail, characterId, onMusicPlay, onActionSelect, displayContent, replyAccessory, quoteSource, quoteSourceStyle, defaultTranslationExpanded = false }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, onPhotoAnnotationsSave, charName, userName, onSystemMessage, groupSize, onShowDetail, characterId, onMusicPlay, onActionSelect, displayContent, replyAccessory, quoteSource, quoteSourceStyle, defaultTranslationExpanded = false, reactionStyleForActor }: MessageBubbleProps) {
     switch (msg.mediaType) {
         case "red_packet":
             return <RedPacketBubble msg={msg} charName={charName} userName={userName} groupSize={groupSize} onShowDetail={onShowDetail} />;
@@ -110,7 +112,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, onPhot
         case "app_card":
             return <AppCardBubble msg={msg} characterId={characterId} characterName={msg.senderName || charName} />;
         case "image":
-            return <ImageBubble msg={msg} onUpdate={onUpdate} onPhotoAnnotationsSave={onPhotoAnnotationsSave} characterId={characterId} />;
+            return <ImageBubble msg={msg} onUpdate={onUpdate} onPhotoAnnotationsSave={onPhotoAnnotationsSave} characterId={characterId} reactionStyleForActor={reactionStyleForActor} />;
         case "location":
             return <LocationBubble msg={msg} />;
         case "poke":
@@ -120,12 +122,12 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, onPhot
         case "dice":
             return <DiceBubble msg={msg} />;
         case "quote":
-            return <QuoteBubble msg={msg} displayContent={displayContent} replyAccessory={replyAccessory} quoteSource={quoteSource} quoteSourceStyle={quoteSourceStyle} defaultTranslationExpanded={defaultTranslationExpanded} />;
+            return <QuoteBubble msg={msg} displayContent={displayContent} replyAccessory={replyAccessory} quoteSource={quoteSource} quoteSourceStyle={quoteSourceStyle} defaultTranslationExpanded={defaultTranslationExpanded} reactionStyleForActor={reactionStyleForActor} />;
         case "music_share":
             return <MusicShareBubble msg={msg} onPlay={onMusicPlay} />;
         case "media_file":
             return msg.mediaData?.photoGroupId
-                ? <ImageBubble msg={msg} onUpdate={onUpdate} onPhotoAnnotationsSave={onPhotoAnnotationsSave} characterId={characterId} />
+                ? <ImageBubble msg={msg} onUpdate={onUpdate} onPhotoAnnotationsSave={onPhotoAnnotationsSave} characterId={characterId} reactionStyleForActor={reactionStyleForActor} />
                 : <MediaFileBubble msg={msg} onUpdate={onUpdate} characterId={characterId} />;
         case "xiaohongshu_note_share":
             return <XiaohongshuShareBubble msg={msg} />;
@@ -155,6 +157,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, onPhot
         if (prev.msg.isTyping !== next.msg.isTyping) return false;
         if (prev.msg.mediaData?.status !== next.msg.mediaData?.status) return false;
         if (prev.msg.mediaData?.label !== next.msg.mediaData?.label) return false;
+        if (prev.msg.mediaData?.musicTrack !== next.msg.mediaData?.musicTrack || prev.msg.mediaData?.musicResolution !== next.msg.mediaData?.musicResolution || prev.msg.mediaData?.musicArtist !== next.msg.mediaData?.musicArtist || prev.msg.mediaData?.musicTitle !== next.msg.mediaData?.musicTitle) return false;
         if (prev.msg.mediaData?.claimedBy?.length !== next.msg.mediaData?.claimedBy?.length) return false;
         if (prev.msg.mediaData?.appName !== next.msg.mediaData?.appName) return false;
         if (prev.msg.mediaData?.appCardTitle !== next.msg.mediaData?.appCardTitle) return false;
@@ -178,6 +181,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, onPhot
     if (prev.characterId !== next.characterId) return false;
     if (prev.displayContent !== next.displayContent) return false;
     if (prev.defaultTranslationExpanded !== next.defaultTranslationExpanded) return false;
+    if (prev.reactionStyleForActor !== next.reactionStyleForActor) return false;
     return true;
 });
 
@@ -753,6 +757,8 @@ function TransferBubble({ msg, charName, userName, onShowDetail }: {
         ? "bg-declined-gradient"
         : isReceived ? "bg-opened-gradient" : "bg-transfer-gradient";
     const amountText = formatApplePayAmount(d?.amount);
+    const currency = normalizeCurrency(d?.currency);
+    const symbol = currencySymbol(currency);
     const statusText = isReceived ? "已收款" : isDeclined ? "已拒绝" : "";
 
     return (
@@ -783,7 +789,7 @@ function TransferBubble({ msg, charName, userName, onShowDetail }: {
             <div className="imessage-transfer-card hidden" aria-label={`Apple Pay 转账 ¥${amountText}`}>
                 <div className="imessage-transfer-main">
                     <ApplePayBrand />
-                    <div className="imessage-transfer-amount">¥{amountText}</div>
+                    <div className="imessage-transfer-amount">{symbol}{amountText}</div>
                 </div>
                 <div className="imessage-transfer-footer">
                     <span className="imessage-transfer-note">{d?.label || "转账"}</span>
@@ -1398,7 +1404,7 @@ function PhotoAnnotationEditor(props: Omit<React.ComponentProps<typeof PhotoMark
     return <PhotoMarkupEditor {...props} renderLayer={(annotations, selectedId) => <PhotoAnnotationLayer annotations={annotations} selectedId={selectedId} />} />;
 }
 
-function PhotoGroupBubble({ msg, items, onUpdate, onPhotoAnnotationsSave }: { msg: ChatMessage; items: ChatPhotoGroupItem[]; onUpdate?: (updated: ChatMessage) => void; onPhotoAnnotationsSave?: MessageBubbleProps["onPhotoAnnotationsSave"] }) {
+function PhotoGroupBubble({ msg, items, onUpdate, onPhotoAnnotationsSave, reactionStyleForActor }: { msg: ChatMessage; items: ChatPhotoGroupItem[]; onUpdate?: (updated: ChatMessage) => void; onPhotoAnnotationsSave?: MessageBubbleProps["onPhotoAnnotationsSave"]; reactionStyleForActor?: MessageBubbleProps["reactionStyleForActor"] }) {
     const [resolved, setResolved] = useState<ChatPhotoGroupItem[]>(items);
     const [index, setIndex] = useState(() => Math.max(0, Math.min(items.length - 1, msg.mediaData?.photoGroupActiveIndex ?? 0)));
     const [dragX, setDragX] = useState(0);
@@ -1535,7 +1541,7 @@ function PhotoGroupBubble({ msg, items, onUpdate, onPhotoAnnotationsSave }: { ms
                             <PhotoAnnotationLayer annotations={item.annotations} />
                         </div>;
                     })}
-                    {resolved[index] && <div className="photo-front-reaction" style={{ transform: `translateX(${dragX}px)` }}><IMessageTapbackBadge tapback={resolved[index].tapback} tapbackBy={resolved[index].tapbackBy} reactions={resolved[index].tapbacks} /></div>}
+                    {resolved[index] && <div className="photo-front-reaction" data-message-role={msg.role} style={{ transform: `translateX(${dragX}px)` }}><IMessageTapbackBadge tapback={resolved[index].tapback} tapbackBy={resolved[index].tapbackBy} reactions={resolved[index].tapbacks} reactionStyleForActor={reactionStyleForActor} /></div>}
                 </div>
             </div>
             {detailOpen && createPortal(
@@ -1555,10 +1561,10 @@ function PhotoGroupBubble({ msg, items, onUpdate, onPhotoAnnotationsSave }: { ms
     );
 }
 
-function ImageBubble(props: { msg: ChatMessage; onUpdate?: (updated: ChatMessage) => void; onPhotoAnnotationsSave?: MessageBubbleProps["onPhotoAnnotationsSave"]; characterId?: string }) {
+function ImageBubble(props: { msg: ChatMessage; onUpdate?: (updated: ChatMessage) => void; onPhotoAnnotationsSave?: MessageBubbleProps["onPhotoAnnotationsSave"]; characterId?: string; reactionStyleForActor?: MessageBubbleProps["reactionStyleForActor"] }) {
     const items = props.msg.mediaData?.photoGroupItems;
     return items && items.length > 1
-        ? <PhotoGroupBubble msg={props.msg} items={items} onUpdate={props.onUpdate} onPhotoAnnotationsSave={props.onPhotoAnnotationsSave} />
+        ? <PhotoGroupBubble msg={props.msg} items={items} onUpdate={props.onUpdate} onPhotoAnnotationsSave={props.onPhotoAnnotationsSave} reactionStyleForActor={props.reactionStyleForActor} />
         : <SingleImageBubble {...props} />;
 }
 
@@ -1946,7 +1952,7 @@ function StickerBubble({ msg, characterId }: { msg: ChatMessage; characterId?: s
 
 // ── Quote ─────────────────────────────
 
-function QuoteBubble({ msg, displayContent, replyAccessory, quoteSource, quoteSourceStyle, defaultTranslationExpanded = false }: Pick<MessageBubbleProps, "msg" | "displayContent" | "replyAccessory" | "quoteSource" | "quoteSourceStyle" | "defaultTranslationExpanded">) {
+function QuoteBubble({ msg, displayContent, replyAccessory, quoteSource, quoteSourceStyle, defaultTranslationExpanded = false, reactionStyleForActor }: Pick<MessageBubbleProps, "msg" | "displayContent" | "replyAccessory" | "quoteSource" | "quoteSourceStyle" | "defaultTranslationExpanded" | "reactionStyleForActor">) {
     const d = msg.mediaData;
     return (
         <div className={`chat-quote-message chat-quote-message-${msg.role} max-w-full`}>
@@ -1966,6 +1972,7 @@ function QuoteBubble({ msg, displayContent, replyAccessory, quoteSource, quoteSo
                             tapback={d.tapback}
                             tapbackBy={d.tapbackBy || "user"}
                             reactions={d.tapbacks}
+                            reactionStyleForActor={reactionStyleForActor}
                         />
                     )}
                 </div>
@@ -1980,21 +1987,42 @@ function QuoteBubble({ msg, displayContent, replyAccessory, quoteSource, quoteSo
 interface MediaDetailModalProps {
     msg: ChatMessage;
     userName: string;
+    charName?: string;
     groupSize?: number;
     onAccept: (updatedMsg: ChatMessage, sysText: string, actionType: string) => void;
     onClose: () => void;
 }
 
-export function MediaDetailModal({ msg, userName, groupSize, onAccept, onClose }: MediaDetailModalProps) {
+export function MediaDetailModal({ msg, userName, charName, groupSize, onAccept, onClose }: MediaDetailModalProps) {
     const d = msg.mediaData;
     const isRedPacket = msg.mediaType === "red_packet";
     const isTransfer = msg.mediaType === "transfer";
     const isPaymentRequest = msg.mediaType === "payment_request";
     const [paymentError, setPaymentError] = useState("");
-    if (!isRedPacket && !isTransfer && !isPaymentRequest) return null;
 
     const isFromUser = msg.role === "user";
-    const senderDisplay = isFromUser ? userName : (d?.senderName || msg.senderName || "对方");
+    // Private incoming messages may not carry senderName in older stored records;
+    // the rendered character/alias is already supplied by the room as charName.
+    const senderDisplay = isFromUser ? userName : (d?.senderName || msg.senderName || charName || "对方");
+    const currency = normalizeCurrency(d?.currency);
+    const foreignAmount = currency !== "CNY" ? `${currencySymbol(currency)}${formatApplePayAmount(d?.amount)}` : "";
+    const [liveCny, setLiveCny] = useState<number | null>(typeof d?.cnyAmount === "number" ? d.cnyAmount : null);
+    const [liveRate, setLiveRate] = useState<number | null>(null);
+    useEffect(() => {
+        setLiveCny(null);
+        setLiveRate(null);
+        setPaymentError("");
+        if (!isTransfer || currency === "CNY" || typeof d?.cnyAmount === "number") return;
+        let active = true;
+        void fetchCnyRate(currency).then(rate => {
+            if (!active) return;
+            if (rate) { setLiveRate(rate); setLiveCny(cnyAmount(Number(d?.amount || 0), rate)); }
+            else setPaymentError("汇率查询失败，请关闭后重试；尚未收款。");
+        });
+        return () => { active = false; };
+    }, [msg.id, isTransfer, currency, d?.cnyAmount, d?.amount]);
+    const resolvedCny = typeof d?.cnyAmount === "number" ? d.cnyAmount : liveCny;
+    if (!isRedPacket && !isTransfer && !isPaymentRequest) return null;
 
     // ── Red packet state ──
     const claimedBy = d?.claimedBy || [];
@@ -2047,8 +2075,9 @@ export function MediaDetailModal({ msg, userName, groupSize, onAccept, onClose }
     };
 
     const handleTransferAccept = () => {
+        if (currency !== "CNY" && resolvedCny === null) { setPaymentError("正在查询最新汇率，请稍后再领取。"); return; }
         updateMessageMediaStatus(msg.id, "received");
-        const updatedData = { ...d, status: "received" as const };
+        const updatedData = { ...d, status: "received" as const, ...(currency !== "CNY" && resolvedCny !== null ? { cnyAmount: resolvedCny, exchangeRateToCny: d?.exchangeRateToCny ?? liveRate ?? undefined, exchangeRateAt: d?.exchangeRateAt || new Date().toISOString() } : {}) };
         onAccept({ ...msg, mediaData: updatedData }, `${userName}领取了${senderDisplay}的转账`, "accept_transfer");
     };
 
@@ -2146,7 +2175,8 @@ export function MediaDetailModal({ msg, userName, groupSize, onAccept, onClose }
                             <ApplePayBrand className="imessage-transfer-detail-brand hidden" />
                         </>
                     ) : <div className="media-modal-emoji">{isRedPacket ? "🧧" : "🧾"}</div>}
-                    <div className="media-modal-amount">¥{modalAmountText}</div>
+                    <div className="media-modal-amount">{currencySymbol(currency)}{currency === "CNY" ? modalAmountText : formatApplePayAmount(d?.amount)}</div>
+                    {isTransfer && foreignAmount && <div className="media-modal-sub">按汇率折算为人民币 ¥{resolvedCny === null ? "查询中" : formatApplePayAmount(resolvedCny)}</div>}
                     <div className="media-modal-label">
                         {isRedPacket ? (d?.label || "恭喜发财，大吉大利") : isTransfer ? (d?.label || "转账") : "代付请求"}
                     </div>
@@ -2526,29 +2556,43 @@ function MediaFileBubble({
     );
 }
 
-function MusicShareBubble({ msg, onPlay }: { msg: ChatMessage; onPlay?: (title: string, artist?: string) => void }) {
-    const title = msg.mediaData?.musicTitle || "未知歌曲";
-    const artist = msg.mediaData?.musicArtist || "";
+function MusicShareBubble({ msg, onPlay }: { msg: ChatMessage; onPlay?: MessageBubbleProps["onMusicPlay"] }) {
+    const track = msg.mediaData?.musicTrack;
+    const title = track?.title || msg.mediaData?.musicTitle || "未知歌曲";
+    const artist = track?.artist || msg.mediaData?.musicArtist || "";
+    const [failedCover, setFailedCover] = useState<string>();
+    const pending = msg.mediaData?.musicResolution === "pending";
+    const unresolved = msg.mediaData?.musicResolution === "unresolved";
+    const canPlay = !!onPlay && !pending && !unresolved;
     return (
         <div
             className="chat-music-share-card"
-            style={{ cursor: "pointer" }}
-            onClick={(e) => { e.stopPropagation(); onPlay?.(title, artist || undefined); }}
+            role={canPlay ? "button" : undefined}
+            tabIndex={canPlay ? 0 : undefined}
+            aria-label={`播放音乐：${title}${artist ? ` · ${artist}` : ""}`}
+            onKeyDown={(e) => {
+                if (canPlay && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault(); e.stopPropagation(); onPlay?.(title, artist || undefined, track);
+                }
+            }}
+            onClick={(e) => { e.stopPropagation(); if (canPlay) onPlay?.(title, artist || undefined, track); }}
         >
             <div className="chat-music-share-body">
                 <div className="chat-music-share-cover">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c-music-accent, #7c9a92)" strokeWidth="1.2">
+                    {track?.coverUrl && failedCover !== track.coverUrl ? <img src={track.coverUrl} alt="专辑封面" loading="lazy" onError={() => setFailedCover(track.coverUrl)} /> : <svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                         <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
-                    </svg>
+                    </svg>}
                 </div>
                 <div className="chat-music-share-info">
                     <div className="chat-music-share-title">{title}</div>
                     {artist && <div className="chat-music-share-artist">{artist}</div>}
                 </div>
+                {canPlay && <span className="chat-music-share-play" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5a1 1 0 0 1 1.5-.86l10 6.5a1 1 0 0 1 0 1.72l-10 6.5A1 1 0 0 1 8 18.5z" /></svg></span>}
             </div>
             <div className="chat-music-share-footer">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-                <span>音乐</span>
+                <svg aria-hidden="true" width="13" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.54c.03 3.23 2.83 4.3 2.86 4.31-.02.08-.45 1.54-1.48 3.05-.9 1.3-1.83 2.6-3.3 2.63-1.44.03-1.9-.85-3.55-.85s-2.17.82-3.54.88c-1.42.05-2.5-1.42-3.4-2.72-1.85-2.67-3.27-7.55-1.37-10.85.94-1.64 2.62-2.68 4.44-2.7 1.39-.03 2.7.93 3.55.93.85 0 2.45-1.15 4.13-.98.7.03 2.67.28 3.93 2.12-.1.06-2.35 1.37-2.27 4.18ZM14.34 4.47c.75-.91 1.25-2.18 1.11-3.44-1.08.04-2.39.72-3.16 1.63-.7.8-1.32 2.1-1.15 3.34 1.2.09 2.42-.61 3.2-1.53Z" /></svg>
+                <span>Music</span>
+                {(pending || unresolved) && <span className="chat-music-share-status" role="status">{pending ? "正在匹配歌曲" : "暂未匹配到此版本"}</span>}
             </div>
         </div>
     );

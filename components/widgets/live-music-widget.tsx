@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties } from "react";
-import { Music2, Pause, Play, Sun, Moon, SunMoon } from "lucide-react";
+import { Music2, Pause, Play } from "lucide-react";
 import { MusicMarquee } from "@/components/widgets/music-marquee";
 import { useMusicControlsOptional } from "@/lib/music-context";
 import type { MusicTrack } from "@/lib/music-storage";
@@ -60,44 +60,33 @@ function Cover({ track }: { track: MusicTrack | null }) {
   </span>;
 }
 
-export function LiveMusicWidget({ wide = false, preview = false, config, widgetId, onConfigChange }: {
+export function LiveMusicWidget({ wide = false, preview = false }: {
   wide?: boolean; preview?: boolean; config?: Record<string, unknown>; widgetId?: string;
   onConfigChange?: (id: string, config: Record<string, unknown>) => void;
 }) {
-  const theme = config?.glassTheme === "light" || config?.glassTheme === "dark" ? config.glassTheme : "auto";
-  const switchTheme = () => {
-    if (preview || !widgetId) return;
-    onConfigChange?.(widgetId, { ...config, glassTheme: theme === "auto" ? "light" : theme === "light" ? "dark" : "auto" });
-  };
   const player = useMusicControlsOptional();
   const track = player?.currentTrack || null;
   const color = useCoverColor(track?.coverUrl);
   const choices = (player?.queue || []).filter((item, index, list) => list.findIndex(other => other.id === item.id) === index).slice(0, 4);
   const open = () => {
     if (preview) return;
-    if (track) player?.openFullPlayer();
-    else window.dispatchEvent(new CustomEvent("open-app", { detail: { appId: "music" } }));
+    window.dispatchEvent(new CustomEvent("open-app", { detail: { appId: "music" } }));
   };
   const toggle = () => {
     if (preview) return;
     if (track) player?.togglePlay();
     else if (choices[0]) player?.playTrack(choices[0]);
-    else open();
   };
   return <section className={`live-music-widget ${wide ? "live-music-wide" : "live-music-square"}`}
-    data-glass-theme={theme}
+    data-glass-theme="auto"
     aria-label={wide ? "音乐 · 播放队列" : "音乐 · 正在播放"}
     style={{ "--live-music-bg": color } as CSSProperties}>
     <div className="live-music-top">
-      <button type="button" className="live-music-open" onClick={open} disabled={preview} aria-label={track ? `打开播放器：${track.title}` : "打开音乐应用"}>
+      <button type="button" className="live-music-open" onClick={open} disabled={preview} aria-label="打开音乐应用">
         <Cover track={track} />
         <span className="live-music-info"><strong><MusicMarquee text={track?.title || "开始听歌"} /></strong><span>{track?.artist || "打开音乐，选一首喜欢的"}</span></span>
       </button>
-      <button type="button" className="live-music-theme" onClick={switchTheme} disabled={preview || !onConfigChange}
-        aria-label={`组件外观：${theme === "auto" ? "跟随系统" : theme === "light" ? "日间" : "夜间"}，点击切换`}>
-        {theme === "auto" ? <SunMoon aria-hidden="true" /> : theme === "light" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
-      </button>
-      <button type="button" className="live-music-toggle" onClick={toggle} disabled={preview || !player}
+      <button type="button" className="live-music-toggle" onClick={toggle} disabled={preview || !player || (!track && !choices.length)}
         aria-label={player?.isPlaying ? "暂停音乐" : "播放音乐"}>
         {player?.isPlaying ? <Pause fill="currentColor" aria-hidden="true" /> : <Play fill="currentColor" aria-hidden="true" />}
       </button>

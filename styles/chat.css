@@ -1374,8 +1374,8 @@
 }
 
 .chat-bubble-media.chat-bubble-music-share {
-  border-radius: 16px;
-  box-shadow: var(--chat-bubble-shadow, 0 2px 6px rgba(0,0,0,0.02)) !important;
+  border-radius: 22px;
+  box-shadow: none !important;
 }
 
 /* ── Gift Card ── */
@@ -2125,27 +2125,40 @@
 }
 
 .chat-music-share-card {
-  width: 220px;
-  border-radius: 16px;
+  --c-music-text: #242428;
+  --c-music-accent: #74747d;
+  width: 260px;
+  max-width: 100%;
+  box-sizing: border-box;
+  border-radius: 22px;
   overflow: hidden;
-  background: var(--c-music-surface, rgba(255,255,255,0.06));
-  border: 1px solid var(--c-music-surface-solid, rgba(255,255,255,0.12));
+  background: linear-gradient(145deg, rgba(255,255,255,.88), rgba(242,242,247,.82));
+  border: 1px solid rgba(255,255,255,.72);
   backdrop-filter: blur(16px);
-  box-shadow: none;
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 16px rgba(25,25,35,.06), inset 0 0 0 1px rgba(25,25,35,.035);
+  text-align: left;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
+.chat-music-share-card[role="button"] { cursor:pointer; }
+.chat-music-share-card:focus-visible { outline:2px solid #fa5268; outline-offset:3px; }
+.chat-music-share-card[role="button"]:active .chat-music-share-play { transform:scale(.96); }
+.chat-music-share-play { width:40px; height:40px; flex-shrink:0; display:grid; place-items:center; border-radius:50%; color:var(--c-music-text); background:rgba(120,120,128,.10); }
 
 .chat-music-share-body {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px;
+  gap: 12px;
+  padding: 14px;
 }
 
 .chat-music-share-cover {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  background: var(--c-music-surface-solid, rgba(255,255,255,0.12));
+  width: 56px;
+  height: 56px;
+  border-radius: 13px;
+  color: #fff;
+  background: linear-gradient(145deg, #ff8590, #fa5268 55%, #df3655);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 3px 8px rgba(220,45,75,.16);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2158,7 +2171,8 @@
 }
 
 .chat-music-share-title {
-  font-size: calc(11.7px*var(--app-text-scale,1));
+  font-size: calc(14px*var(--app-text-scale,1));
+  line-height: 1.35;
   font-weight: 600;
   color: var(--c-music-text, #2d3b36);
   white-space: nowrap;
@@ -2167,7 +2181,7 @@
 }
 
 .chat-music-share-artist {
-  font-size: calc(9.9px*var(--app-text-scale,1));
+  font-size: calc(11px*var(--app-text-scale,1));
   color: var(--c-music-accent, #7c9a92);
   margin-top: 3px;
   white-space: nowrap;
@@ -2178,12 +2192,18 @@
 .chat-music-share-footer {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border-top: 1px solid var(--c-music-surface, rgba(255,255,255,0.08));
+  gap: 5px;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(120,120,128,.12);
   color: var(--c-music-accent, #7c9a92);
-  font-size: calc(9px*var(--app-text-scale,1));
-  opacity: 0.7;
+  font-size: calc(10px*var(--app-text-scale,1));
+}
+.chat-music-share-cover { overflow:hidden; }
+.chat-music-share-cover img { width:100%; height:100%; object-fit:cover; }
+.chat-music-share-status { margin-left:auto; font-size:10px; }
+@media(prefers-color-scheme:dark) {
+  .chat-music-share-card { --c-music-text:#f5f5f7; --c-music-accent:#b0b0b8; background:linear-gradient(145deg,rgba(48,48,54,.94),rgba(32,32,38,.90)); border-color:rgba(255,255,255,.13); box-shadow:0 4px 16px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.05); }
+  .chat-music-share-play { background:rgba(255,255,255,.10); }
 }
 
 /* ── Media File Card ── */

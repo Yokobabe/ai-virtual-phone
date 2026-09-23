@@ -20,6 +20,7 @@ import { formatShoppingPaymentRequestHistory } from "./shopping-payment-request"
 import { buildGroupAdminBracketText } from "./group-admin";
 import { describePhotoAnnotations } from "./chat-photo-markup";
 import { PHOTO_DOODLE_GUIDANCE } from "./photo-doodle";
+import { TRANSFER_CURRENCY_GUIDANCE } from "./transfer-protocol";
 import { albumChatContext } from "./photo-album-discussion";
 
 export type LLMMessageRole = "system" | "user" | "assistant" | "tool";
@@ -1166,6 +1167,7 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
     }
 
     if (input.appId === "chat" || !input.appId) {
+        finalPayload.push({ role: "system", content: TRANSFER_CURRENCY_GUIDANCE, _debugMeta: { marker: "transfer_currency_protocol" } });
         const albumContext = albumChatContext(input.character.id);
         if (albumContext) finalPayload.push({ role: "system", content: albumContext, _debugMeta: { marker: "shared_album_context" } });
     }
@@ -1189,8 +1191,8 @@ export function formatRichMediaForHistory(msg: ChatMessage, userName: string, ch
             const sn = d?.senderName;
             const rn = d?.recipientName;
             return isGroup && sn && rn
-                ? `[转账:${d?.amount ?? 0}:${d?.label ?? "转账"}:${sn}:${rn}]`
-                : `[转账:${d?.amount ?? 0}:${d?.label ?? "转账"}]`;
+                ? `[转账:${d?.amount ?? 0}:${d?.currency || "CNY"}:${d?.label ?? "转账"}:${sn}:${rn}]`
+                : `[转账:${d?.amount ?? 0}:${d?.currency || "CNY"}:${d?.label ?? "转账"}]`;
         }
         case "gift": {
             const giftName = d?.giftName || d?.label || "礼物";
@@ -2267,6 +2269,7 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
         marker: "photoMarkupCapability",
     });
 
+    blocks.push({ text: TRANSFER_CURRENCY_GUIDANCE, role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "transfer_currency_protocol" });
     // Sort: depth descending, then order ascending
     blocks.sort((a, b) => {
         if (b.depth !== a.depth) return b.depth - a.depth;

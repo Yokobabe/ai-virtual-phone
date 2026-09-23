@@ -227,30 +227,72 @@
   .apple-social-page > .page-header .page-back-btn { border-color: rgba(255,255,255,.22); }
 }
 
-/* Clear glass, responsive edge-to-edge width with 20px gutters; height unchanged. */
+/* Compact chat dock: wide capsule, evenly spaced slots, and a quiet active pill. */
 .chat-app > .chat-tab-bar.chat-bottom-glass-bar {
   left:50%; right:auto; transform:translateX(-50%);
-  width:calc(100% - 40px); height:77px; min-height:77px;
+  width:min(calc(100% - 44px), 360px); height:68px; min-height:68px;
   bottom:max(12px, env(safe-area-inset-bottom, 0px));
-  padding:10px 8px; border-radius:28.5px;
-  border:1px solid rgba(255,255,255,.9);
-  background:rgba(250,250,252,.62);
-  backdrop-filter:blur(22px) saturate(160%);
-  -webkit-backdrop-filter:blur(22px) saturate(160%);
-  box-shadow:0 2px 7px rgba(53,61,73,.05), inset 0 1px 0 rgba(255,255,255,.9);
+  padding:4px; border-radius:32px;
+  border:1px solid rgba(255,255,255,.72);
+  background:rgba(250,250,252,.52);
+  backdrop-filter:blur(18px) saturate(155%);
+  -webkit-backdrop-filter:blur(18px) saturate(155%);
+  box-shadow:0 8px 22px rgba(53,61,73,.10), inset 0 1px 0 rgba(255,255,255,.88);
 }
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar::before {
+  content:"";
+  position:absolute;
+  z-index:0;
+  left:4px;
+  top:4px;
+  bottom:4px;
+  width:calc((100% - 8px) / 4);
+  border-radius:28px;
+  background:rgba(120,120,128,.14);
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.72), 0 1px 3px rgba(40,45,55,.05);
+  pointer-events:none;
+  transition:transform 380ms cubic-bezier(.22,1,.36,1), background-color 220ms ease, box-shadow 220ms ease;
+}
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar[data-active-tab="contacts"]::before { transform:translateX(100%); }
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar[data-active-tab="feeds"]::before { transform:translateX(200%); }
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar[data-active-tab="me"]::before { transform:translateX(300%); }
 .chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab {
-  min-width:0; min-height:44px; padding:4px 0; gap:5px; border-radius:16px;
-  background:transparent; box-shadow:none; color:#727782;
+  min-width:0; min-height:0; padding:4px 0; gap:3px; border-radius:26px;
+  position:relative; z-index:1; background:transparent; box-shadow:none; color:#727782;
+  transition:transform 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
-.chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab svg { width:24px; height:24px; stroke-width:1.6; }
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab > svg { width:26px; height:26px; stroke-width:1.6; transition:transform 360ms cubic-bezier(.22,1,.36,1), filter 220ms ease; }
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab > svg.chat-tab-svg { fill:none; stroke:currentColor; stroke-linecap:round; stroke-linejoin:round; }
 .chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab span { font-size:10px; line-height:1.2; }
-.chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab-active { color:#20242b; font-weight:600; }
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab-active {
+  color:#20242b; font-weight:600;
+  background:transparent;
+  box-shadow:none;
+}
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab-active > svg {
+  transform:scale(1.14);
+  filter:drop-shadow(0 1px 1px rgba(30,35,45,.10));
+}
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar[data-active-tab="messages"] .chat-tab:nth-child(2) > svg,
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar[data-active-tab="contacts"] .chat-tab:nth-child(1) > svg,
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar[data-active-tab="contacts"] .chat-tab:nth-child(3) > svg,
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar[data-active-tab="feeds"] .chat-tab:nth-child(2) > svg,
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar[data-active-tab="feeds"] .chat-tab:nth-child(4) > svg,
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar[data-active-tab="me"] .chat-tab:nth-child(3) > svg {
+  transform:scale(1.06);
+}
+.chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab:active { transform:scale(.96); }
+@media (hover:hover) and (pointer:fine) {
+  .chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab:not(.chat-tab-active):hover {
+    background:rgba(120,120,128,.07);
+  }
+}
 @media(prefers-color-scheme:dark) {
   .chat-app > .chat-tab-bar.chat-bottom-glass-bar {
-    background:rgba(38,38,42,.72); border-color:rgba(255,255,255,.22);
-    box-shadow:0 2px 7px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.12);
+    background:rgba(38,38,42,.66); border-color:rgba(255,255,255,.22);
+    box-shadow:0 8px 22px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.12);
   }
   .chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab { color:#a2a5ae; }
-  .chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab-active { color:#fff; }
+  .chat-app > .chat-tab-bar.chat-bottom-glass-bar::before { background:rgba(255,255,255,.14); box-shadow:inset 0 1px 1px rgba(255,255,255,.12), 0 1px 3px rgba(0,0,0,.12); }
+  .chat-app > .chat-tab-bar.chat-bottom-glass-bar .chat-tab-active { color:#fff; background:transparent; }
 }

@@ -118,17 +118,18 @@ const RICH_PATTERNS: {
         }),
     },
     {
-        // 兼容两种格式：[转账:金额:留言] (1:1) 和 [转账:金额:留言:转账人:收款人] (群聊)
-        regex: /\[转账[：:](\d+(?:\.\d+)?)[：:]([^\]：:]*?)(?:[：:]([^\]：:]*?)[：:]([^\]]*?))?\]/,
+        // 兼容旧格式，并支持 [转账:金额:币种:留言] 及群聊双方字段。
+        regex: /\[转账[：:](\d+(?:\.\d+)?)[：:](?:([A-Za-z]{3})[：:])?([^\]：:]*?)(?:[：:]([^\]：:]*?)[：:]([^\]]*?))?\]/,
         build: (m) => ({
             content: "",
             mediaType: "transfer",
             mediaData: {
                 amount: parseFloat(m[1]),
-                label: m[2]?.trim() || "转账",
+                currency: m[2]?.toUpperCase() || "CNY",
+                label: m[3]?.trim() || "转账",
                 status: "pending" as const,
-                senderName: m[3]?.trim() || "",
-                recipientName: m[4]?.trim() || "",
+                senderName: m[4]?.trim() || "",
+                recipientName: m[5]?.trim() || "",
             },
         }),
     },
@@ -383,14 +384,15 @@ const RICH_PATTERNS: {
         },
     },
     {
-        // [音乐分享:歌名] — AI shares a song as a card
+        // [音乐分享:歌名|歌手] — keep old title-only messages compatible.
         regex: new RegExp(`\\[音乐分享${C}([^\\]]+)\\]`),
         build: (m) => {
-            const title = m[1].trim();
+            const [title, ...artistParts] = m[1].split("|").map(part => part.trim());
+            const artist = artistParts.join("|");
             return {
                 content: "",
                 mediaType: "music_share" as const,
-                mediaData: { musicTitle: title, label: title },
+                mediaData: { musicTitle: title, ...(artist ? { musicArtist: artist } : {}), label: title },
             };
         },
     },
