@@ -37,7 +37,7 @@ import { useChatBottomReserve } from "./use-chat-bottom-reserve";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 
 import { loadCharacters } from "@/lib/character-storage";
 import { Character } from "@/lib/character-types";
@@ -119,7 +119,9 @@ import {
     getTapbackGlyph,
     IMESSAGE_TAPBACK_APPLIED_EVENT,
     IMESSAGE_TAPBACKS_UPDATED_EVENT,
+    isNativeTapbackEmoji,
     loadIMessageTapbacks,
+    saveIMessageTapbacks,
     type IMessageTapbackCandidate,
     type MessageTapback,
 } from "@/lib/chat-tapback";
@@ -1455,6 +1457,14 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
     // Message Actions state
     const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+    const [tapbackInputTarget, setTapbackInputTarget] = useState<
+        { mode: "react"; message: ChatMessage } | { mode: "replace"; message: ChatMessage; index: number } | null
+    >(null);
+    const [tapbackInputDraft, setTapbackInputDraft] = useState("");
+    const [tapbackInputError, setTapbackInputError] = useState("");
+    const tapbackInputRef = useRef<HTMLInputElement>(null);
+    const tapbackPressRef = useRef<{ id: string; pointerId: number; startedAt: number } | null>(null);
+    const suppressTapbackClickRef = useRef<string | null>(null);
     const [contextMenuAnchor, setContextMenuAnchor] = useState<ContextMenuAnchor | null>(null);
     const [contextFocusShift, setContextFocusShift] = useState(0);
     const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
@@ -1597,6 +1607,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         setActiveOfflineTarget(null);
         setContextMenuAnchor(null);
         setContextFocusShift(0);
+        setTapbackInputTarget(null);
+        setTapbackInputError("");
     };
 
     const openMessageContextMenu = (msgId: string, anchor: ContextMenuAnchor, target?: HTMLElement | null) => {
@@ -1657,7 +1669,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         });
 
         return () => window.cancelAnimationFrame(frame);
-    }, [activeMessageId, contextMenuAnchor?.focusBubble]);
+    }, [activeMessageId, contextMenuAnchor?.focusBubble, tapbackInputTarget]);
 
     const openOfflineContextMenu = (target: OfflineActionTarget, anchor: ContextMenuAnchor) => {
         setActiveMessageId(null);
@@ -1695,6 +1707,38 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         }
         updateMessageMediaData(storedMessageId, nextMediaData);
         syncMessagesFromStorage();
+        closeContextMenu();
+    };
+
+    const openTapbackInput = (target: NonNullable<typeof tapbackInputTarget>) => {
+        flushSync(() => {
+            setTapbackInputTarget(target);
+            setTapbackInputDraft("");
+            setTapbackInputError("");
+        });
+        // Focusing in the user's pointer/click event gives mobile browsers the
+        // best chance to show the keyboard; the field also remains tappable.
+        tapbackInputRef.current?.focus();
+    };
+
+    const submitTapbackInput = () => {
+        if (!tapbackInputTarget) return;
+        const emoji = tapbackInputDraft.trim();
+        if (!isNativeTapbackEmoji(emoji)) {
+            setTapbackInputError("请输入一个完整的 emoji 表情");
+            return;
+        }
+        if (tapbackInputTarget.mode === "replace") {
+            const glyphs = tapbackCandidates.map((item, index) => index === tapbackInputTarget.index ? emoji : item.glyph);
+            try {
+                setTapbackCandidates(saveIMessageTapbacks(glyphs));
+            } catch (error) {
+                setTapbackInputError(error instanceof Error ? error.message : "保存失败");
+                return;
+            }
+        } else {
+            handleTapback(tapbackInputTarget.message, emoji);
+        }
         closeContextMenu();
     };
 
@@ -5592,22 +5636,119 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             m = photos[photos[0]?.mediaData?.photoGroupActiveIndex ?? 0] || m;
         }
         const storedMessageId = getStoredActionMessageId(m);
-        const tapbackPicker = (
+        const isTapbackInputOpen = tapbackInputTarget?.message.id === m.id;
+        const tapbackPicker = isTapbackInputOpen ? (
+            <form
+                className="imessage-tapback-inline-input"
+                data-mode={tapbackInputTarget.mode}
+                role="dialog"
+                aria-label={tapbackInputTarget.mode === "replace" ? "替换 Tapback 候选" : "输入 Tapback 表情"}
+                onSubmit={event => { event.preventDefault(); submitTapbackInput(); }}
+                onKeyDown={event => { if (event.key === "Escape") setTapbackInputTarget(null); }}
+                onPointerDown={event => event.stopPropagation()}
+            >
+                {tapbackInputTarget.mode === "replace" && (
+                    <span className="imessage-tapback-replace-glyph" aria-hidden="true">
+                        {tapbackCandidates[tapbackInputTarget.index]?.glyph}
+                    </span>
+                )}
+                <label className="imessage-tapback-inline-field">
+                    <span className="sr-only">
+                        {tapbackInputTarget.mode === "replace" ? "输入新的候选 Emoji" : "输入一个 Emoji 回应当前消息"}
+                    </span>
+                    <input
+                        ref={tapbackInputRef}
+                        type="text"
+                        value={tapbackInputDraft}
+                        onChange={event => { setTapbackInputDraft(event.target.value); setTapbackInputError(""); }}
+                        maxLength={32}
+                        autoComplete="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        enterKeyHint="done"
+                        aria-label="一个 emoji 表情"
+                        aria-invalid={!!tapbackInputError}
+                        placeholder={tapbackInputTarget.mode === "replace" ? "输入新 Emoji" : "输入 Emoji"}
+                    />
+                    {tapbackInputError && (
+                        <span className="imessage-tapback-inline-error" role="alert" aria-label={tapbackInputError} title={tapbackInputError}>
+                            <AlertCircle size={14} strokeWidth={2} aria-hidden="true" />
+                        </span>
+                    )}
+                </label>
+                <button
+                    type="button"
+                    className="imessage-tapback-inline-button"
+                    onClick={() => { setTapbackInputTarget(null); setTapbackInputError(""); }}
+                    aria-label="取消"
+                >
+                    <X size={17} strokeWidth={1.9} aria-hidden="true" />
+                </button>
+                <button
+                    type="submit"
+                    className="imessage-tapback-inline-button imessage-tapback-inline-submit"
+                    aria-label={tapbackInputTarget.mode === "replace" ? "替换候选" : "发送回应"}
+                >
+                    <Check size={18} strokeWidth={2.2} aria-hidden="true" />
+                </button>
+            </form>
+        ) : (
             <div className="imessage-tapback-picker" role="group" aria-label="回应消息">
-                {tapbackCandidates.map(item => (
+                {tapbackCandidates.map((item, index) => (
                     <button
                         type="button"
                         key={item.id}
                         className="imessage-tapback-option"
                         data-tapback={item.id}
                         {...((session.isGroup ? getGroupTapbacks(m).some(reaction => reaction.actorId === "self" && reaction.emoji === item.glyph) : getTapbackGlyph(m.mediaData?.tapback) === item.glyph && m.mediaData?.tapbackBy === "user") ? { "data-selected": "" } : {})}
-                        onClick={() => handleTapback(m, item.id)}
-                        aria-label={item.label}
-                        title={item.label}
+                        onPointerDown={event => {
+                            if (!event.isPrimary) return;
+                            suppressTapbackClickRef.current = null;
+                            tapbackPressRef.current = { id: item.id, pointerId: event.pointerId, startedAt: Date.now() };
+                        }}
+                        onPointerUp={event => {
+                            const press = tapbackPressRef.current;
+                            tapbackPressRef.current = null;
+                            if (press?.id !== item.id || press.pointerId !== event.pointerId || Date.now() - press.startedAt < 500) return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            suppressTapbackClickRef.current = item.id;
+                            openTapbackInput({ mode: "replace", message: m, index });
+                        }}
+                        onPointerCancel={() => { tapbackPressRef.current = null; }}
+                        onPointerLeave={() => { tapbackPressRef.current = null; }}
+                        onContextMenu={event => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            suppressTapbackClickRef.current = item.id;
+                            openTapbackInput({ mode: "replace", message: m, index });
+                        }}
+                        onClick={() => {
+                            if (suppressTapbackClickRef.current === item.id) {
+                                suppressTapbackClickRef.current = null;
+                                return;
+                            }
+                            handleTapback(m, item.id);
+                        }}
+                        onKeyDown={event => {
+                            if (event.shiftKey && event.key === "Enter") {
+                                event.preventDefault();
+                                openTapbackInput({ mode: "replace", message: m, index });
+                            }
+                        }}
+                        aria-label={`${item.label}，长按可替换候选`}
+                        title={`${item.label} · 长按替换`}
                     >
                         <span aria-hidden="true">{item.glyph}</span>
                     </button>
                 ))}
+                <button
+                    type="button"
+                    className="imessage-tapback-option imessage-tapback-more"
+                    onClick={event => { event.stopPropagation(); openTapbackInput({ mode: "react", message: m }); }}
+                    aria-label="输入其他 emoji 回应当前消息"
+                    title="其他 emoji"
+                ><span aria-hidden="true">＋</span></button>
             </div>
         );
         const pluginActions = getChatPluginRuntime().getMessageActions(m);
@@ -5685,13 +5826,15 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     >
                         {tapbackPicker}
                     </div>
-                    <div
-                        className="ctx-menu imessage-context-index"
-                        data-role={m.role}
-                        onPointerDown={e => e.stopPropagation()}
-                    >
-                        {actionIndex}
-                    </div>
+                    {!isTapbackInputOpen && (
+                        <div
+                            className="ctx-menu imessage-context-index"
+                            data-role={m.role}
+                            onPointerDown={e => e.stopPropagation()}
+                        >
+                            {actionIndex}
+                        </div>
+                    )}
                 </>
             );
             return focusMenu;
@@ -5704,8 +5847,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 className="ctx-menu chat-floating-ctx-menu flex flex-col items-center gap-[6px] py-[4px] px-0"
                 data-role={m.role}>
                 {tapbackPicker}
-                {actionIndex}
-                <div data-menu-triangle className="ctx-menu-triangle absolute -top-[6px] w-0 h-0" />
+                {!isTapbackInputOpen && actionIndex}
+                {!isTapbackInputOpen && <div data-menu-triangle className="ctx-menu-triangle absolute -top-[6px] w-0 h-0" />}
             </div>
         );
         return wrapperRef.current ? createPortal(menu, wrapperRef.current) : menu;
@@ -6293,6 +6436,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             }}
             data-imessage-private=""
             data-chat-dark={chatAppearance.dark || undefined}
+            data-glass-bubbles={session.glassBubblesEnabled || undefined}
             data-dark-wallpaper={chatAppearance.darkWallpaper || undefined}
             {...(session.isGroup ? { "data-imessage-group": "" } : {})}
             {...(quotingMessage ? { "data-imessage-quote-compose": "" } : {})}

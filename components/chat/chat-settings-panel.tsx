@@ -401,6 +401,7 @@ export function ChatSettingsPanel({
     const [visionImagePromptLimit, setVisionImagePromptLimit] = useState(() => normalizeVisionImagePromptLimit(session.visionImagePromptLimit));
     const [bilingualTranslationEnabled, setBilingualTranslationEnabled] = useState(session.bilingualTranslationEnabled !== false);
     const [collapseBilingualTranslation, setCollapseBilingualTranslation] = useState(session.collapseBilingualTranslation !== false);
+    const [glassBubblesEnabled, setGlassBubblesEnabled] = useState(session.glassBubblesEnabled === true);
     const [discardInvalidStickers, setDiscardInvalidStickers] = useState(session.discardInvalidStickers === true);
     const [tapbackCandidates, setTapbackCandidates] = useState(() => loadIMessageTapbacks());
     const [tapbackDraft, setTapbackDraft] = useState<string[]>(() => loadIMessageTapbacks().map(item => item.glyph));
@@ -643,8 +644,9 @@ export function ChatSettingsPanel({
         if (sessIdx !== -1) {
             sessions[sessIdx] = { ...sessions[sessIdx], ...updates };
             saveChatSessions(sessions);
-            Object.assign(session, updates);
         }
+        // Keep the mounted chat in sync even for an unsaved preview session.
+        Object.assign(session, updates);
     };
 
     const announceBackgroundChange = (action: "更换" | "移除") => {
@@ -1056,6 +1058,22 @@ export function ChatSettingsPanel({
                         <input type="file" accept="image/*" onChange={e => handleImageUpload(e, setBackgroundImage, "backgroundImage")} className="hidden" />
                     </label>
 <BubbleColorSettings session={session} />
+<div className="menu-item">
+    <ChatInfoIcon icon={Sparkles} color={CONTENT_APP_ACCENTS.chat} />
+    <div className="menu-label-group">
+        <span className="menu-label">玻璃气泡</span>
+        <span className="menu-desc">收到的消息透出背景；默认关闭，仅当前聊天</span>
+    </div>
+    <div className="menu-right">
+        <Toggle
+            checked={glassBubblesEnabled}
+            onChange={enabled => {
+                setGlassBubblesEnabled(enabled);
+                updateSession({ glassBubblesEnabled: enabled });
+            }}
+        />
+    </div>
+</div>
 {session.isGroup ? (
                         <>
                             <div className="menu-item" style={{ cursor: "default" }}>

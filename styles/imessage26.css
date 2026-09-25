@@ -185,6 +185,7 @@
 .chat-room-wrapper[data-imessage-private] {
   --im26-blue: #38acfc;
   --im26-blue-pressed: #159af2;
+  --im26-composer-hint: #4c4d52;
   --im26-incoming: #e9e9eb;
   --im26-base-blue: var(--im26-blue);
   --im26-base-incoming: var(--im26-incoming);
@@ -193,6 +194,7 @@
   --im26-secondary: #8e8e93;
   --im26-tertiary: #aeaeb2;
   --im26-hairline: rgba(60, 60, 67, 0.16);
+  --im26-composer-divider: linear-gradient(90deg, transparent, rgba(20,22,27,.24) 10%, rgba(20,22,27,.22) 82%, transparent);
   --im26-glass: rgba(250, 250, 252, 0.62);
   --im26-glass-strong: var(--im26-glass);
   --im26-glass-edge: rgba(255, 255, 255, 0.9);
@@ -233,15 +235,16 @@
   --im26-secondary: #bcbcc4;
   --im26-tertiary: #aaaab4;
   --im26-hairline: rgba(235,235,245,.24);
+  --im26-composer-divider: linear-gradient(90deg, transparent, rgba(255,255,255,.36) 10%, rgba(255,255,255,.3) 82%, transparent);
   --im26-glass: rgba(32,32,36,.78);
   --im26-glass-edge: rgba(255,255,255,.22);
   --im26-glass-shadow: 0 6px 20px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.12);
-  --im26-composer-hint: #c8c8d0;
+  --im26-composer-hint: #dedee5;
   --c-panel: rgba(32,32,36,.94);
   --c-input: #303034;
 }
 .chat-room-wrapper[data-imessage-private][data-chat-dark][data-has-bg-image] {
-  --im26-composer-hint: #c8c8d0;
+  --im26-composer-hint: #dedee5;
 }
 .chat-room-wrapper[data-imessage-private] .chat-quote-preview {
   color: #55555d !important;
@@ -269,7 +272,7 @@
   text-shadow: 0 1px 3px rgba(0,0,0,.85);
 }
 .chat-room-wrapper[data-imessage-private][data-chat-dark] .imessage-composer-subject::after {
-  background: var(--im26-hairline);
+  background: var(--im26-composer-divider);
 }
 .chat-room-wrapper[data-imessage-private][data-chat-dark] .chat-monologue-heart {
   background: var(--im26-glass);
@@ -891,7 +894,9 @@
 }
 
 .chat-room-wrapper[data-imessage-private] .imessage-context-tapbar .imessage-tapback-option {
-  width: 42px;
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
   height: 42px;
   font-size: 22px;
 }
@@ -925,7 +930,9 @@
 .chat-room-wrapper[data-imessage-private] .imessage-tapback-option {
   display: grid;
   place-items: center;
-  width: 31px;
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
   height: 35px;
   padding: 0;
   border: 0;
@@ -933,6 +940,10 @@
   color: var(--im26-ink);
   background: transparent;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
   font-size: 19px;
   font-weight: 600;
@@ -948,6 +959,138 @@
 
 .chat-room-wrapper[data-imessage-private] .imessage-tapback-option:active {
   transform: scale(.9);
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-more {
+  color: var(--c-text-secondary, #74777d);
+  font-size: 27px;
+  font-weight: 400;
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-inline-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  height: 46px;
+  margin: 0;
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-replace-glyph {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.52);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.76);
+  font-family: -apple-system, BlinkMacSystemFont, "Apple Color Emoji", sans-serif;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-inline-field {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 40px;
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-inline-field input {
+  display: block;
+  width: 100%;
+  height: 40px;
+  padding: 0 31px 0 13px;
+  border: 1px solid rgba(118,118,128,.12);
+  border-radius: 20px;
+  outline: none;
+  color: var(--im26-ink);
+  background: rgba(118,118,128,.1);
+  box-shadow: inset 0 1px 2px rgba(18,24,32,.055);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Apple Color Emoji", sans-serif;
+  font-size: 17px;
+  line-height: 40px;
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-inline-field input::placeholder {
+  color: var(--im26-secondary);
+  opacity: .78;
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-inline-field input:focus-visible {
+  border-color: rgba(10,132,255,.38);
+  box-shadow: 0 0 0 3px rgba(10,132,255,.1), inset 0 1px 2px rgba(18,24,32,.045);
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-inline-field input[aria-invalid="true"] {
+  border-color: rgba(255,59,48,.58);
+  box-shadow: 0 0 0 3px rgba(255,59,48,.09);
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-inline-error {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  color: #ff3b30;
+  transform: translateY(-50%);
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-inline-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--im26-secondary);
+  background: rgba(118,118,128,.1);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5);
+  transition: transform 140ms cubic-bezier(.23,1,.32,1), background-color 140ms ease;
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-inline-submit {
+  color: #fff;
+  background: var(--im26-base-blue, #0a84ff);
+  box-shadow: 0 2px 7px rgba(10,132,255,.24), inset 0 1px 0 rgba(255,255,255,.26);
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-inline-button:active {
+  transform: scale(.94);
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-inline-button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.chat-room-wrapper[data-imessage-private] .chat-floating-ctx-menu:has(.imessage-tapback-inline-input) {
+  width: min(320px, calc(100vw - 32px));
+  min-height: 58px;
+  padding: 6px 10px;
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.chat-room-wrapper[data-imessage-private][data-chat-dark] .imessage-tapback-replace-glyph,
+.chat-room-wrapper[data-imessage-private][data-chat-dark] .imessage-tapback-inline-button {
+  background: rgba(255,255,255,.1);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
+}
+
+.chat-room-wrapper[data-imessage-private][data-chat-dark] .imessage-tapback-inline-field input {
+  border-color: rgba(255,255,255,.1);
+  background: rgba(255,255,255,.08);
+}
+
+.chat-room-wrapper[data-imessage-private][data-chat-dark] .imessage-tapback-inline-submit {
+  background: var(--im26-base-blue, #0a84ff);
+  box-shadow: 0 2px 8px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.2);
 }
 
 .chat-room-wrapper[data-imessage-private] :is(.chat-floating-ctx-menu[data-imessage-tapback-menu], .imessage-context-index) > .imessage-context-actions {
@@ -1068,7 +1211,9 @@
   font-size: 15.6px;
   font-weight: 400;
   line-height: 1;
-  transform: translate(-50%, -50%);
+  /* Emoji fonts sit visually below their line box on mobile Chrome. Keep the
+     SVG-circle center, then apply a tiny optical lift shared by single/group tapbacks. */
+  transform: translate(-50%, -50%) translateY(-.65px);
   text-align: center;
 }
 
@@ -1081,6 +1226,58 @@
   margin-top: 16px;
 }
 
+/* Tapbacks inherit the same tinted-glass family as the actor's message. */
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .imessage-tapback-badge[data-tapback-by="user"],
+  .group-tapback-layer[data-tapback-by="user"]
+) {
+  --im26-tapback-glyph: #fff;
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .imessage-tapback-badge[data-tapback-by="assistant"],
+  .group-tapback-layer[data-tapback-by="assistant"]
+) {
+  --im26-tapback-glyph: rgba(248,251,255,.92);
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .imessage-tapback-badge[data-tapback-by="user"],
+  .group-tapback-layer[data-tapback-by="user"]
+) .imessage-tapback-shape {
+  color: rgba(5,113,221,.88);
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .imessage-tapback-badge[data-tapback-by="assistant"],
+  .group-tapback-layer[data-tapback-by="assistant"]
+) .imessage-tapback-shape {
+  color: rgba(24,34,45,.76);
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .imessage-tapback-badge[data-tapback-by="user"],
+  .group-tapback-layer[data-tapback-by="user"]
+) .imessage-tapback-glyph {
+  color: #fff;
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .imessage-tapback-badge[data-tapback-by="assistant"],
+  .group-tapback-layer[data-tapback-by="assistant"]
+) .imessage-tapback-glyph {
+  color: rgba(248,251,255,.92);
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .imessage-tapback-shape {
+  filter: drop-shadow(0 2px 4px rgba(7,18,28,.1));
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .imessage-tapback-shape :is(path, circle) {
+  stroke: rgba(255,255,255,.14);
+  stroke-width: .42;
+}
+
 .chat-room-wrapper[data-imessage-private] .chat-bubble-role-user {
   color: #fff;
   background: var(--im26-blue);
@@ -1089,6 +1286,197 @@
 .chat-room-wrapper[data-imessage-private] .chat-bubble-role-assistant {
   color: var(--im26-ink);
   background: var(--im26-incoming);
+}
+
+/* Opt-in bubble glass. Keep the default iMessage palette untouched when off. */
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] {
+  --im26-menu-surface: linear-gradient(145deg, rgba(255,255,255,.2), rgba(255,255,255,.035) 42%, rgba(86,190,244,.07)), linear-gradient(rgba(160,197,222,.1) 0 0);
+  --im26-glass-edge: rgba(102,180,222,.09);
+  --im26-menu-edge: var(--im26-glass-edge);
+  --im26-glass-rim: conic-gradient(from 215deg, rgba(255,255,255,.48) 0deg 16deg, rgba(177,231,255,.16) 42deg, transparent 76deg 276deg, rgba(105,204,250,.12) 302deg, rgba(255,255,255,.32) 340deg, rgba(255,255,255,.48) 360deg);
+  --im26-glass-shadow: 0 4px 13px rgba(12,28,42,.1), 0 1px 3px rgba(12,28,42,.07), inset 0 1px 0 rgba(255,255,255,.3), inset 0 -1px 0 rgba(85,168,213,.09);
+  --im26-glass-filter: blur(9px) saturate(165%) contrast(1.06);
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles][data-chat-dark] {
+  --im26-menu-surface: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.025) 45%, rgba(70,164,220,.055)), linear-gradient(rgba(11,18,25,.18) 0 0);
+  --im26-glass-edge: rgba(125,202,240,.11);
+  --im26-glass-rim: conic-gradient(from 215deg, rgba(255,255,255,.36) 0deg 16deg, rgba(156,220,252,.12) 42deg, transparent 76deg 276deg, rgba(91,193,242,.1) 302deg, rgba(255,255,255,.25) 340deg, rgba(255,255,255,.36) 360deg);
+  --im26-glass-shadow: 0 5px 15px rgba(0,0,0,.18), 0 1px 3px rgba(0,0,0,.14), inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(90,180,230,.06);
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(.chat-bubble-role-assistant[data-media-type="text"], .chat-stream-bubble) {
+  --bubble-text-ink: #f8fbff;
+  color: #f8fbff;
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(.chat-bubble-role-assistant[data-media-type="text"], .chat-stream-bubble) > .imessage-bubble-surface {
+  box-sizing: border-box;
+  border: 0;
+  background: linear-gradient(150deg, rgba(255,255,255,.12), rgba(255,255,255,.025) 34%, transparent 58%),
+    linear-gradient(color-mix(in srgb, var(--bubble-surface-color, #e9e9eb) 9%, rgba(13,21,29,.56)) 0 0);
+  -webkit-backdrop-filter: blur(5px) saturate(132%) contrast(1.04);
+  backdrop-filter: blur(5px) saturate(132%) contrast(1.04);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(135,203,238,.045), 0 3px 9px rgba(8,20,31,.11);
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-bubble-role-user[data-media-type="text"] > .imessage-bubble-surface {
+  border: 0;
+  background: linear-gradient(155deg, rgba(255,255,255,.11), rgba(255,255,255,.012) 24%, transparent 43%, rgba(0,25,67,.07)),
+    linear-gradient(rgba(5,113,221,.86) 0 0);
+  -webkit-backdrop-filter: blur(2.5px) saturate(162%) contrast(1.07);
+  backdrop-filter: blur(2.5px) saturate(162%) contrast(1.07);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.24), inset 0 -1px 0 rgba(0,37,92,.13), 0 3px 9px rgba(0,46,98,.1);
+}
+
+/* Preserve the supplied 70x47 bubble mask exactly. The rounded body and its
+   original tail are composited inside one alpha mask, then the glass material
+   is painted once, so their overlap cannot darken or double the color. */
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-msg-wrapper[data-imessage-tail]
+  :is(.chat-bubble-role-user[data-media-type="text"], .chat-bubble-role-assistant[data-media-type="text"], .chat-bubble-role-user[data-media-type="audio"], .chat-bubble-role-assistant[data-media-type="audio"], .chat-quote-reply) > .imessage-bubble-surface {
+  inset: 0 0 -7px;
+  border: 0;
+  filter: drop-shadow(0 3px 7px rgba(8,20,31,.1));
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-msg-wrapper[data-imessage-tail]
+  :is(.chat-bubble-role-assistant[data-media-type="text"], .chat-bubble-role-assistant[data-media-type="audio"]) > .imessage-bubble-surface,
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-quote-message-assistant .chat-quote-reply > .imessage-bubble-surface {
+  border-radius: 20px 20px 20px 7px;
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-msg-wrapper[data-imessage-tail]
+  :is(.chat-bubble-role-user[data-media-type="text"], .chat-bubble-role-user[data-media-type="audio"]) > .imessage-bubble-surface,
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-quote-message-user .chat-quote-reply > .imessage-bubble-surface {
+  border-radius: 20px 20px 7px 20px;
+}
+
+/* Use WebKit's documented direct-SVG URL form. Keep the role-aware radius
+   above as the safe fallback if mask-box-image is unavailable. */
+@supports (-webkit-mask-box-image: url("/chat-bubble-tail-left.svg") 20 20 18 25 stretch stretch) {
+  .chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-msg-wrapper[data-imessage-tail]
+    :is(.chat-bubble-role-assistant[data-media-type="text"], .chat-bubble-role-assistant[data-media-type="audio"]) > .imessage-bubble-surface,
+  .chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-quote-message-assistant .chat-quote-reply > .imessage-bubble-surface {
+    border-radius: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+    -webkit-mask-box-image: url("/chat-bubble-tail-left.svg?v=13") 20 20 18 25 stretch stretch;
+    mask-border: url("/chat-bubble-tail-left.svg?v=13") 20 20 18 25 fill / 20px 20px 18px 25px / 0 stretch alpha;
+  }
+
+  .chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-msg-wrapper[data-imessage-tail]
+    :is(.chat-bubble-role-user[data-media-type="text"], .chat-bubble-role-user[data-media-type="audio"]) > .imessage-bubble-surface,
+  .chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-quote-message-user .chat-quote-reply > .imessage-bubble-surface {
+    border-radius: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+    -webkit-mask-box-image: url("/chat-bubble-tail-right.svg?v=13") 20 20 18 25 stretch stretch;
+    mask-border: url("/chat-bubble-tail-right.svg?v=13") 20 20 18 25 fill / 20px 20px 18px 25px / 0 stretch alpha;
+  }
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-msg-wrapper[data-imessage-tail]
+  :is(.chat-bubble-role-user[data-media-type="text"], .chat-bubble-role-assistant[data-media-type="text"], .chat-bubble-role-user[data-media-type="audio"], .chat-bubble-role-assistant[data-media-type="audio"], .chat-quote-reply) > .imessage-bubble-surface::before {
+  content: none;
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles]:not([data-has-bg-image]):not([data-chat-dark]) :is(.chat-bubble-role-assistant[data-media-type="text"], .chat-stream-bubble) {
+  --bubble-text-ink: #252b33;
+  color: #252b33;
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles]:not([data-has-bg-image]):not([data-chat-dark]) :is(.chat-bubble-role-assistant[data-media-type="text"], .chat-stream-bubble) > .imessage-bubble-surface {
+  background: linear-gradient(160deg, rgba(255,255,255,.5), rgba(255,255,255,.12)), linear-gradient(rgba(198,207,218,.42) 0 0);
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles]:not([data-has-bg-image]):not([data-chat-dark]) :is(.chat-bubble-role-assistant[data-media-type="text"], .chat-stream-bubble) > .imessage-bubble-surface::before {
+  background: rgba(198,207,218,.56);
+}
+
+/* Stronger optical definition for the floating control layer. */
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .imessage-header-button,
+  .imessage-contact-name,
+  .chat-monologue-heart,
+  .chat-plus-toggle,
+  .imessage-quote-compose-close
+),
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-input-bar[data-imessage-private]::before {
+  border-color: var(--im26-glass-edge);
+  background: var(--im26-menu-surface);
+  box-shadow: var(--im26-glass-shadow);
+  -webkit-backdrop-filter: var(--im26-glass-filter);
+  backdrop-filter: var(--im26-glass-filter);
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .imessage-header-button,
+  .imessage-contact-name,
+  .chat-monologue-heart,
+  .chat-plus-toggle,
+  .imessage-quote-compose-close
+) {
+  overflow: hidden;
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .imessage-contact-name,
+  .chat-monologue-heart,
+  .imessage-quote-compose-close
+) {
+  position: relative;
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .imessage-header-button,
+  .imessage-contact-name,
+  .chat-monologue-heart,
+  .chat-plus-toggle,
+  .imessage-quote-compose-close
+)::after,
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-input-bar[data-imessage-private]::after {
+  content: "";
+  position: absolute;
+  z-index: 4;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--im26-glass-rim);
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .imessage-header-button,
+  .imessage-contact-name,
+  .chat-monologue-heart,
+  .chat-plus-toggle,
+  .imessage-quote-compose-close
+)::after {
+  inset: 0;
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-input-bar[data-imessage-private]::after {
+  top: 10px;
+  right: var(--im26-edge);
+  bottom: var(--im26-composer-bottom);
+  left: var(--im26-composer-field-left);
+  border-radius: 22px;
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles][data-has-bg-image] :is(
+  .imessage-header-button,
+  .imessage-contact-name,
+  .chat-monologue-heart,
+  .chat-plus-toggle
+) {
+  color: rgba(255,255,255,.95);
+  text-shadow: 0 1px 3px rgba(7,18,28,.22);
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles][data-has-bg-image] .chat-input-bar[data-imessage-private]::before {
+  border-color: rgba(112,193,234,.12);
+  background: linear-gradient(155deg, rgba(255,255,255,.14), rgba(255,255,255,.02) 38%, rgba(76,170,220,.055)), linear-gradient(rgba(12,20,27,.2) 0 0);
+  box-shadow: 0 4px 13px rgba(5,17,27,.13), inset 0 1px 0 rgba(255,255,255,.2), inset 0 -1px 0 rgba(94,187,236,.07);
+  -webkit-backdrop-filter: blur(7px) saturate(158%) contrast(1.06);
+  backdrop-filter: blur(7px) saturate(158%) contrast(1.06);
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles][data-has-bg-image] {
+  --im26-composer-hint: rgba(255,255,255,.9);
+  --im26-composer-divider: linear-gradient(90deg, transparent, rgba(255,255,255,.5) 12%, rgba(118,205,247,.28) 78%, transparent);
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles][data-has-bg-image] .chat-reasoning-trigger {
+  color: rgba(255,255,255,.92);
+  text-shadow: 0 1px 3px rgba(7,18,28,.24);
+}
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles][data-has-bg-image] .chat-input-bar[data-imessage-private] .chat-input-textarea {
+  color: rgba(255,255,255,.96);
+  text-shadow: 0 1px 3px rgba(7,18,28,.2);
 }
 
 .chat-room-wrapper[data-imessage-private] .imessage-typing-row {
@@ -1341,6 +1729,56 @@
 .chat-room-wrapper[data-imessage-private] .chat-quote-message-assistant .chat-quote-connector::after {
   bottom: -4px;
   left: -2px;
+}
+
+/* Quote source preview and reply body stay inside the active glass system. */
+.chat-room-wrapper.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-quote-preview {
+  border: 0 !important;
+  color: #f5f8fc !important;
+  background: linear-gradient(150deg, rgba(255,255,255,.11), rgba(255,255,255,.018) 42%, transparent 66%),
+    linear-gradient(color-mix(in srgb, var(--quote-source-bg, #e9e9eb) 28%, rgba(16,25,34,.54)) 0 0) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.15), 0 2px 7px rgba(7,18,28,.08) !important;
+  -webkit-backdrop-filter: blur(4.5px) saturate(138%) contrast(1.04) !important;
+  backdrop-filter: blur(4.5px) saturate(138%) contrast(1.04) !important;
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .chat-quote-message-user,
+  .chat-quote-message-assistant
+) .chat-quote-reply {
+  background: transparent !important;
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-quote-message-user .chat-quote-reply {
+  color: #fff;
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-quote-message-user .chat-quote-reply > .imessage-bubble-surface {
+  opacity: 1;
+  border: 0;
+  background: linear-gradient(155deg, rgba(255,255,255,.11), rgba(255,255,255,.012) 24%, transparent 43%, rgba(0,25,67,.07)),
+    linear-gradient(rgba(5,113,221,.86) 0 0);
+  -webkit-backdrop-filter: blur(2.5px) saturate(162%) contrast(1.07);
+  backdrop-filter: blur(2.5px) saturate(162%) contrast(1.07);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.24), inset 0 -1px 0 rgba(0,37,92,.13), 0 3px 9px rgba(0,46,98,.1);
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-quote-message-assistant .chat-quote-reply {
+  color: #f8fbff;
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-quote-message-assistant .chat-quote-reply > .imessage-bubble-surface {
+  opacity: 1;
+  border: 0;
+  background: linear-gradient(150deg, rgba(255,255,255,.12), rgba(255,255,255,.025) 34%, transparent 58%),
+    linear-gradient(color-mix(in srgb, var(--bubble-surface-color, #e9e9eb) 9%, rgba(13,21,29,.56)) 0 0);
+  -webkit-backdrop-filter: blur(5px) saturate(132%) contrast(1.04);
+  backdrop-filter: blur(5px) saturate(132%) contrast(1.04);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(135,203,238,.045), 0 3px 9px rgba(8,20,31,.11);
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-msg-wrapper[data-imessage-tail] .chat-quote-reply::before {
+  content: none;
 }
 
 /* Cards, stickers and other structured content keep their own silhouette. */
@@ -1769,6 +2207,64 @@
   background: var(--im26-incoming) !important;
 }
 
+/* Voice messages use the same role material as text bubbles in glass mode. */
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(
+  .chat-bubble-role-user[data-media-type="audio"],
+  .chat-bubble-role-assistant[data-media-type="audio"]
+) {
+  background: transparent !important;
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-bubble-role-user[data-media-type="audio"] {
+  --voice-ink: #fff;
+  color: #fff;
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-bubble-role-user[data-media-type="audio"] > .imessage-bubble-surface {
+  opacity: 1;
+  border: 0;
+  background: linear-gradient(155deg, rgba(255,255,255,.11), rgba(255,255,255,.012) 24%, transparent 43%, rgba(0,25,67,.07)),
+    linear-gradient(rgba(5,113,221,.86) 0 0);
+  -webkit-backdrop-filter: blur(2.5px) saturate(162%) contrast(1.07);
+  backdrop-filter: blur(2.5px) saturate(162%) contrast(1.07);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.24), inset 0 -1px 0 rgba(0,37,92,.13), 0 3px 9px rgba(0,46,98,.1);
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-bubble-role-assistant[data-media-type="audio"] {
+  --voice-ink: #f8fbff;
+  color: #f8fbff;
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-bubble-role-assistant[data-media-type="audio"] > .imessage-bubble-surface {
+  opacity: 1;
+  border: 0;
+  background: linear-gradient(150deg, rgba(255,255,255,.12), rgba(255,255,255,.025) 34%, transparent 58%),
+    linear-gradient(color-mix(in srgb, var(--bubble-surface-color, #e9e9eb) 9%, rgba(13,21,29,.56)) 0 0);
+  -webkit-backdrop-filter: blur(5px) saturate(132%) contrast(1.04);
+  backdrop-filter: blur(5px) saturate(132%) contrast(1.04);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(135,203,238,.045), 0 3px 9px rgba(8,20,31,.11);
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-msg-wrapper[data-role="user"]
+  .chat-msg-content-wrap[data-voice-content] .voice-msg-text-bubble {
+  color: #fff;
+  background: linear-gradient(155deg, rgba(255,255,255,.11), rgba(255,255,255,.012) 24%, transparent 43%, rgba(0,25,67,.07)),
+    linear-gradient(rgba(5,113,221,.86) 0 0);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.24), inset 0 -1px 0 rgba(0,37,92,.13), 0 3px 9px rgba(0,46,98,.1);
+  -webkit-backdrop-filter: blur(2.5px) saturate(162%) contrast(1.07);
+  backdrop-filter: blur(2.5px) saturate(162%) contrast(1.07);
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-msg-wrapper[data-role="assistant"]
+  .chat-msg-content-wrap[data-voice-content] .voice-msg-text-bubble {
+  color: #f8fbff;
+  background: linear-gradient(150deg, rgba(255,255,255,.12), rgba(255,255,255,.025) 34%, transparent 58%),
+    linear-gradient(color-mix(in srgb, var(--bubble-surface-color, #e9e9eb) 9%, rgba(13,21,29,.56)) 0 0);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(135,203,238,.045), 0 3px 9px rgba(8,20,31,.11);
+  -webkit-backdrop-filter: blur(5px) saturate(132%) contrast(1.04);
+  backdrop-filter: blur(5px) saturate(132%) contrast(1.04);
+}
+
 .chat-room-wrapper[data-imessage-private] .chat-bilingual-block,
 .chat-room-wrapper[data-imessage-private] .chat-markdown,
 .chat-room-wrapper[data-imessage-private] .chat-markdown p {
@@ -1852,6 +2348,34 @@
 .chat-room-wrapper[data-imessage-private] .chat-monologue-heart[data-active] {
   color: var(--im26-blue);
   transform: none;
+}
+
+/* Keep the folded-thought affordance in the same visual family as Char's bubble. */
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-monologue-heart {
+  width: 22px !important;
+  height: 22px !important;
+  margin: 0 0 2px 6px !important;
+  border: 0;
+  color: rgba(248,251,255,.72);
+  background: linear-gradient(145deg, rgba(255,255,255,.09), rgba(255,255,255,.018) 45%), rgba(20,31,43,.48);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.15), 0 2px 7px rgba(7,18,28,.09);
+  -webkit-backdrop-filter: blur(5px) saturate(132%);
+  backdrop-filter: blur(5px) saturate(132%);
+  text-shadow: none;
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-monologue-heart::after {
+  content: none;
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-monologue-heart svg {
+  width: 11px !important;
+  height: 11px !important;
+}
+
+.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-monologue-heart[data-active] {
+  color: #fff;
+  background: rgba(5,113,221,.5);
 }
 
 /* ── Composer ───────────────────────────────────────────── */
@@ -1963,8 +2487,10 @@
   right: 24px;
   bottom: 0;
   left: 13px;
-  height: .5px;
-  background: rgba(60,60,67,.16);
+  height: 1px;
+  background: var(--im26-composer-divider);
+  transform: scaleY(.5);
+  transform-origin: center bottom;
 }
 
 .chat-room-wrapper[data-imessage-private] .chat-input-bar[data-imessage-private] .chat-input-textarea {
@@ -1994,7 +2520,7 @@
 /* Contrast is against the light glass material, not the raw wallpaper.
    The material stays light even over a black image; white text would wash out. */
 .chat-room-wrapper[data-imessage-private][data-has-bg-image] {
-  --im26-composer-hint: #45454a;
+  --im26-composer-hint: #37383d;
 }
 
 .chat-room-wrapper[data-imessage-private] .imessage-composer-subject-label {
@@ -2049,8 +2575,8 @@
 }
 
 .chat-room-wrapper[data-imessage-private] .chat-plus-toggle svg {
-  width: 26px;
-  height: 26px;
+  width: 29px;
+  height: 29px;
 }
 
 .chat-room-wrapper[data-imessage-private] .chat-plus-toggle svg circle {
@@ -2058,7 +2584,9 @@
 }
 
 .chat-room-wrapper[data-imessage-private] .chat-plus-toggle svg line {
-  stroke-width: 1.9;
+  stroke-width: 1.55;
+  transform: scale(1.28);
+  transform-origin: center;
 }
 
 .chat-room-wrapper[data-imessage-private] .chat-send-btn,
@@ -2098,7 +2626,7 @@
 
 .chat-room-wrapper[data-imessage-private] .chat-voice-message-btn {
   border: 0;
-  color: var(--im26-secondary);
+  color: var(--im26-composer-hint, #4c4d52);
   background: transparent;
   box-shadow: none;
   -webkit-backdrop-filter: none;

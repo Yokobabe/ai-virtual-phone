@@ -48,6 +48,8 @@ export type ChatSession = {
     updatedAt: string; // ISO date
     isPinned: boolean;
     backgroundImage?: string; // Add support for custom background
+    /** Opt-in glass treatment for message bubbles; absent/false keeps the classic iMessage style. */
+    glassBubblesEnabled?: boolean;
     autoReplied?: boolean; // Whether the initial greeting auto-reply has been triggered
     alias?: string;
     videoBackground?: string;
