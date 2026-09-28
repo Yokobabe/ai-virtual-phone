@@ -24,6 +24,7 @@ import { MentionAvatar } from "./mention-avatar";
 import { useEchoSendGesture } from "./use-echo-send-gesture";
 import { canUseEcho, hasEcho } from "@/lib/chat-echo";
 import { useChatEcho } from "./use-chat-echo";
+import { DrawingBoard, DrawingGlyph } from "./drawing-board";
 import type { MentionMember } from "@/lib/group-mentions";
 import { StateValuesPanel } from "./state-values-panel";
 import { generateChatCompletion, generateOfflineChatCompletion, flattenCompletionResult, ChatEngineError } from "@/lib/chat-engine";
@@ -534,7 +535,7 @@ type PendingMessageJump = {
 };
 
 const TRANSIENT_MESSAGE_PREFIX = "ui-transient-";
-type RichModalKind = "photo" | "text_photo" | "red_packet" | "transfer" | "location" | "transfer_target" | "voice_msg" | "gift" | "system_instruction";
+type RichModalKind = "photo" | "text_photo" | "red_packet" | "transfer" | "location" | "transfer_target" | "voice_msg" | "gift" | "system_instruction" | "drawing";
 type ChatTextInputHandle = {
     appendText: (text: string, options?: { focus?: boolean }) => void;
     mention: (member: MentionMember) => void;
@@ -807,6 +808,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
         { icon: imessageMenuIcon("offline-mode.jpg"), label: "线下模式", onClick: onToggleOfflineMode },
         { icon: imessageMenuIcon("photo-wall.jpg"), label: "照片墙", onClick: () => onOpenRichModal("photo") },
         { icon: imessageMenuIcon("text-image.jpg"), label: !isGroup ? "文字图" : "文字图片", onClick: () => onOpenRichModal("text_photo") },
+        { icon: <span className="imessage-drawing-icon"><DrawingGlyph /></span>, label: "绘图", onClick: () => onOpenRichModal("drawing") },
         { icon: imessageMenuIcon("system-instruction.jpg"), label: "系统指令", onClick: () => onOpenRichModal("system_instruction") },
         { icon: imessageMenuIcon("red-packet.jpg"), label: "红包", onClick: () => onOpenRichModal("red_packet") },
         { icon: imessageMenuIcon("gift.jpg"), label: "礼物", onClick: () => onOpenRichModal("gift") },
@@ -7545,6 +7547,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             )}
 
             {/* Rich Media Input Modals */}
+            {richModal === "drawing" && <DrawingBoard key={session.id} session={session} history={messages}
+                characters={session.isGroup ? groupCharacters : character ? [character] : []}
+                onClose={() => setRichModal(null)}
+                onSend={(image, summary, process) => sendRichMessage("image", { photoKind: "photo", label: summary, drawingProcess: process }, "", image)} />}
             {richModal === "voice_msg" && (
                 <VoiceRecordModal
                     characterId={session.contactId}

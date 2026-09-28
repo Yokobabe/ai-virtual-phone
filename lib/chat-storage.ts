@@ -192,6 +192,8 @@ export type ChatMessage = {
         photoGroupLeadMessageId?: string;
         photoGroupLeadLabel?: string;
         photoKind?: "photo" | "text_photo";
+        /** Independent drawing board archive; photo markup does not use this. */
+        drawingProcess?: import("./chat-drawing").DrawingSnapshot;
         /** One structured multi-photo intent, generated as a single contact sheet. */
         multiImagePlan?: {
             displayImageCount: 2 | 4 | 6 | 9;
