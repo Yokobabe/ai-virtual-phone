@@ -175,7 +175,8 @@ export type ChatMessage = {
     origin?: "chat" | "reading_discuss" | "custom_app" | "custom_app_background";
     mediaUrl?: string;
     mediaData?: {
-        screenEffect?: "echo";
+        screenEffect?: "echo" | "love" | "fireworks";
+        screenEffectScene?: { imageRef:string; effect:"echo"|"love"|"fireworks"; phase:number; capturedAt:string; partial:boolean };
         mentions?: { characterId: string; name: string }[];
         amount?: number;          // 红包/转账金额
         currency?: string;        // 转账原币种，如 USD/EUR/GBP/JPY/CNY

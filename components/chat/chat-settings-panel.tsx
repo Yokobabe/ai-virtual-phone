@@ -6,7 +6,6 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import {
     CHAT_INITIAL_VISIBLE_MESSAGE_COUNT,
     CHAT_LOAD_MORE_MESSAGE_COUNT,
-    CHAT_REQUEST_REPLY_EVENT,
     ChatSession,
     clearChatSessionMessages,
     clearChatSessionToolHistory,
@@ -658,7 +657,6 @@ export function ChatSettingsPanel({
             mediaType: "chat_background_change",
             mediaData: { photoMarkupActorId: "self", photoMarkupActorName: actorName },
         });
-        window.dispatchEvent(new CustomEvent(CHAT_REQUEST_REPLY_EVENT, { detail: { sessionId: session.id } }));
     };
 
     const handleClearHistory = () => {

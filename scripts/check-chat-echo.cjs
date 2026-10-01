@@ -1,13 +1,30 @@
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript');
 const root=path.resolve(__dirname,'..');
+const css=fs.readFileSync(path.join(root,'styles/imessage26.css'),'utf8');
+assert.match(css,/\.echo-live-field\s*\{[^}]*z-index:\s*2;/,"Echo swarm field must render above the fixed source clone");
+assert.match(css,/\.echo-live-original\s*\{[^}]*z-index:\s*1;/,"Echo source clone must stay below the orbiting copies");
 const compile=file=>ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
 function load(file,mocks={}){const exports={};vm.runInNewContext(compile(file),{exports,require:id=>{if(!(id in mocks))throw Error(id);return mocks[id]}});return exports;}
 const echo=load('lib/chat-echo.ts');
+const love=load('lib/chat-love.ts',{'./chat-echo':echo});
 const {echoLayout}=load('lib/chat-echo-layout.ts');
+const {echoOrbitFrames}=load('components/chat/echo-preview.tsx',{'react':{},'react/jsx-runtime':{},'@/lib/chat-echo-layout':{echoLayout}});
+const endings=Array.from({length:144},(_,i)=>echoOrbitFrames(i,390,844,{x:320,y:730}).at(-1));
+// Compare the unchanged pre-dissolve orbit against the archived layout, not a new approximation.
+const baselineSource=require('node:child_process').execFileSync('git',['show','9fb7602:components/chat/echo-preview.tsx'],{cwd:root,encoding:'utf8'});
+const baseline={};vm.runInNewContext(ts.transpileModule(baselineSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports:baseline,require:id=>id==='@/lib/chat-echo-layout'?{echoLayout}:{}});
+for(let i=0;i<144;i++){
+ const actual=echoOrbitFrames(i,390,844,{x:320,y:730}),old=baseline.echoOrbitFrames(i,390,844,{x:320,y:730});
+ assert.equal(actual.length,121);
+ for(let step=0;step<=84;step++){assert.equal(actual[step].transform,old[step].transform);assert.equal(actual[step].zIndex,old[step].zIndex);}
+ assert.equal(actual[60].opacity,1,'mid-flight copies are opaque regardless of depth');
+}
+assert.ok(endings.every(f=>f.opacity===0),'every Echo copy fully dissolves');
+assert.ok(endings.filter(f=>{const xy=f.transform.match(/translate3d\(([-\d.]+)px,([-\d.]+)px/);return Math.hypot(Number(xy[1])-320,Number(xy[2])-730)>100}).length>100,'copies fade across the screen instead of gathering at the source');
 assert.equal(echoLayout('短句❤️',150,40).count,144);assert.equal(echoLayout('短句❤️',150,40).scale,1);
 const longLayout=echoLayout('这是很长的一段话。'.repeat(25),270,220);
 assert.ok(longLayout.count<80 && longLayout.count>=28);assert.ok(longLayout.scale<.7);
-const parser=load('lib/rich-message-parser.ts',{'./chat-echo':echo,'./state-value-parser':load('lib/state-value-parser.ts'),'./action-parser':{stripActionShells:t=>t},'./text-tool-protocol':{stripTextToolDirectives:t=>t},'./custom-app-chat-directives':{loadCustomAppChatDirectives:()=>[]}});
+const parser=load('lib/rich-message-parser.ts',{'./chat-echo':echo,'./chat-love':love,'./state-value-parser':load('lib/state-value-parser.ts'),'./image-grid-split':{isImageGridCount:n=>n>=2&&n<=20},'./photo-doodle':{parsePhotoDoodle:()=>null},'./action-parser':{stripActionShells:t=>t},'./text-tool-protocol':{stripTextToolDirectives:t=>t},'./custom-app-chat-directives':{loadCustomAppChatDirectives:()=>[],formatCustomAppDirectiveSummary:()=>'',getCustomAppDirectiveSyntaxHead:()=>'',splitCustomAppDirectiveArgs:()=>[]}});
 const parts=t=>parser.parseAIResponse(t,[]).parts;
 assert.equal(echo.hasEcho(parts('[Echo]求你了🥺！')[0]),true);
 assert.equal(parts('[Echo]求你了🥺！')[0].content,'求你了🥺！');
@@ -33,19 +50,19 @@ assert.equal(stream.cleanStreamText('[Echo]爱你❤️'),'爱你❤️');assert
 const room=ts.createSourceFile('room.tsx',fs.readFileSync(path.join(root,'components/chat/chat-room.tsx'),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 let handler;function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(room)==='handleSendText')handler=n.initializer.getText(room);ts.forEachChild(n,visit)}visit(room);
 let saved=[],rendered=[];
-const context={...echo,exports:{},ensureGroupSpeakPermission:()=>true,isGenerating:false,showChatToast(){},cancelFollowUp(){},session:{id:'s',isGroup:true,participantIds:['a']},quotingMessage:{id:'old',content:'quote'},getQuotePreview:()=> 'quote',setQuotingMessage(){},isDiceOnlyMessage:t=>t==='🎲',rollChatDiceFace:()=>3,formatChatDiceResultMessage:()=> '3',pushChatMessage:m=>{const result={...m,id:'m'+saved.length,createdAt:new Date().toISOString()};saved.push(result);return result;},setMessages:fn=>{rendered=fn(rendered)},setPendingGenerate(){},triggerAIResponse(){},getChatPluginHookBus:()=>({hasHandlers:()=>false}),runChatPluginTransform(){}};
+const context={...echo,...love,exports:{},ensureGroupSpeakPermission:()=>true,isGenerating:false,showChatToast(){},cancelFollowUp(){},session:{id:'s',isGroup:true,participantIds:['a']},quotingMessage:{id:'old',content:'quote'},loadChatMessages:()=>[{id:'old',content:'quote',role:'assistant'}],getQuotePreview:()=> 'quote',setQuotingMessage(){},isDiceOnlyMessage:t=>t==='🎲',rollChatDiceFace:()=>3,formatChatDiceResultMessage:()=> '3',pushChatMessage:m=>{const result={...m,id:'m'+saved.length,createdAt:new Date().toISOString()};saved.push(result);return result;},setMessages:fn=>{rendered=fn(rendered)},setPendingGenerate(){},triggerAIResponse(){},getChatPluginHookBus:()=>({hasHandlers:()=>false}),runChatPluginTransform(){}};
 let publications=0;context.echo={published:()=>publications++};
 vm.runInNewContext(ts.transpileModule('exports.send='+handler,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
 assert.equal(context.exports.send('@A ❤️',{screenEffect:'echo',mentions:[{characterId:'a',name:'A'}]}),true);
 assert.equal(saved[0].mediaData.screenEffect,'echo');assert.equal(saved[0].mediaData.quoteMessageId,'old');assert.equal(saved[0].mediaData.mentions[0].characterId,'a');
 context.quotingMessage=null;context.exports.send('🎲',{screenEffect:'echo'});assert.equal(saved.at(-1).mediaType,undefined);assert.equal(saved.at(-1).mediaData.screenEffect,'echo');
 context.isGenerating=true;assert.equal(context.exports.send('blocked',{screenEffect:'echo'}),false);assert.equal(publications,2);
-let confirm;function findConfirm(n){if(ts.isVariableDeclaration(n)&&n.name.getText(room)==='sendEchoDraft')confirm=n.initializer.getText(room);ts.forEachChild(n,findConfirm)}findConfirm(room);assert.ok(confirm);
-let confirms=0,clears=0;const confirmContext={exports:{},...echo,inputLocked:false,isGenerating:false,inputText:'抱抱🥺',onSendText:(text,options)=>{assert.equal(text,'抱抱🥺');assert.equal(options.screenEffect,'echo');confirms++;return true;},setEchoHost(){},setInputText:()=>clears++,resetTextareaHeight(){},onClosePanels(){}};
+let confirm;function findConfirm(n){if(ts.isVariableDeclaration(n)&&n.name.getText(room)==='sendEffectDraft')confirm=n.initializer.getText(room);ts.forEachChild(n,findConfirm)}findConfirm(room);assert.ok(confirm);
+let confirms=0,clears=0;const confirmContext={exports:{},...echo,...love,inputLocked:false,isGenerating:false,inputText:'抱抱🥺',onSendText:(text,options)=>{assert.equal(text,'抱抱🥺');assert.equal(options.screenEffect,'echo');confirms++;return true;},setShowSendEffectPicker(){},setInputText:()=>clears++,resetTextareaHeight(){},onClosePanels(){}};
 confirmContext.textareaRef={current:{blur(){}}};
 vm.runInNewContext(ts.transpileModule('exports.confirm='+confirm,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,confirmContext);
-confirmContext.inputLocked=true;confirmContext.exports.confirm();assert.equal(confirms,0);
-confirmContext.inputLocked=false;confirmContext.exports.confirm();assert.equal(confirms,1);assert.equal(clears,1);
+confirmContext.inputLocked=true;confirmContext.exports.confirm('echo');assert.equal(confirms,0);
+confirmContext.inputLocked=false;confirmContext.exports.confirm('echo');assert.equal(confirms,1);assert.equal(clears,1);
 const groupSource=fs.readFileSync(path.join(root,'lib/group-chat-engine.ts'),'utf8');
 const groupContext={exports:{},stripGroupFinancialActionsForMetadataRepair:t=>t};
 vm.runInNewContext(ts.transpileModule(groupSource.match(/export function parseGroupChatResponse\([\s\S]*?\n\}/)[0],{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,groupContext);
@@ -53,7 +70,7 @@ const sections=groupContext.exports.parseGroupChatResponse('[甲]: [Echo]别跑�
 const effectActors=sections.flatMap(s=>parts(s.responseText).filter(echo.hasEcho).map(()=>s.characterId));assert.equal(effectActors.join(','),'a,b');
 
 const read=(pkg,file)=>fs.readFileSync(path.join(path.dirname(require.resolve(pkg,{paths:[path.dirname(require.resolve('react-dom')),root]})),file),'utf8');
-const modules={react:read('react','cjs/react.production.js'),'react/jsx-runtime':read('react','cjs/react-jsx-runtime.production.js'),'react-dom':read('react-dom','cjs/react-dom.production.js'),'react-dom/client':read('react-dom','cjs/react-dom-client.production.js'),scheduler:read('scheduler','cjs/scheduler.production.js'),'./echo-preview':compile('components/chat/echo-preview.tsx'),'./echo-playback':compile('components/chat/echo-playback.tsx'),'@/lib/chat-echo':compile('lib/chat-echo.ts'),hook:compile('components/chat/use-chat-echo.tsx')};
+const modules={react:read('react','cjs/react.production.js'),'react/jsx-runtime':read('react','cjs/react-jsx-runtime.production.js'),'react-dom':read('react-dom','cjs/react-dom.production.js'),'react-dom/client':read('react-dom','cjs/react-dom-client.production.js'),scheduler:read('scheduler','cjs/scheduler.production.js'),'./echo-preview':compile('components/chat/echo-preview.tsx'),'./echo-playback':compile('components/chat/echo-playback.tsx'),'./love-playback':compile('components/chat/love-playback.tsx'),'./chat-echo':compile('lib/chat-echo.ts'),'@/lib/chat-echo':compile('lib/chat-echo.ts'),'@/lib/chat-love':compile('lib/chat-love.ts'),hook:compile('components/chat/use-chat-echo.tsx')};
 modules['@/lib/chat-echo-layout']=compile('lib/chat-echo-layout.ts');
 (async()=>{const browser=await require(process.env.PLAYWRIGHT_MODULE||'playwright').chromium.launch({headless:true,executablePath:process.env.CHAT_TEST_BROWSER});try{
  const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -69,6 +86,8 @@ modules['@/lib/chat-echo-layout']=compile('lib/chat-echo-layout.ts');
  assert.ok(geometry.dx<1&&geometry.dy<1);assert.equal(geometry.color,await page.locator('[data-msg-id=new] .imessage-bubble-surface').evaluate(el=>getComputedStyle(el).backgroundColor));assert.equal(geometry.text,'别走🥺');
  assert.equal(await page.locator('.echo-live [data-msg-id]').count(),0);
  await page.waitForTimeout(1200);
+ const solid=await page.locator('.echo-copy .imessage-bubble-surface').first().evaluate(el=>{const normal=getComputedStyle(el).backgroundColor;document.querySelector('.chat-room-wrapper').setAttribute('data-glass-bubbles','');const glass=getComputedStyle(el).backgroundColor;const opacity=getComputedStyle(el).opacity;document.querySelector('.chat-room-wrapper').removeAttribute('data-glass-bubbles');return {normal,glass,opacity};});
+ assert.ok(!solid.normal.includes('rgba')&&!solid.glass.includes(' / '),'normal and glass Echo surfaces have no background alpha');assert.equal(solid.opacity,'1');
  if(process.env.ECHO_LIVE_SCREENSHOT)await page.screenshot({path:process.env.ECHO_LIVE_SCREENSHOT});
  await page.evaluate(()=>{window.msgs.push({id:'next',sessionId:'s',role:'user',content:'爱你❤️',createdAt:new Date().toISOString(),mediaData:{screenEffect:'echo'}});window.update([...window.msgs]);});
  // Replacing the active source DOM and adding another Echo must not cut off/restart this one.

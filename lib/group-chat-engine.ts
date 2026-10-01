@@ -7,6 +7,8 @@ import type { ApiConfig, PresetConfig, RegexConfig } from "./settings-types";
 import { loadCharacters } from "./character-storage";
 import { buildGroupTapbackPrompt, buildPokeUsagePrompt } from "./chat-tapback";
 import { buildEchoPrompt, echoHistoryText } from "./chat-echo";
+import { buildLovePrompt, loveHistoryText } from "./chat-love";
+import { buildFireworksPrompt, fireworksHistoryText } from "./chat-fireworks";
 import { buildAvatarActionPrompt, buildGroupAvatarContext, getAvatarVisionPromptLimit } from "./chat-avatar-action";
 import { buildCurrentAvatarSnapshot } from "./chat-current-avatar-context";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
@@ -137,7 +139,7 @@ export function annotateGroupHistory(
 
         return {
             ...msg,
-            content: `[${senderName}]: ${echoHistoryText(msg, content)}${msg.role === "user" && Array.isArray(msg.mediaData?.mentions) && msg.mediaData.mentions.length ? `\n[本条消息明确提及：${msg.mediaData.mentions.filter(m => m && charMap.has(m.characterId)).map(m => `${charMap.get(m.characterId)}（角色ID:${m.characterId}）`).join("、")}；提及是互动信息，不强制被提及者回复或其他成员沉默。]` : ""}`,
+            content: `[${senderName}]: ${fireworksHistoryText(msg, loveHistoryText(msg, echoHistoryText(msg, content)))}${msg.role === "user" && Array.isArray(msg.mediaData?.mentions) && msg.mediaData.mentions.length ? `\n[本条消息明确提及：${msg.mediaData.mentions.filter(m => m && charMap.has(m.characterId)).map(m => `${charMap.get(m.characterId)}（角色ID:${m.characterId}）`).join("、")}；提及是互动信息，不强制被提及者回复或其他成员沉默。]` : ""}`,
         };
     });
 }
@@ -515,7 +517,7 @@ async function buildGroupChatPromptMessages(
     if (sharedAlbumContext) llmMessages.push({ role: "system", content: sharedAlbumContext });
     if (!isOfflineMode) llmMessages.push({
         role: "system",
-        content: buildGroupTapbackPrompt(promptHistory) + "\n" + buildPokeUsagePrompt(promptHistory) + "\n" + avatarInstructions + "\n" + buildEchoPrompt()
+        content: buildGroupTapbackPrompt(promptHistory) + "\n" + buildPokeUsagePrompt(promptHistory) + "\n" + avatarInstructions + "\n" + buildEchoPrompt() + "\n" + buildLovePrompt() + "\n" + buildFireworksPrompt()
             + (promptProfile?.output === "plain_text" || promptProfile?.output === "json" ? "" : `\n${buildImageDeliveryChatPrompt()}`)
             + `\n当前群聊名称是“${session.groupName || "群聊"}”。群成员可以依各自性格、关系和正在发生的事情，自主决定偶尔修改群名；不要机械执行，也不要频繁改名。真正决定修改时，该角色输出 [修改群名:新群名]，系统才会实际保存；禁止只用文字声称改好了却不输出协议。`,
     });

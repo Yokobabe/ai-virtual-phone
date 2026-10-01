@@ -1,4 +1,22 @@
 import type { ChatMessage } from "./chat-storage";
+import { splitBilingualText } from "./bilingual-text";
+import { currencySymbol, normalizeCurrency } from "./exchange-rates";
+
+/** Keep only the language actually quoted, never the raw `original | translation` protocol. */
+export function normalizeQuotePreviewText(value: string): string {
+    const text = value.trim();
+    if (!text) return "";
+    return splitBilingualText(text)?.original || text;
+}
+
+function formatQuoteAmount(value: unknown): string {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return "";
+    return amount.toLocaleString("zh-CN", {
+        minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+        maximumFractionDigits: 2,
+    });
+}
 
 /** Copy readable content, not media URLs or an empty content field. */
 export function getQuotePreview(message: ChatMessage): string {
@@ -8,15 +26,20 @@ export function getQuotePreview(message: ChatMessage): string {
         const label = d.photoGroupLeadLabel?.trim() || d.label?.trim() || "照片";
         return `照片组 ${index + 1} / ${d.photoGroupCount}：${label}`;
     }
-    const text = (d?.label || message.content || "").trim();
+    const text = normalizeQuotePreviewText(d?.label || message.content || "");
     const labeled = (kind: string, value = text) => value ? `${kind}：${value}` : `${kind}消息`;
     switch (message.mediaType) {
         case "audio": return labeled("语音", (message.content || d?.label || d?.synthesizedFromText || "").trim());
-        case "transfer":
+        case "transfer": {
+            const currency = normalizeCurrency(d?.currency);
+            const amountText = formatQuoteAmount(d?.amount);
+            const amount = amountText ? `${currencySymbol(currency)}${amountText}` : "";
+            return labeled("转账", [amount, text].filter(Boolean).join(" · "));
+        }
         case "red_packet": {
-            const amount = typeof d?.amount === "number" && Number.isFinite(d.amount)
-                ? `¥${d.amount.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}` : "";
-            return labeled(message.mediaType === "transfer" ? "转账" : "红包", [amount, text].filter(Boolean).join(" · "));
+            const amountText = formatQuoteAmount(d?.amount);
+            const amount = amountText ? `¥${amountText}` : "";
+            return labeled("红包", [amount, text].filter(Boolean).join(" · "));
         }
         case "gift": return labeled("礼物", [d?.giftName, text].filter((value, index, values) => value && values.indexOf(value) === index).join(" · "));
         case "image": return labeled("图片");
@@ -27,6 +50,6 @@ export function getQuotePreview(message: ChatMessage): string {
         case "music":
         case "music_share": return labeled("音乐", [d?.musicTitle, d?.musicArtist].filter(Boolean).join(" — ") || text);
         case "media_file": return labeled("文件", d?.fileName || text);
-        default: return (message.content || d?.label || "").trim() || "消息";
+        default: return text || "消息";
     }
 }

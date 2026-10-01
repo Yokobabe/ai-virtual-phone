@@ -3,6 +3,8 @@
 import { Character } from "./character-types";
 import { ChatMessage } from "./chat-storage";
 import { echoHistoryText } from "./chat-echo";
+import { loveHistoryText } from "./chat-love";
+import { fireworksHistoryText } from "./chat-fireworks";
 import type { StateValue } from "./chat-storage";
 import { PresetConfig, Prompt, PromptOrderEntry, WorldBookConfig, RegexConfig, WorldBookEntry } from "./settings-types";
 import type { UserIdentity } from "@/components/settings/user-identity";
@@ -566,7 +568,7 @@ function pushChronologicalShortTermBlocks(params: {
             }
         }
 
-        body = echoHistoryText(msg, body);
+        body = fireworksHistoryText(msg, loveHistoryText(msg, echoHistoryText(msg, body)));
         if (msg.mediaData?.tapback) {
             const actor = msg.mediaData.tapbackBy === "assistant" ? characterName : resolvedUserName;
             body = `${body}${body.trim() ? "\n" : ""}[Tapback:${actor}对这条消息回应了${msg.mediaData.tapback}；消息ID=${msg.id}]`;
@@ -1033,7 +1035,7 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
                 }
             }
 
-            body = echoHistoryText(msg, body);
+            body = fireworksHistoryText(msg, loveHistoryText(msg, echoHistoryText(msg, body)));
             if (msg.mediaData?.tapback) {
                 const actor = msg.mediaData.tapbackBy === "assistant" ? (character?.name || "对方") : resolvedUserName;
                 body = `${body}${body.trim() ? "\n" : ""}[Tapback:${actor}对这条消息回应了${msg.mediaData.tapback}；消息ID=${msg.id}]`;

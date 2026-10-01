@@ -82,7 +82,7 @@ for(const sample of ['#ff0000','#00ff00','#0000ff','#ffff00','#ff00ff','#00ffff'
   const c=resolve({charMode:'auto'},dark,false,sample);
   assert.ok(contrast(c.surface,c.text)>=4.5,`text contrast ${sample} ${dark}`);
   assert.ok(contrast(c.surface,c.voice)>=4.5,`voice contrast ${sample} ${dark}`);
-  if(!dark) assert.ok(Math.min(...exportsObject.rgb(c.surface))>=155,'white-based tinted surface');
+  if(!dark) assert.ok(Math.min(...exportsObject.rgb(c.surface))>=128,'light surface remains readable while preserving avatar color');
 }
 console.log('Passed: history rename isolation and automatic day/night text/voice contrast across hue extremes.');
 const avatarExports={};

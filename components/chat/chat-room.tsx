@@ -23,6 +23,8 @@ import { useGroupMentions } from "./use-group-mentions";
 import { MentionAvatar } from "./mention-avatar";
 import { useEchoSendGesture } from "./use-echo-send-gesture";
 import { canUseEcho, hasEcho } from "@/lib/chat-echo";
+import { canUseLove, hasLove } from "@/lib/chat-love";
+import { canUseFireworks, hasFireworks } from "@/lib/chat-fireworks";
 import { useChatEcho } from "./use-chat-echo";
 import { DrawingBoard, DrawingGlyph } from "./drawing-board";
 import type { MentionMember } from "@/lib/group-mentions";
@@ -98,6 +100,7 @@ import { useGroupBubbleTint } from "./use-group-bubble-tint";
 import { getQuotePreview } from "@/lib/chat-quote-preview";
 import { SortablePlusMenu } from "./sortable-plus-menu";
 import { useChatAppearance } from "./use-chat-appearance";
+import { useGlassContrast } from "./use-glass-contrast";
 import { HeaderVideoIcon } from "./header-video-icon";
 import { ChatUnreadPill } from "./chat-unread-pill";
 import { useChatEdgeTint } from "./use-chat-edge-tint";
@@ -677,7 +680,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     onOpenCustomPlusAction: (action: RegisteredCustomAppChatPlusAction) => void;
     onStartVideoCall: () => void;
     onStartVoiceCall: () => void;
-    onSendText: (text: string, options?: { autoReply?: boolean; screenEffect?: "echo"; mentions?: { characterId: string; name: string }[] }) => boolean;
+    onSendText: (text: string, options?: { autoReply?: boolean; screenEffect?: "echo" | "love" | "fireworks"; mentions?: { characterId: string; name: string }[] }) => boolean;
     onStopGeneration: () => void;
     onTriggerAIResponse: () => void;
 	onSendSticker: (name: string, url?: string) => void;
@@ -717,6 +720,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
 }, ref) {
     const [inputText, setInputText] = useState("");
     const [inputFocused, setInputFocused] = useState(false);
+    const [showSendEffectPicker, setShowSendEffectPicker] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
     // 表情包搜索联想：ESC/失焦置 true 隐藏，输入变化重新开启
     const [suggestClosed, setSuggestClosed] = useState(false);
@@ -731,7 +735,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     const inputLocked = isSpectator || muteRemainingMs > 0;
     const mentions = useGroupMentions(inputText, setInputText, textareaRef, mentionMembers,
         isGroup && !inputLocked && inputFocused && !showEmojiPanel && !showStickerPanel && !showPlusMenu);
-    const onSendText = (text: string, options?: { autoReply?: boolean; screenEffect?: "echo" }) => sendText(text, { ...options, mentions: mentions.identities(text) });
+    const onSendText = (text: string, options?: { autoReply?: boolean; screenEffect?: "echo" | "love" | "fireworks" }) => sendText(text, { ...options, mentions: mentions.identities(text) });
 
     const resetTextareaHeight = () => {
         if (textareaRef.current) textareaRef.current.style.height = "auto";
@@ -775,13 +779,23 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
         sendDraft();
     };
 
-    const sendEchoDraft = () => {
-        if (inputLocked || isGenerating || !canUseEcho({ content: inputText })) return;
-        if (!onSendText(inputText.trim(), { screenEffect: "echo" })) return;
+    const sendEffectDraft = (screenEffect: "echo" | "love" | "fireworks") => {
+        const eligible = screenEffect === "love" ? canUseLove({ content: inputText }) : canUseEcho({ content: inputText });
+        if (inputLocked || isGenerating || !eligible) return;
+        if (!onSendText(inputText.trim(), { screenEffect })) return;
+        setShowSendEffectPicker(false);
         setInputText(""); resetTextareaHeight(); onClosePanels(); textareaRef.current?.blur();
     };
-    const echoGesture = useEchoSendGesture(!inputLocked && !isGenerating && canUseEcho({ content: inputText }), sendEchoDraft,
+    const echoGesture = useEchoSendGesture(!inputLocked && !isGenerating && canUseEcho({ content: inputText }), () => {
+        onClosePanels();
+        setShowSendEffectPicker(true);
+        textareaRef.current?.blur();
+    },
         () => (!isGenerating ? handleAIReply : handleSubmit)());
+
+    useEffect(() => {
+        if (inputLocked || isGenerating || !canUseEcho({ content: inputText })) setShowSendEffectPicker(false);
+    }, [inputLocked, isGenerating, inputText]);
 
     const handleAIReply = () => {
         const trimmed = inputText.trim();
@@ -832,6 +846,16 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
             {...(inputText.trim() ? { "data-has-text": "" } : {})}
             {...(inputFocused || inputText.trim() || isGenerating || (isGroup && inputLocked) ? { "data-show-send": "" } : {})}
         >
+            {showSendEffectPicker && (
+                <>
+                    <button type="button" className="imessage-send-effect-dismiss" onClick={() => setShowSendEffectPicker(false)} aria-label="关闭发送特效" />
+                    <div className="imessage-send-effect-picker" role="menu" aria-label="选择发送特效">
+                        {([['echo', '回声'], ['love', '爱心'], ['fireworks', '烟花']] as const).map(([effect, label]) => (
+                            <button key={effect} type="button" role="menuitem" onClick={() => sendEffectDraft(effect)} className="imessage-send-effect-option">{label}</button>
+                        ))}
+                    </div>
+                </>
+            )}
             {theaterMode && (
                 <div className="chat-theater-mode-strip" role="status">
                     <span className="chat-theater-mode-icon" aria-hidden="true">
@@ -1024,10 +1048,8 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                         aria-label="语音消息"
                         title="语音消息"
                     >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <rect x="9" y="3" width="6" height="12" rx="3" />
-                            <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" />
-                            <path d="M12 18v3" />
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path fill="currentColor" fillRule="evenodd" clipRule="evenodd" d="M12 3.25a.75.75 0 0 1 .75.75v16a.75.75 0 0 1-1.5 0V4a.75.75 0 0 1 .75-.75m-4 3a.75.75 0 0 1 .75.75v10a.75.75 0 0 1-1.5 0V7A.75.75 0 0 1 8 6.25m8 0a.75.75 0 0 1 .75.75v10a.75.75 0 0 1-1.5 0V7a.75.75 0 0 1 .75-.75m-12 4a.75.75 0 0 1 .75.75v2a.75.75 0 0 1-1.5 0v-2a.75.75 0 0 1 .75-.75m16 0a.75.75 0 0 1 .75.75v2a.75.75 0 0 1-1.5 0v-2a.75.75 0 0 1 .75-.75" />
                         </svg>
                     </button>
                 )}
@@ -1372,6 +1394,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const [bgLoading, setBgLoading] = useState(!!session.backgroundImage);
 
     const wrapperRef = useRef<HTMLDivElement>(null);
+    useGlassContrast(wrapperRef, bgImageResolved, !!session.glassBubblesEnabled, chatAppearance.dark);
 
     // 全屏特效：命中触发词的新消息播放表情雨/礼花（微信同款）
     const [activeScreenEffect, setActiveScreenEffect] = useState<ActiveScreenEffect | null>(null);
@@ -1390,7 +1413,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         for (const msg of messages) {
             if (seen.has(msg.id)) continue;
             seen.add(msg.id);
-            if (hasEcho(msg)) continue;
+            if (hasEcho(msg) || hasLove(msg) || hasFireworks(msg)) continue;
             if (msg.role !== "user" && msg.role !== "assistant") continue;
             // 只对本次打开聊天室之后产生的消息生效，历史加载/翻页不触发
             if (new Date(msg.createdAt).getTime() < screenFxMountedAtRef.current) continue;
@@ -1680,7 +1703,12 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     };
 
     const beginQuoteReply = (message: ChatMessage) => {
-        setQuotingMessage(message);
+        const activeBubble = Array.from(wrapperRef.current?.querySelectorAll<HTMLElement>("[data-msg-id]") || [])
+            .find(element => element.dataset.msgId === message.id);
+        // In click-to-translate mode this is the language currently on screen;
+        // in auto mode the first section is the original, so the translation is not duplicated.
+        const visibleText = activeBubble?.querySelector<HTMLElement>(".chat-bilingual-section")?.innerText.trim();
+        setQuotingMessage(visibleText ? { ...message, content: visibleText } : message);
         closeContextMenu();
         requestAnimationFrame(() => chatTextInputRef.current?.focus());
     };
@@ -4568,7 +4596,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         return true;
     };
 
-    const handleSendText = (text: string, options?: { autoReply?: boolean; screenEffect?: "echo"; mentions?: { characterId: string; name: string }[] }): boolean => {
+    const handleSendText = (text: string, options?: { autoReply?: boolean; screenEffect?: "echo" | "love" | "fireworks"; mentions?: { characterId: string; name: string }[] }): boolean => {
         if (!ensureGroupSpeakPermission()) return false;
         if (isGenerating) {
             showChatToast("请先等待对方回复");
@@ -4595,7 +4623,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         const quotePhoto = quoteGroup.length ? quoteGroup[quoteGroupIndex] : (quoteStored?.mediaType === "image" ? quoteStored : undefined);
         const quoteData = quoteStored ? {
             quoteMessageId: quoteStored.id,
-            quotePreview: getQuotePreview(quoteStored),
+            quotePreview: getQuotePreview(quotingMessage || quoteStored),
             quoteRole: quoteStored.role,
             ...(quotePhoto ? {
                 quotePhotoMessageId: quotePhoto.id,
@@ -4610,8 +4638,14 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         const commitSendText = (currentText: string) => {
             // 掷骰子：整条消息就是骰子图标时，发骰子气泡（内容仅图标），
             // 点数由系统旁白公布——避免结果挂在 user 消息上被角色模仿格式
-            const useEcho = options?.screenEffect === "echo" && canUseEcho({ content: currentText });
-            const diceOnly = !useEcho && !isQuoting && isDiceOnlyMessage(currentText);
+            const screenEffect = options?.screenEffect === "fireworks" && canUseFireworks({ content: currentText })
+                ? "fireworks" as const
+                : options?.screenEffect === "love" && canUseLove({ content: currentText })
+                ? "love" as const
+                : options?.screenEffect === "echo" && canUseEcho({ content: currentText })
+                    ? "echo" as const
+                    : undefined;
+            const diceOnly = !screenEffect && !isQuoting && isDiceOnlyMessage(currentText);
             const diceFace = diceOnly ? rollChatDiceFace() : 0;
 
             const newMsg = pushChatMessage({
@@ -4620,8 +4654,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 content: currentText,
                 mediaType: diceOnly ? "dice" : isQuoting ? "quote" : undefined,
                 mediaUrl: isQuoting ? quotePhoto?.mediaUrl : undefined,
-                mediaData: diceOnly ? { diceFace } : useEcho || isQuoting || (session.isGroup && options?.mentions?.length) ? {
-                    ...(useEcho ? { screenEffect: "echo" as const } : {}),
+                mediaData: diceOnly ? { diceFace } : screenEffect || isQuoting || (session.isGroup && options?.mentions?.length) ? {
+                    ...(screenEffect ? { screenEffect } : {}),
                     ...(isQuoting ? quoteData : {}),
                     ...(session.isGroup && options?.mentions?.length ? { mentions: options.mentions.filter(m => session.participantIds?.includes(m.characterId) && currentText.includes(`@${m.name}`)) } : {}),
                 } : undefined,
@@ -4629,7 +4663,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
             setMessages(prev => [...prev, newMsg]);
             // Use the actual publish boundary (also after async plugins), not only history inference.
-            if (hasEcho(newMsg)) echo.published(newMsg);
+            if (hasEcho(newMsg) || hasLove(newMsg) || hasFireworks(newMsg)) echo.published(newMsg);
             if (diceOnly) {
                 const diceAside = pushChatMessage({
                     sessionId: session.id,
@@ -5776,8 +5810,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                         }
                         setActiveMessageId(null);
                     }} className="ctx-menu-btn"><Copy className="imessage-context-icon" aria-hidden="true" /><span>复制</span></button>
-                    {hasEcho(m) && <button type="button" onClick={() => { closeContextMenu(); echo.replay(m.id); }} className="ctx-menu-btn">
-                        <span className="imessage-context-icon" aria-hidden="true">↻</span><span>重播回声</span>
+                    {(hasEcho(m) || hasLove(m) || hasFireworks(m)) && <button type="button" onClick={() => { closeContextMenu(); echo.replay(m.id); }} className="ctx-menu-btn">
+                        <span className="imessage-context-icon" aria-hidden="true">↻</span><span>{hasFireworks(m) ? "重播烟花" : hasLove(m) ? "重播爱心" : "重播回声"}</span>
                     </button>}
                     <button onClick={() => (m.role === "assistant" ? handleEditResponseStart(m) : handleEditMessageStart(m))} className="ctx-menu-btn">
                         <Pencil className="imessage-context-icon" aria-hidden="true" />
@@ -7164,7 +7198,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                             {/* Message Actions Popup */}
                                             {activeMessageId === msg.id && renderBubbleContextMenu(msg)}
 
-                                            {(!renderMsg.mediaType || renderMsg.mediaType === "audio") && <span className="imessage-bubble-surface" aria-hidden="true" />}
+                                            {(!renderMsg.mediaType || String(renderMsg.mediaType) === "text" || renderMsg.mediaType === "audio") && <span className="imessage-bubble-surface" aria-hidden="true" />}
                                             <MessageBubble
                                                 msg={renderMsg}
                                                 replyAccessory={renderMsg.mediaType === "quote" ? thoughtToggle : undefined}

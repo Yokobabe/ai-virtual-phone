@@ -806,16 +806,17 @@ export function parseAIResponse(rawText: string, previousState: StateValue[]): P
 
     // 4. Parse each segment
     const parts: ParsedMessagePart[] = [];
-    let echoUsed = false;
+    let screenEffectUsed = false;
     for (const seg of segments) {
-        const echo = /^\[Echo\]\s*/i.test(seg);
+        const marker = seg.match(/^\[(Echo|Love|Fireworks)\]\s*/i)?.[1]?.toLowerCase() as "echo" | "love" | "fireworks" | undefined;
         const segmentParts: ParsedMessagePart[] = [];
-        parseSegment(echo ? seg.replace(/^\[Echo\]\s*/i, "") : seg, segmentParts);
+        parseSegment(marker ? seg.replace(/^\[(?:Echo|Love|Fireworks)\]\s*/i, "") : seg, segmentParts);
         // Bind only to the first visible part; never skip an attachment to mark a later text.
         const first = segmentParts[0];
-        if (echo && !echoUsed && first && canUseEcho(first) && !first.content.includes("\x00HTML_BLOCK_")) {
-            first.mediaData = { ...first.mediaData, screenEffect: "echo" };
-            echoUsed = true;
+        const eligible = !!marker && !!first && canUseEcho(first);
+        if (marker && !screenEffectUsed && first && eligible && !first.content.includes("\x00HTML_BLOCK_")) {
+            first.mediaData = { ...first.mediaData, screenEffect: marker };
+            screenEffectUsed = true;
         }
         parts.push(...segmentParts);
     }

@@ -14,19 +14,23 @@ async function main(){
    normalizeGroupTapbacks:r=>Array.isArray(r)?r:[],getTapbackGlyph:v=>v,getTapbackLabel:()=> '回应',
  }};
  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,'components/chat/imessage-tapback-badge.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);
- const reactions=['❤️','😂','🥹','👍'].map((emoji,i)=>({actorId:String(i),actorName:'成员'+i,emoji}));
- const badge=renderToStaticMarkup(React.createElement(context.exports.IMessageTapbackBadge,{reactions}));
- const single=renderToStaticMarkup(React.createElement(context.exports.IMessageTapbackBadge,{tapback:'😘'}));
+ const reactions=['❤️','😂','🥹','👍'].map((emoji,i)=>({actorId:i===0?'self':`c${i}`,actorName:'成员'+i,emoji}));
+ const reactionStyleForActor=id=>({'--im26-tapback-fill':id==='self'?'rgb(20, 120, 220)':'rgb(220, 120, 40)','--im26-tapback-glyph':'rgb(255, 255, 255)'});
+ const badge=renderToStaticMarkup(React.createElement(context.exports.IMessageTapbackBadge,{reactions,reactionStyleForActor}));
+ const single=renderToStaticMarkup(React.createElement(context.exports.IMessageTapbackBadge,{tapback:'😘',tapbackBy:'assistant',reactionStyleForActor}));
  const groupSingle=renderToStaticMarkup(React.createElement(context.exports.IMessageTapbackBadge,{reactions:reactions.slice(0,1)}));
+ assert.match(badge,/--im26-tapback-fill:rgb\(20, 120, 220\)/,'user reaction uses user bubble color');
+ assert.match(badge,/--im26-tapback-fill:rgb\(220, 120, 40\)/,'character reaction uses that actor bubble color');
+ assert.match(single,/data-tapback-by="assistant"/,'private reaction records initiating side');
  const unreadContext={exports:{},require:name=>name==='react'?{...React,useState:()=>[12,()=>{}],useRef:()=>({current:null}),useEffect:()=>{},useId:()=> 'unread-test'}:name==='react/jsx-runtime'?require(name):name==='lucide-react'?require(name):{}};
  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,'components/chat/chat-unread-pill.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,unreadContext);
  const unread=renderToStaticMarkup(React.createElement(unreadContext.exports.ChatUnreadPill,{sessionId:'fixture',onBack:()=>{}}));
  const browser=await playwright.chromium.launch({headless:true,...(process.env.CHAT_TEST_BROWSER ? {executablePath:process.env.CHAT_TEST_BROWSER} : {})});
  try{
  const page=await browser.newPage({viewport:{width:390,height:844}});
- for(const dark of [false,true]){
+ for(const glass of [false,true]) for(const dark of [false,true]){
   await page.emulateMedia({colorScheme:dark?'dark':'light'});
-  await page.setContent(`<style>${css}</style><div class="chat-room-wrapper" data-imessage-private ${dark?'data-chat-dark':''}>
+  await page.setContent(`<style>${css}</style><div class="chat-room-wrapper" data-imessage-private ${dark?'data-chat-dark':''} ${glass?'data-glass-bubbles data-has-bg-image':''}>
    ${unread}
    <div class="chat-plus-menu"><button class="chat-plus-menu-item"><span class="chat-plus-menu-label">礼物</span></button></div>
    <div class="imessage-context-index"><div class="imessage-context-actions"><button class="ctx-menu-btn">复制</button><button class="ctx-menu-btn ctx-menu-btn-danger">删除</button></div></div>
@@ -40,16 +44,18 @@ async function main(){
   const colors=await page.evaluate(()=>Object.fromEntries(['.chat-plus-menu','.chat-plus-menu-label','.imessage-context-index .ctx-menu-btn','.chat-floating-ctx-menu .ctx-menu-btn','.group-tapback-detail','.imessage-settings-page','.ui-textarea','.modal-dialog','.page-header'].map(s=>{const c=getComputedStyle(document.querySelector(s));return [s,{color:c.color,bg:c.backgroundColor,filter:c.backdropFilter}]})));
   for(const selector of ['.chat-plus-menu-label','.imessage-context-index .ctx-menu-btn','.chat-floating-ctx-menu .ctx-menu-btn','.group-tapback-detail']){
    const channels=colors[selector].color.match(/\d+/g).slice(0,3).map(Number);
-   assert.ok(dark?channels.every(v=>v>200):channels.every(v=>v<80),`${selector} wrong ${dark?'night':'day'} text: ${colors[selector].color}`);
+   const expectsLight=dark||(glass&&selector!=='.group-tapback-detail');
+   assert.ok(expectsLight?channels.every(v=>v>200):channels.every(v=>v<80),`${selector} wrong ${glass?'glass':'flat'} ${dark?'night':'day'} text: ${colors[selector].color}`);
   }
   assert.equal(colors['.page-header'].bg,'rgba(0, 0, 0, 0)');
   assert.equal(colors['.page-header'].filter,'none');
   if(dark){assert.equal(colors['.imessage-settings-page'].bg,'rgb(0, 0, 0)');assert.equal(colors['.ui-textarea'].bg,'rgb(48, 48, 52)');assert.equal(colors['.modal-dialog'].bg,'rgb(28, 28, 30)');}
-  assert.equal(await page.locator('.chat-unread-day').evaluate(el=>getComputedStyle(el).display==='none'),dark);
-  assert.equal(await page.locator('.chat-unread-night').evaluate(el=>getComputedStyle(el).display!=='none'),dark);
-  assert.equal(await page.locator('.chat-unread-night text').evaluate(el=>getComputedStyle(el).fill),'rgb(255, 255, 255)');
-  assert.equal(await page.locator('.chat-unread-night').getAttribute('mask'),null,'Night digits must not be punched out');
-  if(dark) assert.ok((await page.locator('.chat-plus-menu').evaluate(el=>getComputedStyle(el).boxShadow)).includes('0.12'),'Night menu highlight follows the subdued glass token');
+  assert.equal(await page.locator('.chat-unread-day, .chat-unread-night').count(),0);
+  assert.equal(await page.locator('.chat-unread-pill mask').count(),1,'Both themes use knockout digits');
+  assert.equal(await page.locator('.chat-unread-pill').evaluate(el=>getComputedStyle(el).color===getComputedStyle(el.closest('button')).color),true,'Badge follows the back arrow');
+  const plusShadow=await page.locator('.chat-plus-menu').evaluate(el=>getComputedStyle(el).boxShadow);
+  if(dark&&!glass) assert.ok(plusShadow.includes('0.12'),'Night menu highlight follows the subdued glass token');
+  if(glass) assert.notEqual(plusShadow,'none','Glass menu keeps its dedicated surface depth');
   assert.equal(await page.locator('.group-tapback-layer').count(),4);
   assert.equal(await page.locator('.group-tapback-layer svg path').count(),2,'Only the front reaction carries the shared private tail');
   assert.equal(await page.locator('.group-tapback-layer svg path').first().getAttribute('d'),await page.locator('.single-test svg path').getAttribute('d'));
@@ -73,7 +79,7 @@ async function main(){
   const clipped=await page.locator('.group-tapback-stack').first().evaluate(el=>({width:el.getBoundingClientRect().width,clip:getComputedStyle(el.querySelector('.group-tapback-visuals')).overflow}));
   assert.ok(clipped.width<=30 && clipped.clip==='hidden',`Short bubbles cap the visible stack without dropping reaction data: ${JSON.stringify(clipped)}`);
  }
- console.log('PASS: real day/night CSS for plus/context/reaction menus and settings subpages; four-person badge stack renders; no frosted headers.');
+ console.log('PASS: flat day/night and glass menu text stay independent; reaction menus, settings subpages and four-person badge stack render.');
  }finally{await browser.close();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

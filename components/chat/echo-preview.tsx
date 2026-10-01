@@ -16,7 +16,7 @@ export const ECHO_COPIES = Array.from({ length: 144 }, (_, i) => {
         delay: noise(i + 50) * .045 };
 });
 
-// Burst from the original -> irregular, perspective-projected swarm -> gather back.
+// Original 2026-09-13 orbit/layout; only the ending dissolves instead of gathering.
 // Rotation belongs to the particles' positions, not the readable message glyphs.
 export function echoOrbitFrames(index: number, width: number, height: number, origin = { x: width * .8, y: height * .85 }, sizeMultiplier = 1): Keyframe[] {
     const copy = ECHO_COPIES[index];
@@ -29,8 +29,8 @@ export function echoOrbitFrames(index: number, width: number, height: number, or
         const depth = Math.sin(angle) * radius;
         const perspective = 1 / (1 - depth * .48);
         const spread = 1 - Math.pow(1 - clamp((t - copy.delay) / .18), 3);
-        const gather = smooth((t - (.70 + noise(index + 800) * .07)) / .23);
-        const extent = spread * (1 - gather);
+        const fade = smooth((t - (.70 + noise(index + 800) * .07)) / .23);
+        const extent = spread;
         const orbitX = Math.cos(angle) * width * .46 * radius;
         const orbitY = latitude * height * .42 + Math.sin(angle + phase) * height * .085;
         const tilt = .18 * Math.sin(t * 4);
@@ -39,11 +39,11 @@ export function echoOrbitFrames(index: number, width: number, height: number, or
         const x = origin.x + (swarmX - origin.x) * extent;
         const y = origin.y + (swarmY - origin.y) * extent;
         const swarmScale = Math.max(.14, Math.min(2.25, copy.scale * perspective)) * sizeMultiplier;
-        const scale = (1 + (swarmScale - 1) * spread) * (1 - gather * .88);
-        const entrance = smooth((t - copy.delay) / .035);
-        const exit = 1 - smooth((gather - .25) / .75);
+        const scale = 1 + (swarmScale - 1) * spread;
+        const entrance = t >= copy.delay ? 1 : 0;
+        const exit = 1 - fade;
         return { offset: t, transform: `translate3d(${x.toFixed(2)}px,${y.toFixed(2)}px,0) translate(-50%,-50%) scale(${scale.toFixed(3)})`,
-            opacity: entrance * exit * (.8 + depth * .2), zIndex: Math.round((depth + 1) * 100) };
+            opacity: entrance * exit, zIndex: Math.round((depth + 1) * 100) };
     });
 }
 

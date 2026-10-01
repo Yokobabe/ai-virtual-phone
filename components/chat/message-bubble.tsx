@@ -34,7 +34,7 @@ import { IMessageTapbackBadge } from "./imessage-tapback-badge";
 import { ApplePayBrand } from "./apple-pay-brand";
 import { currencySymbol, normalizeCurrency, fetchCnyRate, cnyAmount } from "@/lib/exchange-rates";
 import { LocationCard } from "./location-map";
-import { getQuotePreview } from "@/lib/chat-quote-preview";
+import { getQuotePreview, normalizeQuotePreviewText } from "@/lib/chat-quote-preview";
 
 interface MessageBubbleProps {
     quoteSource?: ChatMessage;
@@ -1959,7 +1959,7 @@ function QuoteBubble({ msg, displayContent, replyAccessory, quoteSource, quoteSo
             <span className="chat-quote-connector" aria-hidden="true" />
             {(
                 <div style={quoteSourceStyle} className="chat-quote-preview bg-black/[0.06] border-l-[3px] border-l-black/15 px-2.5 py-1.5 ts-12 text-[var(--c-icon)] mb-1.5 rounded-r-[6px] truncate max-w-full">
-                    {d?.quotePreview?.trim() || (quoteSource ? getQuotePreview(quoteSource) : "原消息暂不可用")}
+                    {normalizeQuotePreviewText(d?.quotePreview || "") || (quoteSource ? getQuotePreview(quoteSource) : "原消息暂不可用")}
                 </div>
             )}
             {msg.content && (

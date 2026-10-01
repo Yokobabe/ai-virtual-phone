@@ -27,7 +27,9 @@ export function avatarBubblePalette(sample: string, dark: boolean) {
     const s=Math.min(.85,rawS*(.78+.12*(1-sourceL))), l=dark ? .16+sourceL*.16 : .38+sourceL*.38;
     const a=s*Math.min(l,1-l);
     const tone=hex([0,8,4].map(n=>{const k=(n+h*12)%12;return 255*(l-a*Math.max(-1,Math.min(k-3,9-k,1)));}));
-    const strength=.22+.18*(1-sourceL)+.1*rawS;
+    // Keep the bubble visibly tied to the avatar. The old very pale wash made
+    // distinct avatars converge to nearly the same gray surface.
+    const strength=.38+.22*(1-sourceL)+.12*rawS;
     const surface=dark?tone:mix("#ffffff",tone,strength);
     const candidate=dark?mix("#ffffff",tone,.16):mix("#101012",tone,.38);
     const luminance=(color:string)=>rgb(color).map(c=>c/255).map(c=>c<=.04045?c/12.92:((c+.055)/1.055)**2.4).reduce((sum,c,i)=>sum+c*[.2126,.7152,.0722][i],0);
