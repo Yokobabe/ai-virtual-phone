@@ -14,7 +14,8 @@ import { CHAT_OPEN_SESSION_EVENT, dispatchOpenAddContact } from "@/lib/chat-noti
 import { ContactCardGenerateFlow } from "@/components/chat/contact-card-generate-flow";
 import { MediaPreviewOverlay } from "@/components/chat/media-preview-overlay";
 import { findStickerByName } from "@/lib/sticker-data";
-import { splitBilingualText } from "@/lib/bilingual-text";
+import { splitBilingualText, containsChinese } from "@/lib/bilingual-text";
+import { normalizeChatTextLayout } from "@/lib/chat-text-layout";
 import { isInvisibleOrWhitespaceOnly } from "@/lib/rich-message-parser";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
@@ -138,7 +139,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, onPhot
             if (msg.mediaType?.startsWith("plugin:")) {
                 return <PluginKindBubble msg={msg} kind={msg.mediaType.slice("plugin:".length)} />;
             }
-            const textBubble = <TextBubble content={displayContent ?? msg.content} onActionSelect={onActionSelect} defaultTranslationExpanded={defaultTranslationExpanded} />;
+            const textBubble = <TextBubble content={displayContent ?? msg.content} onActionSelect={onActionSelect} defaultTranslationExpanded={defaultTranslationExpanded} chatText={msg.role === "assistant"} />;
             return (
                 <>
                     {textBubble}
@@ -610,6 +611,7 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
     className,
     defaultExpanded = false,
     htmlFrameVariant,
+    chatText = false,
 }: {
     text: string;
     onActionSelect?: (text: string) => void;
@@ -617,8 +619,9 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
     className?: string;
     defaultExpanded?: boolean;
     htmlFrameVariant?: ChatHtmlFrameVariant;
+    chatText?: boolean;
 }) {
-    const bilingual = splitBilingualText(text);
+    const bilingual = splitBilingualText(text, { allowUnchangedTranslation: chatText });
     const [showTranslated, setShowTranslated] = useState(false);
     const [originalWidth, setOriginalWidth] = useState<number | null>(null);
     const originalRef = useRef<HTMLDivElement>(null);
@@ -635,6 +638,7 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
         return () => observer.disconnect();
     }, [text, defaultExpanded]);
     const renderContent = (content: string, extraClass?: string) => {
+        if (chatText) content = normalizeChatTextLayout(content);
         if (mode === "plain") return <PlainTextContent content={content} className={extraClass} />;
         return (
             <div className={extraClass}>
@@ -647,6 +651,15 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
         return renderContent(text, className);
     }
 
+    // A repeated Latin word is not a Chinese translation. Do not fabricate one
+    // or render the same English twice; retain original and expose missing text.
+    if (chatText && !containsChinese(bilingual.translated)) {
+        return <div className="chat-bilingual-block" data-chat-text-layout="">
+            <div className="chat-bilingual-section">{renderContent(bilingual.original, "chat-bilingual-content")}</div>
+            {/[a-z]/i.test(bilingual.translated) && <span className="chat-text-missing-translation">未提供中文译文</span>}
+        </div>;
+    }
+
     const toggleTranslation = (event: React.MouseEvent<HTMLDivElement>) => {
         if (defaultExpanded) return;
         if ((event.target as HTMLElement).closest("a,button,input,textarea,select,[role='button']")) return;
@@ -657,6 +670,7 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
     return (
         <div
             className={`chat-bilingual-block ${defaultExpanded ? "chat-bilingual-block-auto" : "chat-bilingual-block-switch"} ${className ?? ""}`.trim()}
+            data-chat-text-layout={chatText || undefined}
             onClick={toggleTranslation}
             role={defaultExpanded ? undefined : "button"}
             tabIndex={defaultExpanded ? undefined : 0}
@@ -684,8 +698,8 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
     );
 });
 
-function TextBubble({ content, onActionSelect, defaultTranslationExpanded = false }: { content: string; onActionSelect?: (text: string) => void; defaultTranslationExpanded?: boolean }) {
-    return <BilingualTextBlock text={content} onActionSelect={onActionSelect} mode="markdown" defaultExpanded={defaultTranslationExpanded} />;
+function TextBubble({ content, onActionSelect, defaultTranslationExpanded = false, chatText = false }: { content: string; onActionSelect?: (text: string) => void; defaultTranslationExpanded?: boolean; chatText?: boolean }) {
+    return <BilingualTextBlock text={content} onActionSelect={onActionSelect} mode="markdown" defaultExpanded={defaultTranslationExpanded} chatText={chatText} />;
 }
 
 // ── Red Packet ─────────────────────────────

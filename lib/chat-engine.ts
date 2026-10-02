@@ -1,6 +1,7 @@
 // lib/chat-engine.ts
 
 import { createSseJsonParser } from "./sse-json";
+import { ONLINE_CHAT_CADENCE_INSTRUCTION } from "./chat-cadence";
 import { maybeAppendShortcutCapability } from "./offline-shortcut-capability";
 import { loadCharacters } from "./character-storage";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
@@ -85,6 +86,7 @@ import { compositePhotoAnnotations } from "./chat-photo-markup";
 import { buildImageDeliveryChatPrompt } from "./image-delivery-protocol";
 import {
     DEFAULT_CHAT_BILINGUAL_PROMPT,
+    CHAT_TEXT_PAIRING_INSTRUCTION,
     DEFAULT_GROUP_CHAT_BILINGUAL_PROMPT,
     DEFAULT_GROUP_OFFLINE_CHAT_BILINGUAL_PROMPT,
     DEFAULT_OFFLINE_CHAT_BILINGUAL_PROMPT,
@@ -1575,11 +1577,12 @@ export function buildChatBilingualInstruction(
     mode: "single" | "group" = "single",
     customPrompt?: string,
 ): string {
-    return resolveBilingualPrompt(
+    const instruction = resolveBilingualPrompt(
         enabled === true,
         customPrompt,
         mode === "group" ? DEFAULT_GROUP_CHAT_BILINGUAL_PROMPT : DEFAULT_CHAT_BILINGUAL_PROMPT,
     );
+    return instruction ? `${instruction}\n${CHAT_TEXT_PAIRING_INSTRUCTION}` : instruction;
 }
 
 export function buildOfflineBilingualInstruction(
@@ -2075,6 +2078,9 @@ export async function buildChatPromptMessages(
             role: "system",
             content: "本次自定义 APP AI 任务只输出严格 JSON。不要输出 Markdown 代码块、解释文字或聊天富媒体指令。",
         });
+    }
+    if (resolvedAppId === "chat" && !session.isGroup && !isOfflineMode && !promptProfile) {
+        llmMessages.push({ role: "system", content: ONLINE_CHAT_CADENCE_INSTRUCTION });
     }
     appendEmptyGenerateGuardMessage(llmMessages, config, historyForPrompt);
 

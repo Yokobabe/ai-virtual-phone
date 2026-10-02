@@ -3,6 +3,9 @@
 
 import { ChatSession, ChatMessage, loadChatAppSettings, createResponseBatchId, createResponseRoundId, createToolExecutionId, loadChatSessions, getLatestCharacterStateValues, isSessionStreamingEnabled } from "./chat-storage";
 import { extractTextToolDirectiveText } from "./text-tool-protocol";
+import { getGroupDirectorNote, buildGroupTurnDirectionContext } from "./group-director-note";
+import { buildGroupDialogueFlowInstruction } from "./group-dialogue-flow";
+import { ONLINE_CHAT_CADENCE_INSTRUCTION } from "./chat-cadence";
 import type { ApiConfig, PresetConfig, RegexConfig } from "./settings-types";
 import { loadCharacters } from "./character-storage";
 import { buildGroupTapbackPrompt, buildPokeUsagePrompt } from "./chat-tapback";
@@ -93,6 +96,7 @@ import type { DebugPromptSnapshot } from "./debug-store";
 import { throwIfAborted } from "./abort-utils";
 import { buildCharacterTimeContext, buildGroupTimeContext } from "./character-time";
 import { getPromptTimestampOptionsForTimeContext } from "./prompt-time";
+import { buildGroupSpectatorContext, buildGroupDirectionContext } from "./group-spectator-context";
 
 function stripGroupFinancialActionsForMetadataRepair(text: string): string {
     return stripStateAndInnerForPrompt(text)
@@ -468,6 +472,10 @@ async function buildGroupChatPromptMessages(
         members.map(m => ({ id: m.character.id, name: m.character.name })),
         userName,
     );
+    const spectatorContext = buildGroupSpectatorContext({
+        isSpectator: session.isSpectator && activeAppTags.includes("group_chat"),
+        userName, memberNames, offline: isOfflineMode, history,
+    });
 
     const llmMessages = assembleGroupPromptPayload({
         members,
@@ -495,6 +503,7 @@ async function buildGroupChatPromptMessages(
         tools: toolsPrompt,
         groupTools: groupToolsPrompt,
         groupRoster,
+        spectatorContext,
         customAppRichMediaDirectives,
         chatBilingualInstruction,
         statusRegionSection: resolveStatusRegionSection(statusRegionCfg, "group"),
@@ -532,7 +541,25 @@ async function buildGroupChatPromptMessages(
             content: "本次自定义 APP AI 任务只输出严格 JSON。不要输出 Markdown 代码块、解释文字或聊天富媒体指令。",
         });
     }
-    appendEmptyGenerateGuardMessage(llmMessages, config, history);
+    if (activeAppTags.includes("group_chat") && !isOfflineMode && !promptProfile) {
+        llmMessages.push({ role: "system", content: buildGroupDialogueFlowInstruction() });
+        llmMessages.push({ role: "system", content: ONLINE_CHAT_CADENCE_INSTRUCTION });
+    }
+    if (spectatorContext) {
+        // Reinforce after preset/history/media blocks; never add a fake user turn
+        // for a spectator opening or empty-generate continuation.
+        llmMessages.push({ role: "system", content: spectatorContext });
+    } else {
+        appendEmptyGenerateGuardMessage(llmMessages, config, history);
+    }
+    if (activeAppTags.includes("group_chat")) {
+        const directionContext = buildGroupDirectionContext(session.groupDescription);
+        if (directionContext) llmMessages.push({ role: "system", content: directionContext });
+        if (spectatorContext) {
+            const turnDirection = buildGroupTurnDirectionContext(getGroupDirectorNote(session.id)?.text);
+            if (turnDirection) llmMessages.push({ role: "system", content: turnDirection });
+        }
+    }
 
     return { llmMessages, config, preset, regexes, nameToId, memberNames, enabledTools, userName, appTags: activeAppTags };
 }

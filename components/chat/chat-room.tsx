@@ -43,7 +43,6 @@ import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import { createPortal, flushSync } from "react-dom";
-import { PwaHeaderBlurExperiment } from "./pwa-header-blur-experiment";
 
 import { loadCharacters } from "@/lib/character-storage";
 import { Character } from "@/lib/character-types";
@@ -63,6 +62,8 @@ import { GiftPickerModal } from "./gift-picker-modal";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { RetryGuidanceDialog } from "./retry-guidance-dialog";
 import { withRetryGuidance } from "@/lib/chat-retry-guidance";
+import { queueGroupDirectorNote, getGroupDirectorNote, consumeGroupDirectorNote } from "@/lib/group-director-note";
+import { shouldStartSpReply } from "@/lib/group-dialogue-flow";
 import { deleteWeixinCloudMessagesFromCloud, emitWeixinSyncToast, syncAllWeixinBotRuntimesToCloud } from "@/lib/weixin-cloud-sync";
 import { loadBindingConfig, loadImageGenerationSettings, loadPresets, loadRegexes, resolveBinding, resolveUserIdentity } from "@/lib/settings-storage";
 import { generateGroupChatCompletion, generateGroupOfflineChatCompletion, parseGroupChatResponse, buildEditableGroupRoundText } from "@/lib/group-chat-engine";
@@ -689,6 +690,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     onSendText: (text: string, options?: { autoReply?: boolean; screenEffect?: "echo" | "love" | "fireworks"; mentions?: { characterId: string; name: string }[] }) => boolean;
     onStopGeneration: () => void;
     onTriggerAIResponse: () => void;
+    onSendDirectorNote: (text: string) => boolean;
 	onSendSticker: (name: string, url?: string) => void;
 }>(function ChatTextInputBar({
     characterName,
@@ -722,6 +724,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     onSendText: sendText,
     onStopGeneration,
     onTriggerAIResponse,
+    onSendDirectorNote,
     onSendSticker,
 }, ref) {
     const [inputText, setInputText] = useState("");
@@ -777,12 +780,24 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     };
 
     const handleSubmit = () => {
-        if (inputLocked) return;
         if (isGenerating) {
             onStopGeneration();
             return;
         }
-        sendDraft();
+        if (isGroup && isSpectator) {
+            if (!onSendDirectorNote(inputText.trim())) return;
+            setInputText("");
+            resetTextareaHeight();
+            onClosePanels();
+            return;
+        }
+        if (inputLocked && !isGroup) return;
+        if (!inputLocked && inputText.trim()) {
+            sendDraft(true);
+        } else {
+            onTriggerAIResponse();
+            onClosePanels();
+        }
     };
 
     const sendEffectDraft = (screenEffect: "echo" | "love" | "fireworks") => {
@@ -797,13 +812,14 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
         setShowSendEffectPicker(true);
         textareaRef.current?.blur();
     },
-        () => (!isGenerating ? handleAIReply : handleSubmit)());
+        handleSubmit);
 
     useEffect(() => {
         if (inputLocked || isGenerating || !canUseEcho({ content: inputText })) setShowSendEffectPicker(false);
     }, [inputLocked, isGenerating, inputText]);
 
     const handleAIReply = () => {
+        if (isGroup && isSpectator) { handleSubmit(); return; }
         const trimmed = inputText.trim();
         if (!inputLocked && trimmed) {
             if (!onSendText(trimmed, { autoReply: true })) return;
@@ -912,7 +928,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
             )}
             {(
                 <div className="imessage-composer-subject">
-                    <span className="imessage-composer-subject-label">主题</span>
+                    <span className="imessage-composer-subject-label">{isSpectator ? "导演旁白" : "主题"}</span>
                     <div className="imessage-composer-shortcuts">
                         <button
                             type="button"
@@ -993,15 +1009,15 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                         setSuggestClosed(true);
                         return;
                     }
-                    if (shouldSendChatInputOnEnter(e, enterToSendEnabled)) {
+                    if (inputText.trim() && shouldSendChatInputOnEnter(e, enterToSendEnabled)) {
                         e.preventDefault();
                         handleSubmit();
                     }
                 }}
                 enterKeyHint={enterToSendEnabled ? "send" : "enter"}
                 className="chat-input-textarea"
-                disabled={inputLocked}
-                placeholder={inputLocked
+                disabled={inputLocked && !isSpectator}
+                placeholder={isSpectator ? "留空让他们自己聊" : inputLocked
                     ? (isSpectator ? "围观中，你不在这个群里" : `禁言中，剩余${Math.ceil(muteRemainingMs / 60000)}分钟`)
                     : (theaterMode ? "写下番外指令..." : "iMessage 信息")}
             />
@@ -1030,9 +1046,9 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                 <button
                     {...echoGesture.handlers}
                     disabled={!isGenerating && inputLocked && !isGroup}
-                    style={inputLocked && !isGenerating ? { opacity: 0.35 } : undefined}
+                    style={inputLocked && !isGroup && !isGenerating ? { opacity: 0.35 } : undefined}
                     className="ui-bare-btn text-[var(--c-text)] chat-send-btn"
-                    aria-label={isGenerating ? "停止本轮生成" : isGroup ? "让群成员回复" : "发送并让TA回复"}
+                    aria-label={isGenerating ? "停止本轮生成" : !inputLocked && inputText.trim() ? (isGroup ? "发送并让群成员回复" : "发送并让TA回复") : (isGroup ? "让群成员回复" : "让TA回复")}
                     title={isGenerating ? "停止本轮生成" : isGroup ? "发送并让群成员回复；无文字时继续聊天" : inputText.trim() ? "发送并让TA回复" : "让TA回复"}
                     data-generating={isGenerating || undefined}
                 >
@@ -1212,8 +1228,7 @@ const OfflineTextInputBar = memo(forwardRef<OfflineTextInputHandle, {
                 }}
                 enterKeyHint={enterToSendEnabled ? "send" : "enter"}
                 className="chat-input-textarea"
-                disabled={isSpectator}
-                placeholder={isSpectator ? "围观中，点右侧按钮推进他们的线下互动" : undefined}
+                placeholder={isSpectator ? "导演旁白 · 留空让他们自己聊" : undefined}
             />
             <div className="chat-input-actions">
                 <button
@@ -3792,6 +3807,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
         const generationRun = createGenerationRun(session.id);
         const generationRunId = generationRun.runId;
+        const directorNoteId = getGroupDirectorNote(session.id)?.id;
         const isCurrentGeneration = () => isGenerationRunActive(session.id, generationRunId);
         const generationGuard: GenerationRunGuard = { signal: generationRun.controller.signal, isActive: isCurrentGeneration };
         let shouldRunDeclineReply = false;
@@ -3844,6 +3860,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 );
                 if (!isCurrentGeneration()) return;
                 await processGroupParts(results, setMessages, generationGuard, roundReasoning, { instantReveal: isSessionStreamingEnabled(session, true) });
+                if (results.length && isCurrentGeneration()) consumeGroupDirectorNote(session.id, directorNoteId);
             } else {
                 let capturedReasoning: string | undefined;
                 const cr = await generateChatCompletion(
@@ -4171,6 +4188,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     };
 
     const triggerAIResponse = async () => {
+        const directorNoteId = getGroupDirectorNote(session.id)?.id;
         if (isGeneratingRef.current) {
             if (activeGenerationRuns.has(session.id)) return;
             // 上一轮被外部取消/顶替后收尾提前返回过，标记已是陈旧状态：复位后继续本次请求
@@ -4410,6 +4428,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     throwIfGenerationStopped(generationGuard);
                 }
                 await processGroupParts(results, setMessages, generationGuard, pendingGroupReasoning, { instantReveal: isSessionStreamingEnabled(session, true) });
+                if (results.length && isCurrentGeneration()) consumeGroupDirectorNote(session.id, directorNoteId);
             } else {
                 let lastSendResult: Awaited<ReturnType<typeof splitAndSaveAIMessages>> | undefined;
                 // 每轮 LLM 调用的思维链，onReasoning 先于该轮 onTextPart 触发
@@ -4841,7 +4860,14 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             showChatToast("线下回复生成中");
             return false;
         }
-        const currentText = inputText.trim();
+        const draftText = inputText.trim();
+        const directorMode = !!(session.isGroup && session.isSpectator);
+        if (directorMode && !queueGroupDirectorNote(session.id, draftText)) {
+            showChatToast("旁白未保存，请控制在4000字内");
+            return false;
+        }
+        const directorNoteId = directorMode ? getGroupDirectorNote(session.id)?.id : undefined;
+        const currentText = directorMode ? "" : draftText;
         if (!currentText && !(session.isGroup && session.isSpectator)) return false;
 
         cancelFollowUp(session.id);
@@ -4850,7 +4876,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         setShowStickerPanel(false);
         setRichModal(null);
         setPendingOfflineUserText(currentText);
-        offlineGenerationInputRef.current = currentText;
+        offlineGenerationInputRef.current = draftText;
         setIsOfflineGenerating(true);
         offlineStreamAccumRef.current = "";
         setOfflineStreamPreview(null);
@@ -4902,9 +4928,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     thinkingTag: result.thinkingTag,
                 });
                 setOfflineTurns(prev => [...prev, saved]);
+                consumeGroupDirectorNote(session.id, directorNoteId);
             } catch (error: any) {
                 if (!isCurrentOfflineRun() || isAbortLikeError(error)) return;
-                offlineTextInputRef.current?.setText(currentText);
+                offlineTextInputRef.current?.setText(draftText);
                 showChatToast(`线下生成失败: ${error?.message || String(error)}`, 3000);
             } finally {
                 if (!finishOfflineGenerationRun(session.id, offlineRunId)) return;
@@ -6499,7 +6526,6 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             {/* 全屏特效层（表情雨/礼花），不拦截任何触摸操作 */}
             <ChatScreenEffectOverlay active={activeScreenEffect} onDone={() => setActiveScreenEffect(null)} />
             {echo.overlay}
-            <PwaHeaderBlurExperiment active={!showSettings && !showVoiceCall && !showVideoCall} dark={chatAppearance.dark} />
             {/* Header */}
             <header className="page-header chat-room-main-pane" data-ui="header">
                 <div className="page-header-safe-area" />
@@ -6976,8 +7002,11 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     const isVisualMedia = isChatVisualMedia(renderMsg);
                     const hiddenEmpty = isHiddenChatFlowMessage(renderMsg, bubbleDisplayContent);
                     const hasFoldedPanel = !!(renderMsg.statusPanel || renderMsg.innerMonologue);
-                    const spReplyStart = uiRole(msg) === "assistant" && (imessageTailMessageIds.firstIds.has(msg.id)
-                        || (!!msg.responseBatchId && msg.responseBatchId !== prevVisibleMsg?.responseBatchId));
+                    const spReplyStart = shouldStartSpReply({
+                        assistant: uiRole(msg) === "assistant", group: !!session.isGroup,
+                        consecutive: !!isConsecutive, firstInReply: imessageTailMessageIds.firstIds.has(msg.id),
+                        batchChanged: !!msg.responseBatchId && msg.responseBatchId !== prevVisibleMsg?.responseBatchId,
+                    });
                     // 内心卡片只展示本轮实际输出的状态值；旧数据没有 freshStateValues 时回退到合并快照
                     const cardStateValues = msg.freshStateValues ?? msg.stateValues;
                     const isSilentThought = !visibleContent && !renderMsg.mediaType && hasFoldedPanel && msg.role !== "user";
@@ -7495,6 +7524,16 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 onSendText={handleSendText}
                 onStopGeneration={clearStuckGeneration}
                 onTriggerAIResponse={triggerAIResponse}
+                onSendDirectorNote={(text) => {
+                    if (isGeneratingRef.current || isBackgroundReplyGenerating(session.id)) return false;
+                    if (!queueGroupDirectorNote(session.id, text)) {
+                        showChatToast("旁白未保存，请控制在4000字内");
+                        return false;
+                    }
+                    cancelFollowUp(session.id);
+                    void triggerAIResponse();
+                    return true;
+                }}
                 onSendSticker={(name, url) => { setShowStickerPanel(false); sendRichMessage("sticker", { label: name, stickerUrl: url }); }}
             />
             ))}

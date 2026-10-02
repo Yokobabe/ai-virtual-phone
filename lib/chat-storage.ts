@@ -75,6 +75,8 @@ export type ChatSession = {
     isGroup?: boolean;
     groupName?: string;
     groupAvatar?: string;
+    groupDescription?: string; // 幕后群说明：仅供模型引导，不是群公告或角色发言
+    pendingGroupDirectorNote?: { id: string; text: string }; // 下一轮幕后指引，绝不写入消息历史
     participantIds?: string[]; // characterId array
     groupVideoBackgrounds?: Record<string, string>; // characterId|"self" → image ID
     // Group admin fields ("self" = the user)
@@ -1211,7 +1213,7 @@ export function createOrGetSession(contactId: string): ChatSession {
     return newSession;
 }
 
-export function createGroupSession(groupName: string, participantIds: string[], options?: { isSpectator?: boolean; groupAvatar?: string }): ChatSession {
+export function createGroupSession(groupName: string, participantIds: string[], options?: { isSpectator?: boolean; groupAvatar?: string; groupDescription?: string }): ChatSession {
     const sessions = loadChatSessions();
     const isSpectator = options?.isSpectator === true;
     const newSession: ChatSession = {
@@ -1226,6 +1228,7 @@ export function createGroupSession(groupName: string, participantIds: string[], 
         isGroup: true,
         groupName,
         groupAvatar: options?.groupAvatar,
+        ...(options?.groupDescription?.trim() ? { groupDescription: options.groupDescription.trim().slice(0, 4000) } : {}),
         participantIds,
         // 围观群用户不在群内，群主落在第一位成员头上
         groupOwnerId: isSpectator ? participantIds[0] : "self",

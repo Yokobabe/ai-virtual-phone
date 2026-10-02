@@ -1,7 +1,6 @@
 "use client";
 import "@/styles/chat-settings.css";
 import { BubbleColorSettings } from "./bubble-color-settings";
-import { PwaHeaderBlurToggle } from "./pwa-header-blur-experiment";
 import { resolveChatBeautyPreset } from "@/lib/chat-beauty-preset";
 import { BeautyPresetPicker } from "./beauty-preset-picker";
 
@@ -55,7 +54,7 @@ import { BINDING_ACCENTS, CONTENT_APP_ACCENTS } from "@/lib/ui-accent-colors";
 import CSSSchemeBar from "@/components/ui/css-scheme-picker";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { CHAT_SESSION_CSS_EXAMPLE } from "@/lib/css-examples";
-import { Toggle, Input } from "@/components/ui/form";
+import { Toggle, Input, Textarea } from "@/components/ui/form";
 import { PageShell } from "@/components/ui/page-shell";
 import {
     IMESSAGE_TAPBACKS,
@@ -528,6 +527,7 @@ export function ChatSettingsPanel({
     };
 
     const [groupName, setGroupName] = useState(session.groupName || "");
+    const [groupDescription, setGroupDescription] = useState(session.groupDescription || "");
     const [groupAvatar, setGroupAvatar] = useState(session.groupAvatar);
 
     const characters = loadCharacters();
@@ -1059,7 +1059,6 @@ export function ChatSettingsPanel({
                         <input type="file" accept="image/*" onChange={e => handleImageUpload(e, setBackgroundImage, "backgroundImage")} className="hidden" />
                     </label>
 <BubbleColorSettings session={session} />
-<PwaHeaderBlurToggle icon={<ChatInfoIcon icon={Sparkles} color={CONTENT_APP_ACCENTS.chat} />} />
 <div className="menu-item">
     <ChatInfoIcon icon={Sparkles} color={CONTENT_APP_ACCENTS.chat} />
     <div className="menu-label-group">
@@ -1092,7 +1091,7 @@ export function ChatSettingsPanel({
                                     <input type="file" accept="image/*" onChange={e => handleGroupVideoBgUpload(e, c.id)} className="hidden" />
                                 </label>
                             ))}
-                            <label className="menu-item" style={{ paddingLeft: 72 }}>
+                            {!session.isSpectator && <label className="menu-item" style={{ paddingLeft: 72 }}>
                                 <div className="w-[24px] h-[24px] rounded-full overflow-hidden bg-[var(--c-input)] shrink-0 flex items-center justify-center">
                                     {userIdentity?.avatarUrl ? (
                                         <img src={userIdentity.avatarUrl} className="w-full h-full object-cover" alt="" />
@@ -1106,7 +1105,7 @@ export function ChatSettingsPanel({
                                     <ChevronRight size={14} />
                                 </div>
                                 <input type="file" accept="image/*" onChange={e => handleGroupVideoBgUpload(e, "self")} className="hidden" />
-                            </label>
+                            </label>}
                         </>
                     ) : (
                         <label className="menu-item">
@@ -1160,6 +1159,14 @@ export function ChatSettingsPanel({
   <div className="menu-label-group"><span className="menu-label">自定义 CSS 样式</span></div>
   <div className="menu-right">{customCSS && <span className="menu-desc mr-1">已设置</span>}<ChevronRight size={16} /></div>
 </button></div></section>{session.isGroup && <section className="chat-settings-section "><h2>群聊管理</h2><div className="menu-group">
+<div className="menu-item" style={{ cursor: "default", flexDirection: "column", alignItems: "stretch", gap: 12 }}>
+    <label className="flex flex-col gap-2">
+        <span className="menu-label">群说明（仅 AI 可见）</span>
+        <span className="menu-desc">幕后引导背景和走向，不作为群公告或角色消息。保存后下一轮生效。</span>
+        <Textarea value={groupDescription} onChange={e => setGroupDescription(e.target.value)} rows={4} maxLength={4000} placeholder="希望他们聊什么、如何发展……" />
+    </label>
+    <button type="button" className="ui-btn ui-btn-primary" onClick={() => { const value = groupDescription.trim(); setGroupDescription(value); updateSession({ groupDescription: value }); }}>保存群说明</button>
+</div>
 <div className="menu-item" style={{ cursor: "default" }}>
                             <ChatInfoIcon icon={Users} color={BINDING_ACCENTS.preset} />
                             <div className="menu-label-group">

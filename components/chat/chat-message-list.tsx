@@ -622,8 +622,8 @@ export function ChatMessageList({ onCloseApp, activeSession, onSelectSession, on
             {showGroupCreate && (
                 <GroupCreateModal
                     onClose={() => setShowGroupCreate(false)}
-                    onCreate={(groupName, participantIds, isSpectator, groupAvatar) => {
-                        const newSession = createGroupSession(groupName, participantIds, { isSpectator, groupAvatar });
+                    onCreate={(groupName, participantIds, isSpectator, groupAvatar, groupDescription) => {
+                        const newSession = createGroupSession(groupName, participantIds, { isSpectator, groupAvatar, groupDescription });
                         const userName = resolveUserIdentity()?.name ?? "用户";
                         const allChars = loadCharacters();
                         const memberNames = participantIds

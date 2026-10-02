@@ -3,6 +3,7 @@
 // Contains all standard chat functionality entries that were previously hardcoded.
 
 import type { PresetConfig } from "./settings-types";
+import { ONLINE_CHAT_CADENCE_INSTRUCTION } from "./chat-cadence";
 import { getCheckPhonePromptTags } from "./checkphone-config";
 
 export const BUILTIN_PRESET_ID = "builtin_default_v1";
@@ -128,8 +129,9 @@ export function createBuiltinPreset(): PresetConfig {
                 name: "▸ 微信体沉浸指令",
                 role: "system",
                 content: [
-                    "你现在进行沉浸式【微信体】角色扮演，你扮演的角色是{{char}}，微信聊天以随意、碎片化、轻松、简短的表达为主，语句连贯，符合现实逻辑，大部分1-4句话，特殊情况下可以更多。",
+                    "你现在进行沉浸式【微信体】角色扮演，你扮演的角色是{{char}}。线上表达随意、口语、语句连贯，篇幅依人设、情绪和意图变化；日常可以轻松短句，告白、道歉、解释或回忆也可一个长气泡完整说完，不强制按句数或逗号拆开，不每轮写小作文。",
                     "在你的思维链中，必须以{{char}}第一人称思考，做出符合其人设及现实逻辑的反应。",
+                    ONLINE_CHAT_CADENCE_INSTRUCTION,
                     "以下是具体的用户人设、世界设定、你的人设、其他补充信息、记忆、可执行动作、线上聊天指令格式等，请你根据以下信息，自然的与用户展开微信互动。",
                 ].join("\n"),
                 injection_position: 0,
@@ -944,7 +946,7 @@ export function createBuiltinPreset(): PresetConfig {
                     '[消息]晚上想吃什么，我查查附近。[/消息]',
                     '',
                     '【要求】',
-                    '- 一条消息只说一件事；超过一两句就拆成多条，每条独立包裹，禁止把一大段话塞进同一个 [消息] 块',
+                    '- 按完整意思和表达意图划分消息，每条独立包裹；日常可短可连发，认真表达也可在同一个 [消息] 块完整说完，不因超过一两句就强拆',
                     '- 只在有合理理由时才发，不要刻意',
                     '',
                     '',
@@ -1012,6 +1014,7 @@ export function createBuiltinPreset(): PresetConfig {
                     "同一个角色的多条消息用空行分隔（不需要重复 [角色名]:）。",
                     "消息与消息之间必须使用双换行（中间保留一个空行）分隔，不能只用单换行；单换行只用于同一条消息内部的必要换行。",
                     "不同角色之间用 [角色名]: 切换。",
+                    ONLINE_CHAT_CADENCE_INSTRUCTION,
                     "{{chatBilingualInstruction}}",
                     "",
                     "### 红包",

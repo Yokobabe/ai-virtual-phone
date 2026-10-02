@@ -2323,6 +2323,13 @@
   line-height: inherit;
 }
 
+/* Text pairs share one available width instead of separately shrinking columns. */
+.chat-room-wrapper[data-imessage-private] .chat-bilingual-block[data-chat-text-layout] > .chat-bilingual-section {
+  width: auto;
+  align-self: stretch;
+}
+.chat-room-wrapper[data-imessage-private] .chat-text-missing-translation { font-size: .72em; line-height: 1.4; opacity: .6; }
+
 .chat-room-wrapper[data-imessage-private] .chat-bilingual-toggle {
   color: currentColor;
   opacity: .72;

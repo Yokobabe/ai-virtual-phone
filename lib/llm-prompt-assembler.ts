@@ -1667,6 +1667,7 @@ export interface GroupAssemblerInput {
     cocreateReadActions?: string;
     groupTools?: string;
     groupRoster?: string;
+    spectatorContext?: string;
     customAppRichMediaDirectives?: string;
     chatBilingualInstruction?: string;
     statusRegionSection?: string;
@@ -1824,9 +1825,18 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
     const SKIP_IN_MEMBER = new Set(["personaDescription"]);
 
     // 1. User persona block before members and chat history.
+    if (input.spectatorContext) blocks.push({
+        text: input.spectatorContext,
+        role: "system",
+        depth: beforeHistoryDepth,
+        order: orderIdx++,
+        marker: "group_session_presence",
+    });
     const userPersonaText = buildUserPersonaText(userIdentity, resolvedUserName);
     blocks.push({
-        text: wrapXml("personaDescription", userPersonaText),
+        text: wrapXml("personaDescription", input.spectatorContext
+            ? `以下是未在场人物的背景资料，不是群成员或场景在场者：\n${userPersonaText}`
+            : userPersonaText),
         role: "system",
         depth: beforeHistoryDepth,
         order: orderIdx++,
