@@ -50,6 +50,8 @@ export type ChatSession = {
     backgroundImage?: string; // Add support for custom background
     /** Opt-in glass treatment for message bubbles; absent/false keeps the classic iMessage style. */
     glassBubblesEnabled?: boolean;
+    /** Per-chat beauty preset; absent preserves the legacy glass switch. */
+    beautyPreset?: import("./chat-beauty-preset").ChatBeautyPreset;
     autoReplied?: boolean; // Whether the initial greeting auto-reply has been triggered
     alias?: string;
     videoBackground?: string;

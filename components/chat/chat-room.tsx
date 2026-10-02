@@ -29,6 +29,8 @@ import { useChatEcho } from "./use-chat-echo";
 import { DrawingBoard, DrawingGlyph } from "./drawing-board";
 import type { MentionMember } from "@/lib/group-mentions";
 import { StateValuesPanel } from "./state-values-panel";
+import { SpThoughtCard } from "./sp-thought-card";
+import { SpChatHeader } from "./sp-chat-header";
 import { generateChatCompletion, generateOfflineChatCompletion, flattenCompletionResult, ChatEngineError } from "@/lib/chat-engine";
 import { formatOfflineTurnXml as formatOfflineTurnXmlShared, buildOfflinePromptHistory as buildOfflinePromptHistoryShared } from "@/lib/offline-prompt-builder";
 import { getStatusRegionConfig, isCustomStatusRegionActive } from "@/lib/chat-status-region";
@@ -41,6 +43,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import { createPortal, flushSync } from "react-dom";
+import { PwaHeaderBlurExperiment } from "./pwa-header-blur-experiment";
 
 import { loadCharacters } from "@/lib/character-storage";
 import { Character } from "@/lib/character-types";
@@ -58,6 +61,8 @@ import { TransferTargetModal } from "./transfer-target-modal";
 import { normalizeCurrency } from "@/lib/exchange-rates";
 import { GiftPickerModal } from "./gift-picker-modal";
 import { ConfirmDialog } from "@/components/ui/modal";
+import { RetryGuidanceDialog } from "./retry-guidance-dialog";
+import { withRetryGuidance } from "@/lib/chat-retry-guidance";
 import { deleteWeixinCloudMessagesFromCloud, emitWeixinSyncToast, syncAllWeixinBotRuntimesToCloud } from "@/lib/weixin-cloud-sync";
 import { loadBindingConfig, loadImageGenerationSettings, loadPresets, loadRegexes, resolveBinding, resolveUserIdentity } from "@/lib/settings-storage";
 import { generateGroupChatCompletion, generateGroupOfflineChatCompletion, parseGroupChatResponse, buildEditableGroupRoundText } from "@/lib/group-chat-engine";
@@ -97,6 +102,7 @@ import { ChatFallbackAvatar } from "./chat-fallback-avatar";
 import { GroupAvatar } from "./group-avatar";
 import { GroupSenderName } from "./group-sender-name";
 import { useGroupBubbleTint } from "./use-group-bubble-tint";
+import { resolveChatBeautyPreset } from "@/lib/chat-beauty-preset";
 import { getQuotePreview } from "@/lib/chat-quote-preview";
 import { SortablePlusMenu } from "./sortable-plus-menu";
 import { useChatAppearance } from "./use-chat-appearance";
@@ -1391,10 +1397,11 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
     const [bgImageResolved, setBgImageResolved] = useState<string | null>(null);
     const chatAppearance = useChatAppearance(bgImageResolved);
+    const beautyPreset = resolveChatBeautyPreset(session);
     const [bgLoading, setBgLoading] = useState(!!session.backgroundImage);
 
     const wrapperRef = useRef<HTMLDivElement>(null);
-    useGlassContrast(wrapperRef, bgImageResolved, !!session.glassBubblesEnabled, chatAppearance.dark);
+    useGlassContrast(wrapperRef, bgImageResolved, beautyPreset === "glass", chatAppearance.dark);
 
     // 全屏特效：命中触发词的新消息播放表情雨/礼花（微信同款）
     const [activeScreenEffect, setActiveScreenEffect] = useState<ActiveScreenEffect | null>(null);
@@ -1491,6 +1498,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const tapbackPressRef = useRef<{ id: string; pointerId: number; startedAt: number } | null>(null);
     const suppressTapbackClickRef = useRef<string | null>(null);
     const [contextMenuAnchor, setContextMenuAnchor] = useState<ContextMenuAnchor | null>(null);
+    const [retryTarget, setRetryTarget] = useState<{ id: string; offline?: boolean } | null>(null);
     const [contextFocusShift, setContextFocusShift] = useState(0);
     const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
     const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
@@ -2008,7 +2016,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     // Flat array of group characters for components that need it
     const groupCharacters = useMemo(() => [...groupCharMap.values()], [groupCharMap]);
     const tintCharacters = useMemo(() => session.isGroup ? groupCharacters : character ? [character] : [], [session.isGroup, groupCharacters, character]);
-    const groupBubbleTint = useGroupBubbleTint(tintCharacters, session.id, chatAppearance.dark);
+    const groupBubbleTint = useGroupBubbleTint(tintCharacters, session.id, chatAppearance.dark, beautyPreset);
     const reactionStyleForActor = useCallback((actorId: string): React.CSSProperties => {
         const isUser = actorId === "self" || actorId === "user";
         const characterId = actorId === "legacy-assistant" ? session.contactId : actorId;
@@ -4969,7 +4977,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         setActiveOfflineTarget(null);
     };
 
-    const handleOfflineRetryFrom = async (turnId: string) => {
+    const handleOfflineRetryFrom = async (turnId: string, guidance = "") => {
         if (isOfflineGenerating) {
             showChatToast("线下回复生成中");
             return;
@@ -5002,7 +5010,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         const isCurrentOfflineRun = () => isOfflineGenerationRunActive(session.id, offlineRunId);
 
         try {
-            const history = buildOfflinePromptHistory(baseTurns, retryInput);
+            const history = withRetryGuidance(buildOfflinePromptHistory(baseTurns, retryInput), session.id, guidance);
             const onOfflineDelta = (delta: string) => {
                 if (!isCurrentOfflineRun()) return;
                 offlineStreamAccumRef.current += delta;
@@ -5058,7 +5066,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         }
     };
 
-    const handleRetry = async (msgId: string) => {
+    const handleRetry = async (msgId: string, guidance = "") => {
+        if (isGeneratingRef.current) { showChatToast("请先等待当前回复结束"); return; }
         const msgIndex = messages.findIndex(m => m.id === msgId);
         if (msgIndex === -1 || messages[msgIndex].role !== "assistant") return;
 
@@ -5073,7 +5082,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         cancelFollowUp(session.id);
 
         await runManagedGeneration({
-            history: contextMessages,
+            history: withRetryGuidance(contextMessages, session.id, guidance),
             errorPrefix: "重试失败",
             onDecline: triggerReply,
         });
@@ -5648,7 +5657,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 <div className="flex">
                     <button onClick={() => { copyTextToClipboard(getOfflineCopyText(turn, role)); setActiveOfflineTarget(null); }} className="ctx-menu-btn">复制</button>
                     <button onClick={() => handleOfflineEditStart(turn, role)} className="ctx-menu-btn">编辑</button>
-                    <button onClick={() => void handleOfflineRetryFrom(turn.id)} className="ctx-menu-btn ctx-menu-btn-danger">重试以下</button>
+                    <button onClick={() => { closeContextMenu(); setRetryTarget({ id: turn.id, offline: true }); }} className="ctx-menu-btn ctx-menu-btn-danger">重试一下</button>
                 </div>
                 <div className="flex">
                     <button onClick={() => handleOfflineDeleteTurn(turn.id)} className="ctx-menu-btn ctx-menu-btn-danger">删除</button>
@@ -5845,7 +5854,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 )}
                 <div className="flex imessage-context-actions" data-menu-danger-group="">
                     {m.role === "assistant" && (
-                        <button onClick={() => handleRetry(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger"><RotateCcw className="imessage-context-icon" aria-hidden="true" /><span>重试以下</span></button>
+                        <button onClick={() => { closeContextMenu(); setRetryTarget({ id: storedMessageId }); }} className="ctx-menu-btn ctx-menu-btn-danger"><RotateCcw className="imessage-context-icon" aria-hidden="true" /><span>重试一下</span></button>
                     )}
                     <button onClick={() => handleDeleteMessage(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger"><Trash2 className="imessage-context-icon" aria-hidden="true" /><span>删除</span></button>
                     <button onClick={() => handleDeleteMessagesFrom(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger"><ListX className="imessage-context-icon" aria-hidden="true" /><span>删除以下</span></button>
@@ -6472,7 +6481,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             }}
             data-imessage-private=""
             data-chat-dark={chatAppearance.dark || undefined}
-            data-glass-bubbles={session.glassBubblesEnabled || undefined}
+            data-glass-bubbles={beautyPreset === "glass" || undefined}
+            data-beauty-preset={beautyPreset}
             data-dark-wallpaper={chatAppearance.darkWallpaper || undefined}
             {...(session.isGroup ? { "data-imessage-group": "" } : {})}
             {...(quotingMessage ? { "data-imessage-quote-compose": "" } : {})}
@@ -6489,10 +6499,19 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             {/* 全屏特效层（表情雨/礼花），不拦截任何触摸操作 */}
             <ChatScreenEffectOverlay active={activeScreenEffect} onDone={() => setActiveScreenEffect(null)} />
             {echo.overlay}
+            <PwaHeaderBlurExperiment active={!showSettings && !showVoiceCall && !showVideoCall} dark={chatAppearance.dark} />
             {/* Header */}
             <header className="page-header chat-room-main-pane" data-ui="header">
                 <div className="page-header-safe-area" />
-                {!session.isGroup ? (
+                {beautyPreset === "sp" ? <SpChatHeader
+                    sessionId={session.id}
+                    name={session.isGroup ? session.groupName || "群聊" : session.alias || character?.name || "TA"}
+                    avatar={session.isGroup ? <GroupAvatar src={session.groupAvatar} members={[...(!session.isSpectator && userIdentity ? [{ avatar: userIdentity.avatarUrl }] : []), ...groupCharacters]} /> : character?.avatar ? <img src={character.avatar} alt="" /> : <ChatFallbackAvatar />}
+                    onBack={onBack}
+                    onSettings={() => setShowSettings(true)}
+                    onVoice={() => { cancelFollowUp(session.id); setShowHeaderCallMenu(false); setCallInitiator("user"); setShowVoiceCall(true); }}
+                    onVideo={() => { cancelFollowUp(session.id); setShowHeaderCallMenu(false); setCallInitiator("user"); setShowVideoCall(true); }}
+                /> : !session.isGroup ? (
                     <div className="page-header-content imessage-private-header">
                         <ChatUnreadPill sessionId={session.id} onBack={onBack} />
                         <button className="imessage-contact-card" type="button" onClick={() => setShowSettings(true)} aria-label="联系人详情">
@@ -6957,6 +6976,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     const isVisualMedia = isChatVisualMedia(renderMsg);
                     const hiddenEmpty = isHiddenChatFlowMessage(renderMsg, bubbleDisplayContent);
                     const hasFoldedPanel = !!(renderMsg.statusPanel || renderMsg.innerMonologue);
+                    const spReplyStart = uiRole(msg) === "assistant" && (imessageTailMessageIds.firstIds.has(msg.id)
+                        || (!!msg.responseBatchId && msg.responseBatchId !== prevVisibleMsg?.responseBatchId));
                     // 内心卡片只展示本轮实际输出的状态值；旧数据没有 freshStateValues 时回退到合并快照
                     const cardStateValues = msg.freshStateValues ?? msg.stateValues;
                     const isSilentThought = !visibleContent && !renderMsg.mediaType && hasFoldedPanel && msg.role !== "user";
@@ -6968,6 +6989,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); setExpandedThinkingId(prev => prev === msg.id ? null : msg.id); }}
                                                 className="chat-monologue-heart bg-none border-none cursor-pointer p-1 ts-14 leading-none self-end shrink-0 -ml-2"
+                                                data-sp-name={beautyPreset === "sp" ? (session.isGroup ? msg.senderName || "群成员" : character?.name || "TA") : undefined}
                                                 {...(expandedMonologueId === msg.id ? { "data-active": "" } : {})}
                                                 title="查看折叠状态"
                                                 aria-label="查看折叠状态"
@@ -7025,6 +7047,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 } as React.CSSProperties}
                                 {...(isEmptyBubble && renderMsg.reasoningText ? { "data-reasoning-empty": "" } : {})}
                                 {...(isConsecutive ? { "data-consecutive": "" } : {})}
+                                data-sp-reply-start={beautyPreset === "sp" && spReplyStart || undefined}
                                 {...(session.isGroup && uiRole(msg) === "assistant" && prevVisibleMsg && uiRole(prevVisibleMsg) === "assistant" && (prevVisibleMsg.senderCharacterId || prevVisibleMsg.senderName) !== (msg.senderCharacterId || msg.senderName) ? { "data-group-speaker-change": "" } : {})}
                                 {...(imessageTailMessageIds.tailIds.has(msg.id) ? { "data-imessage-tail": "" } : {})}
                                 {...(imessageTailMessageIds.lastIds.has(msg.id) ? { "data-group-last": "" } : {})}
@@ -7128,6 +7151,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                         setExpandedThinkingId(prev => prev === msg.id ? null : msg.id);
                                                     }}
                                                     className="chat-monologue-heart flex items-center justify-center shrink-0 w-[40px] h-[24px] relative cursor-pointer"
+                                                    data-sp-name={beautyPreset === "sp" ? (session.isGroup ? msg.senderName || "群成员" : character?.name || "TA") : undefined}
                                                     title={session.isGroup ? `${msg.senderName || "群成员"}的折叠状态` : "查看折叠状态"}
                                                     aria-label={session.isGroup ? `${msg.senderName || "群成员"}的折叠状态` : "查看折叠状态"}
                                                     {...(activeMessageId === msg.id ? { "data-active": "" } : {})}
@@ -7169,8 +7193,24 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                             className={`chat-msg-content-wrap flex flex-col min-w-0 max-w-[70%] ${isStandaloneHtmlPreview ? "chat-msg-content-wrap-html" : ""}`}
                                             {...(isStandaloneHtmlPreview ? { "data-html": "true" } : {})}
                                             data-voice-content={renderMsg.mediaType === "audio" || undefined}
+                                            data-sp-thought-open={beautyPreset === "sp" && expandedMonologueId === msg.id || undefined}
                                         >
-                                            {session.isGroup && msg.role !== "user" && imessageTailMessageIds.firstIds.has(msg.id) && (
+                                            {beautyPreset === "sp" && spReplyStart && (
+                                                <button className="sp-reply-signature" type="button" onClick={(e) => { e.stopPropagation(); setExpandedThinkingId(prev => prev === msg.id ? null : msg.id); }} aria-expanded={expandedMonologueId === msg.id} aria-label="查看内心资料卡">
+                                                    {session.isGroup ? groupPrivateAliases.get(msg.senderCharacterId || "") || groupCharMap.get(msg.senderCharacterId || "")?.name || msg.senderName || "群成员" : session.alias || character?.name || "TA"}
+                                                </button>
+                                            )}
+                                            {beautyPreset === "sp" && expandedMonologueId === msg.id && <SpThoughtCard
+                                                name={session.isGroup ? (groupPrivateAliases.get(msg.senderCharacterId || "") || groupCharMap.get(msg.senderCharacterId || "")?.name || msg.senderName || "群成员") : (session.alias || character?.name || "TA")}
+                                                avatar={session.isGroup ? groupCharMap.get(msg.senderCharacterId || "")?.avatar : character?.avatar}
+                                                userName={userIdentity?.name || "你"}
+                                                stateValues={cardStateValues && cardStateValues.length > 0 ? <StateValuesPanel stateValues={cardStateValues} /> : undefined}
+                                                reasoning={renderMsg.reasoningText ? <BilingualTextBlock text={renderMsg.reasoningText} mode="markdown" defaultExpanded={session.collapseBilingualTranslation === false} /> : undefined}
+                                                onClose={() => setExpandedThinkingId(null)}
+                                            >
+                                                {renderMsg.innerMonologue && <BilingualTextBlock text={msg.displayProjected ? renderMsg.innerMonologue : renderDisplayText(renderMsg.innerMonologue, 6, false)} mode="markdown" defaultExpanded={session.collapseBilingualTranslation !== false ? false : true} />}
+                                            </SpThoughtCard>}
+                                            {beautyPreset !== "sp" && session.isGroup && msg.role !== "user" && imessageTailMessageIds.firstIds.has(msg.id) && (
                                                 <GroupSenderName avatar={groupCharMap.get(msg.senderCharacterId || "")?.avatar}>{groupPrivateAliases.get(msg.senderCharacterId || "") || groupCharMap.get(msg.senderCharacterId || "")?.name || msg.senderName || "群成员"}</GroupSenderName>
                                             )}
                                             <div
@@ -7272,7 +7312,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 </div>
                             )}
                             {/* Inner monologue card (sticky note / journal style) */}
-                            {hasFoldedPanel && expandedMonologueId === msg.id && renderMsg.innerMonologue && (
+                            {beautyPreset !== "sp" && expandedMonologueId === msg.id && hasFoldedPanel && renderMsg.innerMonologue && (
                                 <div className="chat-thought-card">
                                     {/* Decorative washi tape */}
                                     <div className="chat-thought-tape-left" />
@@ -7286,7 +7326,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                         <StateValuesPanel stateValues={cardStateValues} />
                                     )}
                                     <div className="chat-thought-body">
-                                        <BilingualTextBlock text={msg.displayProjected ? renderMsg.innerMonologue : renderDisplayText(renderMsg.innerMonologue, 6, false)} mode="markdown" defaultExpanded={session.collapseBilingualTranslation !== false ? false : true} />
+                                        <BilingualTextBlock text={msg.displayProjected ? renderMsg.innerMonologue || "" : renderDisplayText(renderMsg.innerMonologue || "", 6, false)} mode="markdown" defaultExpanded={session.collapseBilingualTranslation !== false ? false : true} />
                                     </div>
                                     {/* Signature */}
                                     <div className="chat-thought-sig">
@@ -7821,6 +7861,11 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 </div>
             )}
 
+            {retryTarget && <RetryGuidanceDialog onCancel={() => setRetryTarget(null)} onConfirm={guidance => {
+                const target = retryTarget; setRetryTarget(null);
+                if (target.offline) void handleOfflineRetryFrom(target.id, guidance);
+                else void handleRetry(target.id, guidance);
+            }} />}
             {editingMessageId && (
                 <div className="chat-html-overlay" onClick={() => { setEditingMessageId(null); setEditingContent(""); }}>
                     <div

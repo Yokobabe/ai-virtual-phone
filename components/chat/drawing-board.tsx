@@ -41,6 +41,9 @@ export function DrawingBoard({ session, history, characters, onClose, onSend }: 
     const strokes = useRef<DrawingStroke[]>(initial.current?.strokes || []);
     const comments = useRef<DrawingComment[]>(initial.current?.comments || []);
     const [comment, setComment] = useState<DrawingComment | null>(comments.current.at(-1) || null);
+    const [commentVisible, setCommentVisible] = useState(false);
+    const commentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const hideComment = () => { if (commentTimer.current) clearTimeout(commentTimer.current); commentTimer.current = null; setCommentVisible(false); };
     const [mode, setMode] = useState<"solo" | "together">(initial.current?.mode || "solo");
     const [characterId, setCharacterId] = useState(initial.current?.characterId || characters[0]?.id || "");
     const [color, setColor] = useState(palette[0]);
@@ -58,19 +61,40 @@ export function DrawingBoard({ session, history, characters, onClose, onSend }: 
     const [count, setCount] = useState(strokes.current.length);
     const canvas = useRef<HTMLCanvasElement>(null), workspace = useRef<HTMLDivElement>(null);
     const activePointer = useRef<number | null>(null);
+    const pointers = useRef(new Map<number, { x: number; y: number }>());
+    const view = useRef({ scale: 1, x: 0, y: 0 });
+    const pinch = useRef<{ distance: number; scale: number; anchorX: number; anchorY: number } | null>(null);
+    const gesturing = useRef(false);
+    const applyView = () => {
+        if (!canvas.current || !workspace.current) return;
+        const limitX = Math.max(0, (canvas.current.offsetWidth * view.current.scale - workspace.current.clientWidth) / 2);
+        const limitY = Math.max(0, (canvas.current.offsetHeight * view.current.scale - workspace.current.clientHeight) / 2);
+        view.current.x = Math.max(-limitX, Math.min(limitX, view.current.x));
+        view.current.y = Math.max(-limitY, Math.min(limitY, view.current.y));
+        canvas.current.style.transform = `translate3d(${view.current.x}px,${view.current.y}px,0) scale(${view.current.scale})`;
+    };
+    const beginPinch = () => {
+        const pair = [...pointers.current.values()].slice(0, 2), box = workspace.current?.getBoundingClientRect();
+        if (pair.length < 2 || !box) { pinch.current = null; return; }
+        const x = (pair[0].x + pair[1].x) / 2 - box.left - box.width / 2;
+        const y = (pair[0].y + pair[1].y) / 2 - box.top - box.height / 2;
+        pinch.current = { distance: Math.max(1, Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y)), scale: view.current.scale,
+            anchorX: (x - view.current.x) / view.current.scale, anchorY: (y - view.current.y) / view.current.scale };
+    };
     const request = useRef<AbortController | null>(null);
     const mounted = useRef(true), sending = useRef(false);
     const draftState = useRef({ mode, characterId }); draftState.current = { mode, characterId };
     const selected = characters.find(c => c.id === characterId) || characters[0];
     const repaint = () => { if (canvas.current) drawBoard(canvas.current, strokes.current); };
     const persist = () => kvSet(key, JSON.stringify({ ...draftState.current, strokes: strokes.current, comments: comments.current }));
-    const stop = () => { clearIdle(); pendingHandoff.current = false; request.current?.abort(); request.current = null; activePointer.current = null; };
+    const stop = () => { clearIdle(); hideComment(); pointers.current.clear(); pinch.current = null; gesturing.current = false; pendingHandoff.current = false; request.current?.abort(); request.current = null; activePointer.current = null; };
     useLayoutEffect(() => {
         repaint();
         const resize = new ResizeObserver(() => {
             const box = workspace.current?.getBoundingClientRect(); if (!box || !canvas.current) return;
             const w = Math.min(box.width, box.height * .75);
             canvas.current.style.width = `${w}px`; canvas.current.style.height = `${w / .75}px`;
+            applyView();
         });
         if (workspace.current) resize.observe(workspace.current);
         return () => resize.disconnect();
@@ -102,7 +126,7 @@ export function DrawingBoard({ session, history, characters, onClose, onSend }: 
         frame = requestAnimationFrame(step);
     });
     const charTurn = async () => {
-        if (!mounted.current || !selected || request.current || !canvas.current || activePointer.current !== null) return;
+        if (!mounted.current || !selected || request.current || !canvas.current || pointers.current.size || activePointer.current !== null) return;
         pendingHandoff.current = false;
         const controller = new AbortController(); request.current = controller;
         setPhase("waiting"); setError("");
@@ -112,7 +136,8 @@ export function DrawingBoard({ session, history, characters, onClose, onSend }: 
                 onComment: text => {
                     if (controller.signal.aborted || !mounted.current || request.current !== controller) return;
                     const next = { author:selected.id, name:selected.name, text, atStroke:strokes.current.length, createdAt:Date.now() };
-                    comments.current = [...comments.current, next]; setComment(next); persist();
+                    comments.current = [...comments.current, next]; hideComment(); setComment(next); setCommentVisible(true); persist();
+                    commentTimer.current = setTimeout(() => { commentTimer.current = null; if (mounted.current) setCommentVisible(false); }, Math.min(8000, Math.max(3500, text.length * 100)));
                 },
                 onStroke: stroke => animateStroke(stroke, controller.signal) });
         } catch (err) {
@@ -127,7 +152,7 @@ export function DrawingBoard({ session, history, characters, onClose, onSend }: 
     const latestTurn = useRef(charTurn); latestTurn.current = charTurn;
     const armHandoff = () => {
         clearIdle();
-        if (!pendingHandoff.current || toolsActive.current || colorOpenRef.current || !selected) return;
+        if (!pendingHandoff.current || pointers.current.size || toolsActive.current || colorOpenRef.current || !selected) return;
         idleTimer.current = setTimeout(() => {
             idleTimer.current = null;
             if (pendingHandoff.current && !colorOpenRef.current && activePointer.current === null) void latestTurn.current();
@@ -177,20 +202,36 @@ export function DrawingBoard({ session, history, characters, onClose, onSend }: 
         <div className="drawing-conversation">
         <div className="drawing-status" aria-live="polite">
             {characters.length > 1 && <select aria-label="选择共画角色" value={selected?.id} onChange={e => { stop(); setPhase("user"); setCharacterId(e.target.value); draftState.current.characterId = e.target.value; persist(); }}>{characters.map(c => <option value={c.id} key={c.id}>{c.name}</option>)}</select>}
-            <span>{phase === "waiting" ? `${selected?.name || "对方"}在看` : phase === "drawing" ? `${selected?.name || "对方"}在画` : "你先画"}</span>
+            {!commentVisible && <span>{phase === "waiting" ? `${selected?.name || "对方"}在看` : phase === "drawing" ? `${selected?.name || "对方"}在画` : "你先画"}</span>}
         </div>
-        <div className="drawing-comment" role="status" aria-live="polite" aria-label="角色画板评论">{comment && <><strong>{comment.name}</strong><span>{comment.text}</span></>}</div>
+        {commentVisible && comment && <div className="drawing-comment" role="status" aria-live="polite" aria-label="角色画板评论"><strong>{comment.name}</strong><span>{comment.text}</span></div>}
         </div>
-        <div ref={workspace} className="drawing-workspace">
-            <canvas ref={canvas} width={600} height={800} role="img" aria-label="竖屏白色画板" aria-busy={phase !== "user"}
+        <div ref={workspace} className="drawing-workspace"
                 onPointerDown={e => {
-                    if (request.current || activePointer.current !== null || !e.isPrimary || e.button !== 0) return;
-                    clearIdle();
-                    e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); activePointer.current = e.pointerId; setError("");
+                    if (e.button !== 0) return;
+                    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                    clearIdle(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId);
+                    if (pointers.current.size >= 2) {
+                        if (activePointer.current !== null) { strokes.current.pop(); activePointer.current = null; setCount(strokes.current.length); repaint(); persist(); }
+                        gesturing.current = true; beginPinch(); return;
+                    }
+                    if (request.current || gesturing.current || activePointer.current !== null || e.target !== canvas.current) return;
+                    hideComment(); activePointer.current = e.pointerId; setError("");
                     const seed = Date.now(); strokes.current.push({ id: `user-${seed}`, author: "user", color, width, brush, opacity, seed, points: [point(e)] });
                     setCount(strokes.current.length); repaint();
                 }}
                 onPointerMove={e => {
+                    if (!pointers.current.has(e.pointerId)) return;
+                    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                    if (pinch.current && workspace.current) {
+                        e.preventDefault();
+                        const pair = [...pointers.current.values()].slice(0, 2), box = workspace.current.getBoundingClientRect();
+                        if (pair.length < 2) return;
+                        const scale = Math.max(.5, Math.min(4, pinch.current.scale * Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y) / pinch.current.distance));
+                        view.current = { scale, x: (pair[0].x + pair[1].x) / 2 - box.left - box.width / 2 - pinch.current.anchorX * scale,
+                            y: (pair[0].y + pair[1].y) / 2 - box.top - box.height / 2 - pinch.current.anchorY * scale };
+                        applyView(); return;
+                    }
                     if (activePointer.current !== e.pointerId || request.current) return;
                     e.preventDefault(); const stroke = strokes.current[strokes.current.length - 1];
                     const events = e.nativeEvent.getCoalescedEvents?.() || [e.nativeEvent];
@@ -200,8 +241,23 @@ export function DrawingBoard({ session, history, characters, onClose, onSend }: 
                     }
                     repaint();
                 }}
-                onPointerUp={e => { if (activePointer.current === e.pointerId) { release(false); if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); } }}
-                onPointerCancel={() => release(true)} onLostPointerCapture={() => release(true)} />
+                onPointerUp={e => {
+                    pointers.current.delete(e.pointerId);
+                    if (activePointer.current === e.pointerId) release(false);
+                    beginPinch();
+                    if (!pointers.current.size) { gesturing.current = false; armHandoff(); }
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+                }}
+                onLostPointerCapture={e => {
+                    if (!pointers.current.delete(e.pointerId)) return;
+                    if (activePointer.current === e.pointerId) release(true);
+                    beginPinch(); if (!pointers.current.size) { gesturing.current = false; armHandoff(); }
+                }}
+                onPointerCancel={e => {
+                    pointers.current.delete(e.pointerId); if (activePointer.current === e.pointerId) release(true);
+                    beginPinch(); if (!pointers.current.size) { gesturing.current = false; armHandoff(); }
+                }}>
+            <canvas ref={canvas} width={600} height={800} role="img" aria-label="竖屏白色画板" aria-busy={phase !== "user"} />
         </div>
         {error && <p className="drawing-error" role="alert">{error}</p>}
         <footer className="drawing-tools" onPointerDown={() => { toolsActive.current=true; clearIdle(); }} onPointerUp={() => { toolsActive.current=false; armHandoff(); }} onPointerCancel={() => { toolsActive.current=false; armHandoff(); }}>

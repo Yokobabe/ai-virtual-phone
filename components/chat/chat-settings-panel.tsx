@@ -1,6 +1,9 @@
 "use client";
 import "@/styles/chat-settings.css";
 import { BubbleColorSettings } from "./bubble-color-settings";
+import { PwaHeaderBlurToggle } from "./pwa-header-blur-experiment";
+import { resolveChatBeautyPreset } from "@/lib/chat-beauty-preset";
+import { BeautyPresetPicker } from "./beauty-preset-picker";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
@@ -400,7 +403,7 @@ export function ChatSettingsPanel({
     const [visionImagePromptLimit, setVisionImagePromptLimit] = useState(() => normalizeVisionImagePromptLimit(session.visionImagePromptLimit));
     const [bilingualTranslationEnabled, setBilingualTranslationEnabled] = useState(session.bilingualTranslationEnabled !== false);
     const [collapseBilingualTranslation, setCollapseBilingualTranslation] = useState(session.collapseBilingualTranslation !== false);
-    const [glassBubblesEnabled, setGlassBubblesEnabled] = useState(session.glassBubblesEnabled === true);
+    const [beautyPreset, setBeautyPreset] = useState(() => resolveChatBeautyPreset(session));
     const [discardInvalidStickers, setDiscardInvalidStickers] = useState(session.discardInvalidStickers === true);
     const [tapbackCandidates, setTapbackCandidates] = useState(() => loadIMessageTapbacks());
     const [tapbackDraft, setTapbackDraft] = useState<string[]>(() => loadIMessageTapbacks().map(item => item.glyph));
@@ -1056,20 +1059,18 @@ export function ChatSettingsPanel({
                         <input type="file" accept="image/*" onChange={e => handleImageUpload(e, setBackgroundImage, "backgroundImage")} className="hidden" />
                     </label>
 <BubbleColorSettings session={session} />
+<PwaHeaderBlurToggle icon={<ChatInfoIcon icon={Sparkles} color={CONTENT_APP_ACCENTS.chat} />} />
 <div className="menu-item">
     <ChatInfoIcon icon={Sparkles} color={CONTENT_APP_ACCENTS.chat} />
     <div className="menu-label-group">
-        <span className="menu-label">玻璃气泡</span>
-        <span className="menu-desc">收到的消息透出背景；默认关闭，仅当前聊天</span>
+        <span className="menu-label">美化预设</span>
+        <span className="menu-desc">仅当前聊天；SP 沿用 NJJ 蓝粉与珍珠灰配色</span>
     </div>
     <div className="menu-right">
-        <Toggle
-            checked={glassBubblesEnabled}
-            onChange={enabled => {
-                setGlassBubblesEnabled(enabled);
-                updateSession({ glassBubblesEnabled: enabled });
-            }}
-        />
+        <BeautyPresetPicker value={beautyPreset} onChange={preset => {
+            setBeautyPreset(preset);
+            updateSession({ beautyPreset: preset, glassBubblesEnabled: preset === "glass" });
+        }} />
     </div>
 </div>
 {session.isGroup ? (
@@ -1127,27 +1128,7 @@ export function ChatSettingsPanel({
                         </div>
                         <input type="file" accept="image/*" onChange={e => handleImageUpload(e, setVoiceBackground, "voiceBackground")} className="hidden" />
                     </label>
-{!session.isGroup && (
-                            <button
-                                type="button"
-                                className="menu-item"
-                                onClick={() => {
-                                    setTapbackDraft(tapbackCandidates.map(item => item.glyph));
-                                    setTapbackError("");
-                                    setEditingTapbacks(true);
-                                }}
-                            >
-                                <ChatInfoIcon icon={Smile} color={CONTENT_APP_ACCENTS.chat} />
-                                <div className="menu-label-group">
-                                    <span className="menu-label">Tapback 候选</span>
-                                    <span className="menu-desc">自定义长按消息时显示的 6 个表情</span>
-                                </div>
-                                <div className="menu-right gap-1.5">
-                                    <span className="menu-desc mr-1">{tapbackCandidates.map(item => item.glyph).join(" ")}</span>
-                                    <ChevronRight size={16} />
-                                </div>
-                            </button>
-                        )}
+{/* Tapback candidates are edited inline in the reaction bar; keep saved data, hide the redundant settings entry. */}
 <div className="menu-item">
                             <ChatInfoIcon icon={Smile} color={BINDING_ACCENTS.preset} />
                             <div className="menu-label-group">

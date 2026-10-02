@@ -20,7 +20,7 @@ export function captureBubble(node: HTMLElement, opaque = true): BubbleSprite {
     if(opaque)c.fillStyle=`rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
     else if(glass)c.fillStyle=`rgba(${rgb[0]},${rgb[1]},${rgb[2]},.86)`;
     c.beginPath();c.roundRect(0,0,width,height,Math.min(parseFloat(style.borderRadius)||20,height/2));c.fill();
-    if(row?.hasAttribute('data-imessage-tail')){
+    if(row?.hasAttribute('data-imessage-tail') && !node.closest('[data-beauty-preset="sp"]')){
         c.save();if(!user){c.translate(width,0);c.scale(-1,1)}
         c.beginPath();c.moveTo(width-14,height-10);c.quadraticCurveTo(width-5,height,width+5,height+3);c.quadraticCurveTo(width-7,height+4,width-18,height-2);c.fill();c.restore();
     }
@@ -89,7 +89,7 @@ export function captureEchoBubble(node: HTMLElement): BubbleSprite {
     const rgb=pc.getImageData(0,0,1,1).data;
     c.fillStyle=`rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
     c.beginPath();c.roundRect(2,2,bodyWidth,bodyHeight,19);c.fill();
-    if(row?.hasAttribute('data-imessage-tail')){
+    if(row?.hasAttribute('data-imessage-tail') && !node.closest('[data-beauty-preset="sp"]')){
         c.save();if(!user){c.translate(bodyWidth+4,0);c.scale(-1,1);}
         c.beginPath();c.moveTo(bodyWidth-12,bodyHeight-8);
         c.bezierCurveTo(bodyWidth-4,bodyHeight-1,bodyWidth+1,bodyHeight+2,bodyWidth+7,bodyHeight+4);

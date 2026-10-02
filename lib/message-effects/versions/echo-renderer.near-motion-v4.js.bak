@@ -8,7 +8,7 @@ export function createEchoRenderer(ctx,sample){
  const nearPasses=new Set([13,39,52,78,104,130,169,208]);
  [...nearPasses].forEach((id,k)=>{
   Object.assign(particles[id],{phase:.45+k*2.399963,
-   lat:(noise(id+92)*2-1)*.36,r:.62+.12*noise(id+277),speed:2.22});
+   lat:(noise(id+92)*2-1)*.36,r:.62+.12*noise(id+277),speed:1.55+.25*noise(id+31)});
  });
 
   function bubble(x,y,s,alpha=1){ctx.globalAlpha=alpha;ctx.drawImage(sample.sprite,x-sample.width*s/2,y-sample.height*s/2,sample.width*s,sample.height*s);ctx.globalAlpha=1;}

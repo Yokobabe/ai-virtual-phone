@@ -4,7 +4,8 @@ import { extractAvatarNameColor, DEFAULT_AVATAR_NAME_COLOR } from "@/lib/avatar-
 import { loadChatSessions } from "@/lib/chat-storage";
 import { loadBubbleColors } from "@/lib/chat-bubble-color-store";
 import { BUBBLE_COLORS_EVENT, resolveBubbleColors, type BubbleColors } from "@/lib/chat-bubble-colors";
-export function useGroupBubbleTint(characters: readonly { id: string; avatar?: string | null }[], sessionId: string, dark: boolean) {
+import { spBubbleColors, type ChatBeautyPreset } from "@/lib/chat-beauty-preset";
+export function useGroupBubbleTint(characters: readonly { id: string; avatar?: string | null }[], sessionId: string, dark: boolean, preset?: ChatBeautyPreset) {
     const [config,setConfig]=useState<BubbleColors>(() => loadBubbleColors(sessionId, loadChatSessions().find(s=>s.id===sessionId)?.bubbleColors));
     const [samples,setSamples]=useState<Record<string,{src:string;color:string}>>({});
     useEffect(() => {
@@ -23,7 +24,7 @@ export function useGroupBubbleTint(characters: readonly { id: string; avatar?: s
     return useCallback((id?:string,user=false):CSSProperties=>{
         const sample = id ? samples[id] : undefined;
         const currentSample = sample && sample.src === characters.find(c => c.id === id)?.avatar && sample.color !== DEFAULT_AVATAR_NAME_COLOR ? sample.color : undefined;
-        const colors = resolveBubbleColors(config, dark, user, currentSample);
+        const colors = preset === "sp" ? spBubbleColors(dark, user) : resolveBubbleColors(config, dark, user, currentSample);
         return {
             [user ? "--im26-base-blue" : "--im26-base-incoming"]: colors.background,
             "--bubble-text-ink": colors.text,
@@ -32,5 +33,5 @@ export function useGroupBubbleTint(characters: readonly { id: string; avatar?: s
             "--bubble-surface-opacity": colors.opacity,
             ...(user ? { "--chat-send-surface": colors.background, "--chat-send-ink": colors.text } : {}),
         } as CSSProperties;
-    },[characters,config,dark,samples]);
+    },[characters,config,dark,samples,preset]);
 }

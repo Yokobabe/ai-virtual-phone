@@ -3,7 +3,8 @@ import { useEffect, type RefObject } from "react";
 
 const controls = '.imessage-header-button,.imessage-contact-name,.chat-plus-toggle,.chat-monologue-heart,.imessage-quote-compose-close,.chat-voice-message-btn';
 const bubbles = '.chat-bubble-role-assistant[data-media-type="text"],.chat-stream-bubble,.chat-bubble-role-assistant[data-media-type="audio"],.chat-quote-message-assistant .chat-quote-reply';
-const properties = ['--im26-local-control-ink','--im26-local-control-text-shadow','--im26-local-bubble-ink','--im26-local-bubble-fill','--im26-local-bubble-outline','--im26-local-composer-ink'];
+const menus = '.imessage-context-index,.imessage-context-tapbar,.chat-floating-ctx-menu';
+const properties = ['--im26-local-control-ink','--im26-local-control-text-shadow','--im26-local-bubble-ink','--im26-local-bubble-fill','--im26-local-bubble-outline','--im26-local-composer-ink','--im26-local-menu-ink','--im26-local-menu-fill'];
 
 /** Match the actual center/cover wallpaper crop, rather than its whole-image average. */
 export function sampleCoveredWallpaper(pixels: Uint8ClampedArray, imageWidth: number, imageHeight: number, roomWidth: number, roomHeight: number, box: {x:number;y:number;width:number;height:number}) {
@@ -30,7 +31,7 @@ export function useGlassContrast(root: RefObject<HTMLDivElement|null>, backgroun
             timer=undefined;if(stopped)return;
             const rect=host.getBoundingClientRect();if(!rect.width||!rect.height)return;
             for(const node of touched)if(!host.contains(node)){for(const key of properties)node.style.removeProperty(key);touched.delete(node)}
-            for(const node of host.querySelectorAll<HTMLElement>(`${controls},${bubbles},.chat-input-bar[data-imessage-private]`)){
+            for(const node of host.querySelectorAll<HTMLElement>(`${controls},${bubbles},${menus},.chat-input-bar[data-imessage-private]`)){
                 const b=node.getBoundingClientRect();if(!b.width||!b.height||b.bottom<rect.top||b.top>rect.bottom)continue;
                 // A blocked remote image retains a readable light-ink fallback on wallpaper.
                 let level=background?90:dark?25:245;
@@ -38,7 +39,10 @@ export function useGlassContrast(root: RefObject<HTMLDivElement|null>, backgroun
                 const threshold=node.matches(bubbles)?160:185;
                 const previous=lastLight.get(node),light=level>(threshold+(previous===true?-6:previous===false?6:0));lastLight.set(node,light);
                 const ink=light?'#16191e':'#f8fafc';
-                if(node.matches(controls)){
+                if(node.matches(menus)) {
+                    set(node,'--im26-local-menu-ink',ink);
+                    set(node,'--im26-local-menu-fill',light?'rgba(239,244,250,.8)':'rgba(31,45,62,.8)');
+                }else if(node.matches(controls)){
                     set(node,'--im26-local-control-ink',ink);
                     // A tiny text-only shadow keeps a name readable when its lens
                     // crosses a strong light/dark boundary. Never a glowing rim.

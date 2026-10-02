@@ -1,4 +1,16 @@
 /* Scoped to chat settings: grouped iOS lists, without a frosted header. */
+.chat-beauty-picker { position:relative;flex:none;color:var(--settings-ink);font-size:14px; }
+.chat-beauty-picker summary { list-style:none;display:flex;align-items:center;justify-content:space-between;gap:14px;min-width:86px;min-height:42px;padding:0 12px;border-radius:14px;background:var(--settings-control);cursor:pointer;user-select:none;box-sizing:border-box; }
+.chat-beauty-picker summary::-webkit-details-marker { display:none; }
+.chat-beauty-picker svg { width:16px;height:16px;flex:none; }
+.chat-beauty-picker-options { position:absolute;right:0;top:calc(100% + 6px);z-index:30;width:150px;padding:5px;border-radius:18px;background:var(--settings-card);border:1px solid var(--settings-line);box-shadow:0 8px 24px #00000014; }
+.chat-beauty-picker-options button { display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;padding:0 12px;border:0;border-radius:13px;background:transparent;color:inherit;font:inherit;cursor:pointer; }
+.chat-beauty-picker-options button svg { visibility:hidden; }
+.chat-beauty-picker-options button[aria-pressed=true] { background:var(--settings-control); }
+.chat-beauty-picker-options button[aria-pressed=true] svg { visibility:visible; }
+.chat-beauty-picker summary:focus-visible,.chat-beauty-picker-options button:focus-visible { outline:2px solid #3478f6;outline-offset:2px; }
+.chat-beauty-picker-options button:active { background:var(--settings-control); }
+@media (hover:hover) { .chat-beauty-picker-options button:hover { background:var(--settings-control); } }
 .imessage-settings-page {
   --settings-bg: #f2f2f7; --settings-card: #fff; --settings-ink: #161618;
   --settings-secondary: #85858b; --settings-line: rgba(60,60,67,.13); --settings-control: #e9e9ef;

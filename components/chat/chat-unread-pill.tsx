@@ -3,7 +3,7 @@ import { useEffect, useState, useId, useRef } from "react";
 import { ChevronLeft } from "lucide-react";
 import { CHAT_MESSAGE_PUSHED_EVENT, CHAT_UNREAD_UPDATED_EVENT, loadChatSessions, markChatSessionRead } from "@/lib/chat-storage";
 
-export function ChatUnreadPill({ sessionId, onBack }: { sessionId: string; onBack: () => void }) {
+export function ChatUnreadPill({ sessionId, onBack, dotOnly = false }: { sessionId: string; onBack: () => void; dotOnly?: boolean }) {
     const [count, setCount] = useState(0);
     const host = useRef<HTMLButtonElement>(null);
     const maskId = useId().replace(/:/g, "");
@@ -32,7 +32,8 @@ export function ChatUnreadPill({ sessionId, onBack }: { sessionId: string; onBac
     const width = count > 99 ? 38 : count > 9 ? 30 : 24;
     return <button ref={host} type="button" className="imessage-header-button imessage-header-back" data-has-unread={count > 0 || undefined} onClick={onBack} aria-label={count > 0 ? `返回，其他会话有 ${count} 条未读消息` : "返回"}>
         <ChevronLeft size={29} strokeWidth={2.15} />
-        {count > 0 && <span className="chat-unread-pill">
+        {count > 0 && (dotOnly ? <span className="sp-unread-dot" aria-hidden="true" /> : <span className="chat-unread-pill">
+        <span className="sp-unread-count" aria-hidden="true">{label}</span>
         <svg width={width} height="22" viewBox={`0 0 ${width} 22`} aria-hidden="true"><defs><mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width={width} height="22" style={{ maskType: "luminance" }}><rect width={width} height="22" rx="11" fill="white"/><text x="50%" y="50%" dy=".35em" textAnchor="middle" fill="black" fontSize="12" fontWeight="600">{label}</text></mask></defs><rect width={width} height="22" rx="11" fill="currentColor" mask={`url(#${maskId})`}/></svg>
-    </span>}</button>;
+    </span>)}</button>;
 }

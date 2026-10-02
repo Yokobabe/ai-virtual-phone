@@ -3131,6 +3131,26 @@
   backdrop-filter: var(--im26-glass-filter);
 }
 
+/* Context menus keep their own sampled contrast, rather than inheriting white bubble ink. */
+.chat-room-wrapper.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(.imessage-context-index,.imessage-context-tapbar,.chat-floating-ctx-menu) {
+  color:var(--im26-local-menu-ink,var(--im26-ink));
+  background:var(--im26-local-menu-fill,var(--im26-menu-surface));
+}
+.chat-room-wrapper.chat-room-wrapper[data-imessage-private][data-glass-bubbles] :is(.imessage-context-index,.chat-floating-ctx-menu) .ctx-menu-btn:not(.ctx-menu-btn-danger) {
+  color:var(--im26-local-menu-ink,var(--im26-ink));text-shadow:none;
+}
+.chat-retry-overlay { position:absolute;inset:0;z-index:270;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.18); }
+.chat-retry-dialog { width:100%;max-width:360px;max-height:90%;overflow:auto;padding:22px;border:1px solid var(--im26-menu-edge);border-radius:24px;background:var(--im26-menu-surface,#fff);color:var(--im26-ink,#191919);box-shadow:0 12px 36px #0002;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px); }
+.chat-retry-dialog h3 { font-size:18px;font-weight:650;margin:0 0 8px; }
+.chat-retry-dialog p,.chat-retry-dialog small { display:block;font-size:12px;line-height:1.6;margin:0 0 12px; }
+.chat-retry-dialog textarea { width:100%;min-height:130px;resize:vertical;box-sizing:border-box;padding:12px;border-radius:14px;border:1px solid var(--im26-menu-edge);background:rgba(128,128,128,.08);color:inherit;font:inherit;font-size:14px;line-height:1.5; }
+.chat-retry-dialog small { margin:10px 0 16px; }
+.chat-retry-actions { display:flex;gap:10px; }
+.chat-retry-actions button { flex:1;min-height:44px;border:0;border-radius:14px;background:rgba(128,128,128,.12);color:inherit;font-size:14px;cursor:pointer; }
+.chat-retry-actions button[type=submit] { background:#007aff;color:#fff;font-weight:600; }
+.chat-retry-dialog :is(textarea,button):focus-visible { outline:2px solid #007aff;outline-offset:2px; }
+[data-beauty-preset="sp"] .chat-retry-dialog { background:var(--sp-surface);color:var(--sp-ink);border-color:var(--sp-border); }
+[data-beauty-preset="sp"] .chat-retry-actions button[type=submit] { background:var(--sp-blue); }
 /* Native-reference glass v22. No flat-mode selectors in this material layer. */
 .chat-room-wrapper.chat-room-wrapper[data-imessage-private][data-glass-bubbles] .chat-voice-message-btn {
   color: var(--im26-local-control-ink, var(--im26-local-composer-ink, #f8fafc));

@@ -11,13 +11,14 @@
 .chat-drawing-board button { cursor:pointer;touch-action:manipulation;transition:transform 120ms ease-out; }
 .chat-drawing-board button:active { transform:scale(.96); }
 .chat-drawing-board button:disabled { opacity:.35;cursor:default; }
-.drawing-conversation { flex:none;margin:4px 16px 8px;padding:12px 14px;background:#f5f5f7;border-radius:16px;font-size:13px;line-height:1.5;text-align:left; }
+.drawing-conversation { flex:none;min-height:64px;box-sizing:border-box;margin:4px 16px 8px;padding:12px 14px;background:#f5f5f7;border-radius:16px;font-size:13px;line-height:1.5;text-align:left; }
 .drawing-status { display:flex;justify-content:flex-start;align-items:center;gap:8px;min-height:20px;font-size:inherit;color:#67676c;font-weight:500; }
 .drawing-status select { max-width:110px;border:0;background:#f4f4f5;border-radius:12px;padding:4px;color:#444; }
-.drawing-comment { min-height:40px;max-height:78px;overflow:auto;margin-top:6px;font-size:inherit;line-height:inherit;color:#333338;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere; }
+.drawing-comment { max-height:60px;overflow:auto;font-size:inherit;line-height:inherit;color:#333338;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere; }
+.drawing-status:empty { display:none; }
 .drawing-comment strong { font-size:inherit;color:inherit;font-weight:600;margin-right:8px; }
 .drawing-workspace { flex:1;min-height:0;display:grid;place-items:center;margin:4px 12px;overflow:hidden; }
-.drawing-workspace canvas { display:block;touch-action:none;user-select:none;-webkit-user-select:none;background:white;max-width:100%;max-height:100%;outline:1px solid #f4f4f5;border-radius:3px; }
+.drawing-workspace canvas { display:block;touch-action:none;user-select:none;-webkit-user-select:none;background:white;max-width:100%;max-height:100%;outline:1px solid #bfc0c5;outline-offset:-1px;border-radius:3px;transform-origin:center; }
 .drawing-workspace canvas[aria-busy=true] { cursor:wait; }
 .drawing-tools { flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding:5px 10px max(12px,env(safe-area-inset-bottom,0px)); }
 .drawing-palette,.drawing-widths { display:flex;align-items:center;justify-content:center;gap:3px; }

@@ -1,6 +1,6 @@
 import { buildChatPromptMessages, sendLLMStreamRequest } from "./chat-engine";
 import type { ChatSession, ChatMessage } from "./chat-storage";
-import { DRAWING_RULES, DRAWING_WATCH_RULES, drawingObjectStream, parseDrawingStroke, strokeLength, type DrawingStroke, type DrawingComment } from "./chat-drawing";
+import { DRAWING_RULES, DRAWING_WATCH_RULES, DRAWING_TURN_MAX_STROKES, DRAWING_TURN_MAX_LENGTH, drawingObjectStream, parseDrawingStroke, strokeLength, type DrawingStroke, type DrawingComment } from "./chat-drawing";
 
 export type DrawingGenerate = (delta: (text: string) => Promise<void>, signal: AbortSignal) => Promise<unknown>;
 
@@ -13,7 +13,7 @@ export async function runDrawingTurn(generate: DrawingGenerate, author: string, 
     let count = 0, length = 0;
     let comments = 0;
     const watch = interaction.mode === "solo";
-    const done = new Error("drawing-local-detail-complete");
+    const done = new Error("drawing-creative-turn-complete");
     const abort = () => controller.abort(signal.reason || new DOMException("Aborted", "AbortError"));
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort();
@@ -29,7 +29,7 @@ export async function runDrawingTurn(generate: DrawingGenerate, author: string, 
         if (watch || data?.type === "comment") return; // spectator can never paint
         const stroke = parseDrawingStroke(value, author, Date.now() + count);
         if (!stroke) return;
-        if (length + strokeLength(stroke.points) > 750) {
+        if (length + strokeLength(stroke.points) > DRAWING_TURN_MAX_LENGTH) {
             if (count) { controller.abort(done); throw done; }
             return;
         }
@@ -37,7 +37,7 @@ export async function runDrawingTurn(generate: DrawingGenerate, author: string, 
         count++; length += strokeLength(stroke.points);
         await onStroke(stroke);
         if (controller.signal.aborted) throw controller.signal.reason;
-        if (count >= 3) { controller.abort(done); throw done; }
+        if (count >= DRAWING_TURN_MAX_STROKES) { controller.abort(done); throw done; }
         arm();
     });
     let detach = () => {};
@@ -71,7 +71,7 @@ export function requestDrawingTurn(args: { session: ChatSession; characterId: st
         await sendLLMStreamRequest(context.config, context.preset, [
             ...context.llmMessages,
             { role: "system", content: args.mode === "solo" ? DRAWING_WATCH_RULES : DRAWING_RULES },
-            { role: "user", content: [{ type: "text", text: `这是当前真实画板。${args.mode === "solo" ? "你只旁观评论，不要画。" : "轮到你添一个局部细节，也可以边画边吐槽。"}最近落笔记录（只作作者/位置参考）：${JSON.stringify(record)}。已有笔迹不要重画。最近画板评论：${JSON.stringify((args.comments || []).slice(-8))}` }, { type: "image_url", image_url: { url: args.image } }] },
+            { role: "user", content: [{ type: "text", text: `这是当前真实画板。${args.mode === "solo" ? "你只旁观评论，不要画。" : "轮到你表达一个创作意图，用相关笔触把想法画得可辨，也可以边画边吐槽。第一条落笔附一句简短comment说明想添什么；可自行切换笔触、颜色、粗细与透明度，并在每条笔迹参数及intent中记录实际选择。不要替用户完成整幅画。"}最近落笔记录（只作作者/位置参考）：${JSON.stringify(record)}。已有笔迹不要重画。最近画板评论：${JSON.stringify((args.comments || []).slice(-8))}` }, { type: "image_url", image_url: { url: args.image } }] },
         ], [], { characterName: context.character.name, userName: context.userIdentity?.name },
         { signal, skipOutputRegex: true, skipTimestampStrip: true, appId: "chat-drawing", debugSessionId: args.session.id }, { onDelta });
     }, args.characterId, args.signal, args.onStroke, 20000, { mode: args.mode, onComment: args.onComment });
