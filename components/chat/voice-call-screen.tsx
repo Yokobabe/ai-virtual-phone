@@ -1,4 +1,5 @@
 "use client";
+import { voiceDisplayText, voiceSpeechText } from "@/lib/voice-expression";
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ChatSession, ChatMessage, loadChatMessages, pushChatMessage, getLatestCharacterStateValues } from "@/lib/chat-storage";
@@ -283,7 +284,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
                 pushChatMessage({
                     sessionId: session.id,
                     role: "assistant",
-                    content: part.content,
+                    content: voiceDisplayText(part.content),
                     mediaType: part.mediaType,
                     mediaData: part.mediaData,
                     statusPanel: idx === 0 && statusPanel ? statusPanel : undefined,
@@ -334,8 +335,9 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
 
             // 4. Process response
             const { cleanParts } = processAIResponse(aiResponseText);
-            const displayText = cleanParts.join("\n");
-            const speechText = stripBilingualForSpeech(displayText);
+            const spokenText = cleanParts.join("\n");
+            const displayText = voiceDisplayText(spokenText);
+            const speechText = voiceSpeechText(stripBilingualForSpeech(spokenText));
 
             if (!displayText) {
                 setCallState("IDLE");

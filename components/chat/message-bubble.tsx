@@ -26,14 +26,14 @@ import { Blocks, Maximize2, ReceiptText, ChevronLeft } from "lucide-react";
 import { retryChatGeneratedImage } from "@/lib/generated-image-retry";
 import { GeneratedImageErrorDialog } from "./generated-image-error-dialog";
 import { ScanPayCard } from "@/components/chat/scan-pay-card";
-import { payWithWalletBalance } from "@/lib/wallet-storage";
+import { payWithWalletBalance, loadWalletState, WALLET_UPDATED_EVENT } from "@/lib/wallet-storage";
 import { formatShoppingPaymentRequestHistory } from "@/lib/shopping-payment-request";
 import { toCustomAppIconId } from "@/lib/custom-app-types";
 import { ChatPluginSlot } from "@/components/chat/chat-plugin-slot";
 import { CHAT_PLUGIN_SLOTS_CHANGED_EVENT, getChatPluginRuntime } from "@/lib/chat-plugin-runtime";
 import { IMessageTapbackBadge } from "./imessage-tapback-badge";
 import { ApplePayBrand } from "./apple-pay-brand";
-import { currencySymbol, normalizeCurrency, fetchCnyRate, cnyAmount } from "@/lib/exchange-rates";
+import { currencySymbol, normalizeCurrency, fetchExchangeRate, cnyAmount } from "@/lib/exchange-rates";
 import { LocationCard } from "./location-map";
 import { getQuotePreview, normalizeQuotePreviewText } from "@/lib/chat-quote-preview";
 
@@ -733,7 +733,7 @@ function RedPacketBubble({ msg, charName, userName, groupSize, onShowDetail }: {
                         {d?.label || "恭喜发财，大吉大利"}
                     </div>
                     {userShare != null && (
-                        <div className="ts-20 font-bold mt-1 ui-text-white-85">¥{userShare.toFixed(2)}</div>
+                        <div className="ts-20 font-bold mt-1 ui-text-white-85">{currencySymbol(normalizeCurrency(d?.currency))}{userShare.toFixed(2)}</div>
                     )}
                     {isDeclined && <div className="ts-12 mt-1 ui-text-white-70">已退回</div>}
                 </div>
@@ -784,7 +784,7 @@ function TransferBubble({ msg, charName, userName, onShowDetail }: {
                 <div className={`chat-transfer-body p-4 flex items-center gap-3 ${bgClass}`}>
                     <div className="ts-28 shrink-0">💰</div>
                     <div className="flex-1">
-                        <div className="text-white ts-24 font-bold">¥{d?.amount?.toFixed(2)}</div>
+                        <div className="text-white ts-24 font-bold">{symbol}{d?.amount?.toFixed(2)} {currency}</div>
                         <div className="ts-13 mt-0.5 ui-text-white-85">{d?.label || "转账"}</div>
                     </div>
                 </div>
@@ -800,7 +800,7 @@ function TransferBubble({ msg, charName, userName, onShowDetail }: {
                     {isDeclined && <span>已退回</span>}
                 </div>
             </div>
-            <div className="imessage-transfer-card hidden" aria-label={`Apple Pay 转账 ¥${amountText}`}>
+            <div className="imessage-transfer-card hidden" aria-label={`Apple Pay 转账 ${currency} ${amountText}`}>
                 <div className="imessage-transfer-main">
                     <ApplePayBrand />
                     <div className="imessage-transfer-amount">{symbol}{amountText}</div>
@@ -842,7 +842,7 @@ function PaymentRequestBubble({ msg, charName, userName, onShowDetail }: {
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="text-white ts-12 ui-text-white-85">{requester}发起代付请求</div>
-                    <div className="text-white ts-24 font-bold mt-1">¥{amount}</div>
+                    <div className="text-white ts-24 font-bold mt-1">{currencySymbol(normalizeCurrency(d?.currency))}{amount} {normalizeCurrency(d?.currency)}</div>
                     <div className="ts-12 mt-1 ui-text-white-85 line-clamp-2">{itemsText || "商品订单"}</div>
                 </div>
             </div>
@@ -2019,23 +2019,29 @@ export function MediaDetailModal({ msg, userName, charName, groupSize, onAccept,
     // the rendered character/alias is already supplied by the room as charName.
     const senderDisplay = isFromUser ? userName : (d?.senderName || msg.senderName || charName || "对方");
     const currency = normalizeCurrency(d?.currency);
-    const foreignAmount = currency !== "CNY" ? `${currencySymbol(currency)}${formatApplePayAmount(d?.amount)}` : "";
+    const [walletCurrency, setWalletCurrency] = useState(() => loadWalletState().currency || "CNY");
+    useEffect(() => { const update = () => setWalletCurrency(loadWalletState().currency || "CNY"); window.addEventListener(WALLET_UPDATED_EVENT, update); return () => window.removeEventListener(WALLET_UPDATED_EVENT, update); }, []);
+    const settled = d?.status === "received" || d?.status === "paid";
+    const targetCurrency = settled ? d?.receivedCurrency || "CNY" : walletCurrency;
+    const foreignAmount = currency !== targetCurrency ? `${currencySymbol(currency)}${formatApplePayAmount(d?.amount)}` : "";
     const [liveCny, setLiveCny] = useState<number | null>(typeof d?.cnyAmount === "number" ? d.cnyAmount : null);
     const [liveRate, setLiveRate] = useState<number | null>(null);
+    const [quoteKey, setQuoteKey] = useState("");
+    const currentQuoteKey = `${msg.id}:${currency}:${targetCurrency}:${d?.amount}`;
     useEffect(() => {
         setLiveCny(null);
         setLiveRate(null);
         setPaymentError("");
-        if (!isTransfer || currency === "CNY" || typeof d?.cnyAmount === "number") return;
+        if ((!isTransfer && !isRedPacket && !isPaymentRequest) || currency === targetCurrency || settled) return;
         let active = true;
-        void fetchCnyRate(currency).then(rate => {
+        void fetchExchangeRate(currency, targetCurrency).then(rate => {
             if (!active) return;
-            if (rate) { setLiveRate(rate); setLiveCny(cnyAmount(Number(d?.amount || 0), rate)); }
+            if (rate) { setQuoteKey(currentQuoteKey); setLiveRate(rate); setLiveCny(cnyAmount(Number(d?.amount || 0), rate)); }
             else setPaymentError("汇率查询失败，请关闭后重试；尚未收款。");
         });
         return () => { active = false; };
-    }, [msg.id, isTransfer, currency, d?.cnyAmount, d?.amount]);
-    const resolvedCny = typeof d?.cnyAmount === "number" ? d.cnyAmount : liveCny;
+    }, [msg.id, isTransfer, isRedPacket, isPaymentRequest, currency, targetCurrency, d?.status, d?.amount, currentQuoteKey]);
+    const resolvedCny = settled ? d?.receivedAmount ?? d?.cnyAmount ?? Number(d?.amount || 0) : currency === targetCurrency ? Number(d?.amount || 0) : quoteKey === currentQuoteKey ? liveCny : null;
     if (!isRedPacket && !isTransfer && !isPaymentRequest) return null;
 
     // ── Red packet state ──
@@ -2072,14 +2078,15 @@ export function MediaDetailModal({ msg, userName, charName, groupSize, onAccept,
     };
 
     const handleRedPacketAccept = () => {
+        if (resolvedCny === null || walletCurrency !== (loadWalletState().currency || "CNY")) { setPaymentError("请等待汇率查询完成后领取。"); return; }
         const share = totalRecipients > 1 ? calcShare() : (d?.amount || 0);
         const newClaimedBy = [...claimedBy, userName];
         const newClaimedAmounts = { ...claimedAmounts, [userName]: share };
         const newAllClaimed = newClaimedBy.length >= totalRecipients;
         const newStatus = newAllClaimed ? "opened" as const : "pending" as const;
-        const updatedData = { ...d, status: newStatus, claimedBy: newClaimedBy, claimedAmounts: newClaimedAmounts };
+        const updatedData = { ...d, status: newStatus, claimedBy: newClaimedBy, claimedAmounts: newClaimedAmounts, receivedCurrency: walletCurrency, receivedAmount: cnyAmount(share, currency === walletCurrency ? 1 : liveRate!), exchangeRate: currency === walletCurrency ? 1 : liveRate!, exchangeRateAt: new Date().toISOString() };
         updateMessageMediaData(msg.id, updatedData);
-        onAccept({ ...msg, mediaData: updatedData }, `${userName}领取了${senderDisplay}的红包，金额:${share}元`, "accept_red_packet");
+        onAccept({ ...msg, mediaData: updatedData }, `${userName}领取了${senderDisplay}的红包，金额:${share} ${currency}`, "accept_red_packet");
     };
 
     const handleRedPacketDecline = () => {
@@ -2089,9 +2096,11 @@ export function MediaDetailModal({ msg, userName, charName, groupSize, onAccept,
     };
 
     const handleTransferAccept = () => {
-        if (currency !== "CNY" && resolvedCny === null) { setPaymentError("正在查询最新汇率，请稍后再领取。"); return; }
+        if (walletCurrency !== (loadWalletState().currency || "CNY")) { setPaymentError("钱包币种已变化，请重新打开转账。"); return; }
+        if (resolvedCny === null) { setPaymentError("正在查询最新汇率，请稍后再领取。"); return; }
         updateMessageMediaStatus(msg.id, "received");
-        const updatedData = { ...d, status: "received" as const, ...(currency !== "CNY" && resolvedCny !== null ? { cnyAmount: resolvedCny, exchangeRateToCny: d?.exchangeRateToCny ?? liveRate ?? undefined, exchangeRateAt: d?.exchangeRateAt || new Date().toISOString() } : {}) };
+        const acceptedRate = currency === targetCurrency ? 1 : liveRate ?? undefined;
+        const updatedData = { ...d, status: "received" as const, receivedCurrency: targetCurrency, receivedAmount: resolvedCny, exchangeRate: acceptedRate, exchangeRateAt: new Date().toISOString(), ...(targetCurrency === "CNY" ? { cnyAmount: resolvedCny, exchangeRateToCny: acceptedRate } : {}) };
         onAccept({ ...msg, mediaData: updatedData }, `${userName}领取了${senderDisplay}的转账`, "accept_transfer");
     };
 
@@ -2103,7 +2112,8 @@ export function MediaDetailModal({ msg, userName, charName, groupSize, onAccept,
 
     const handlePaymentRequestAccept = () => {
         const amount = Number(d?.amount ?? d?.paymentRequestAmountLabel ?? 0);
-        const safeAmount = Number.isFinite(amount) ? Math.max(0, Math.round(amount * 100) / 100) : 0;
+        const safeAmount = Number.isFinite(amount) && resolvedCny !== null ? Math.max(0, resolvedCny) : 0;
+        if (resolvedCny === null || walletCurrency !== (loadWalletState().currency || "CNY")) { setPaymentError("请等待汇率查询完成后支付。"); return; }
         if (safeAmount <= 0) {
             setPaymentError("金额无效，无法代付。");
             return;
@@ -2130,6 +2140,10 @@ export function MediaDetailModal({ msg, userName, charName, groupSize, onAccept,
             paymentResolvedAt: new Date().toISOString(),
             paymentPayerName: userName,
             paymentWalletTransactionId: result.transaction.id,
+            receivedCurrency: targetCurrency,
+            receivedAmount: safeAmount,
+            exchangeRate: currency === targetCurrency ? 1 : liveRate ?? undefined,
+            exchangeRateAt: new Date().toISOString(),
         };
         updateMessageMediaData(msg.id, updatedData);
         onAccept({ ...msg, mediaData: updatedData }, `${userName}接受了${senderDisplay}的代付请求`, "accept_payment_request");
@@ -2153,7 +2167,7 @@ export function MediaDetailModal({ msg, userName, charName, groupSize, onAccept,
     let statusText = "";
     if (isRedPacket) {
         if (isDeclined) statusText = "已退回";
-        else if (alreadyClaimed && userShare != null) statusText = `你领取了 ¥${userShare.toFixed(2)}`;
+        else if (alreadyClaimed && userShare != null) statusText = `你领取了 ${currencySymbol(currency)}${userShare.toFixed(2)} ${currency}`;
         else if (allClaimed) statusText = "红包已领完";
         else if (isFromUser) statusText = "你发出的红包";
     } else {
@@ -2190,7 +2204,7 @@ export function MediaDetailModal({ msg, userName, charName, groupSize, onAccept,
                         </>
                     ) : <div className="media-modal-emoji">{isRedPacket ? "🧧" : "🧾"}</div>}
                     <div className="media-modal-amount">{currencySymbol(currency)}{currency === "CNY" ? modalAmountText : formatApplePayAmount(d?.amount)}</div>
-                    {isTransfer && foreignAmount && <div className="media-modal-sub">按汇率折算为人民币 ¥{resolvedCny === null ? "查询中" : formatApplePayAmount(resolvedCny)}</div>}
+                    {(isTransfer || isRedPacket || isPaymentRequest) && foreignAmount && <div className="media-modal-sub">按汇率折算为 {targetCurrency} {currencySymbol(targetCurrency)}{resolvedCny === null ? "查询中" : formatApplePayAmount(resolvedCny)}{(d?.exchangeRate ?? (quoteKey === currentQuoteKey ? liveRate : null)) != null && <div>1 {currency} = {d?.exchangeRate ?? liveRate} {targetCurrency}</div>}</div>}
                     <div className="media-modal-label">
                         {isRedPacket ? (d?.label || "恭喜发财，大吉大利") : isTransfer ? (d?.label || "转账") : "代付请求"}
                     </div>
@@ -2220,7 +2234,7 @@ export function MediaDetailModal({ msg, userName, charName, groupSize, onAccept,
                             {claimedBy.map((name) => (
                                 <div key={name} className="media-modal-list-row">
                                     <span>{name}</span>
-                                    <span className="media-modal-list-amt">¥{(claimedAmounts[name] ?? 0).toFixed(2)}</span>
+                                    <span className="media-modal-list-amt">{currencySymbol(currency)}{(claimedAmounts[name] ?? 0).toFixed(2)}</span>
                                 </div>
                             ))}
                         </div>
@@ -2709,7 +2723,10 @@ function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpa
     useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
     const text = msg.mediaData?.label || "语音消息";
     const bilingual = splitBilingualText(text);
-    const speechText = bilingual?.original || text;
+    const authoredSpeech = msg.mediaData?.speechText;
+    // Edited transcripts must not keep speaking an older line from stored directions.
+    const speechMatchesTranscript = authoredSpeech?.replace(/\[[a-zA-Z][a-zA-Z ,'-]{0,100}\]/g, "").trim() === text.trim();
+    const speechText = authoredSpeech && speechMatchesTranscript ? (splitBilingualText(authoredSpeech)?.original || authoredSpeech) : bilingual?.original || text;
     const synthesizedFromText = msg.mediaData?.synthesizedFromText;
     const needsResynthesis = msg.role !== "user" && synthesizedFromText !== speechText;
     const duration = msg.mediaData?.voiceDuration || Math.max(2, Math.ceil(speechText.length / 4));

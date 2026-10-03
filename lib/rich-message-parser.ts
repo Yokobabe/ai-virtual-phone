@@ -10,6 +10,7 @@
  */
 
 import type { ChatMessage } from "./chat-storage";
+import { voiceDisplayText, voiceSpeechText } from "./voice-expression";
 import type { MultiImageChatPlan, MultiImageExpressionStyle } from "./image-delivery-protocol";
 import { isImageGridCount } from "./image-grid-split";
 import { parsePhotoDoodle } from "./photo-doodle";
@@ -402,7 +403,7 @@ const RICH_PATTERNS: {
         build: (m) => ({
             content: "",
             mediaType: "audio" as const,
-            mediaData: { label: m[1].trim() },
+            mediaData: { label: voiceDisplayText(m[1]), ...(m[1].includes("{voice:") ? { speechText: voiceSpeechText(m[1]) } : {}) },
         }),
     },
     {

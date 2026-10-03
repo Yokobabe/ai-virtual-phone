@@ -23,6 +23,8 @@ import { buildGroupAdminBracketText } from "./group-admin";
 import { describePhotoAnnotations } from "./chat-photo-markup";
 import { PHOTO_DOODLE_GUIDANCE } from "./photo-doodle";
 import { TRANSFER_CURRENCY_GUIDANCE } from "./transfer-protocol";
+import { voiceExpressionInstruction } from "./voice-expression";
+import { walletCurrencyInstruction, CHARACTER_CURRENCY_INSTRUCTION } from "./currency-context";
 import { albumChatContext } from "./photo-album-discussion";
 
 export type LLMMessageRole = "system" | "user" | "assistant" | "tool";
@@ -1169,7 +1171,9 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
     }
 
     if (input.appId === "chat" || !input.appId) {
-        finalPayload.push({ role: "system", content: TRANSFER_CURRENCY_GUIDANCE, _debugMeta: { marker: "transfer_currency_protocol" } });
+        finalPayload.push({ role: "system", content: `${TRANSFER_CURRENCY_GUIDANCE}\n${CHARACTER_CURRENCY_INSTRUCTION}\n${walletCurrencyInstruction()}`, _debugMeta: { marker: "transfer_currency_protocol" } });
+        const voiceInstruction = voiceExpressionInstruction([character.id], activeTags.includes("voice") || activeTags.includes("video"));
+        if (voiceInstruction) finalPayload.push({ role: "system", content: voiceInstruction, _debugMeta: { marker: "voice_expression" } });
         const albumContext = albumChatContext(input.character.id);
         if (albumContext) finalPayload.push({ role: "system", content: albumContext, _debugMeta: { marker: "shared_album_context" } });
     }
@@ -2281,7 +2285,9 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
         marker: "photoMarkupCapability",
     });
 
-    blocks.push({ text: TRANSFER_CURRENCY_GUIDANCE, role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "transfer_currency_protocol" });
+    blocks.push({ text: `${TRANSFER_CURRENCY_GUIDANCE}\n${CHARACTER_CURRENCY_INSTRUCTION}\n${walletCurrencyInstruction()}`, role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "transfer_currency_protocol" });
+    const voiceInstruction = voiceExpressionInstruction(members.map(member => member.character.id), input.appTags?.includes("voice") || input.appTags?.includes("video"));
+    if (voiceInstruction) blocks.push({ text: voiceInstruction, role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "voice_expression" });
     // Sort: depth descending, then order ascending
     blocks.sort((a, b) => {
         if (b.depth !== a.depth) return b.depth - a.depth;

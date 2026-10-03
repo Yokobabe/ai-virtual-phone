@@ -1,4 +1,5 @@
 "use client";
+import { voiceDisplayText, voiceSpeechText } from "@/lib/voice-expression";
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ChatSession, ChatMessage, loadChatMessages, pushChatMessage, getLatestCharacterStateValues } from "@/lib/chat-storage";
@@ -362,7 +363,7 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
         } else {
             const newMsgs = chatParts.map((part, idx) =>
                 pushChatMessage({
-                    sessionId: session.id, role: "assistant", content: part.content,
+                    sessionId: session.id, role: "assistant", content: voiceDisplayText(part.content),
                     mediaType: part.mediaType,
                     mediaData: part.mediaData,
                     statusPanel: idx === 0 && statusPanel ? statusPanel : undefined,
@@ -401,8 +402,9 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
             if (stateRef.current === "ENDED") return;
 
             const { cleanParts } = processAIResponse(aiResponseText);
-            const displayText = cleanParts.join("\n");
-            const speechText = stripBilingualForSpeech(displayText);
+            const spokenText = cleanParts.join("\n");
+            const displayText = voiceDisplayText(spokenText);
+            const speechText = voiceSpeechText(stripBilingualForSpeech(spokenText));
 
             if (!displayText) { setCallState("IDLE"); return; }
 

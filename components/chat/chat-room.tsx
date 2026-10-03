@@ -57,7 +57,7 @@ import { VoiceCallScreen } from "./voice-call-screen";
 import { VideoCallScreen } from "./video-call-screen";
 import { GroupCallScreen } from "./group-call-screen";
 import { TransferTargetModal } from "./transfer-target-modal";
-import { normalizeCurrency } from "@/lib/exchange-rates";
+import { normalizeCurrency, fetchExchangeRate, cnyAmount } from "@/lib/exchange-rates";
 import { GiftPickerModal } from "./gift-picker-modal";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { RetryGuidanceDialog } from "./retry-guidance-dialog";
@@ -85,7 +85,7 @@ import type { MemoryWriteRequest, ToolResult } from "@/lib/tool-executor";
 import { formatChatUiTime } from "@/lib/chat-time";
 import { parseActionTags } from "@/lib/action-parser";
 import { kvGet, kvSet, kvRemove } from "@/lib/kv-db";
-import { creditWalletBalance, payWithWalletBalance } from "@/lib/wallet-storage";
+import { creditWalletBalance, payWithWalletBalance, loadWalletState } from "@/lib/wallet-storage";
 import { loadDeliveredShoppingGifts, type ShoppingGiftCandidate } from "@/lib/shopping-gift-utils";
 import { settleShoppingPaymentRequest } from "@/lib/shopping-payment-request";
 import type { RegexConfig } from "@/lib/settings-types";
@@ -2583,7 +2583,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         rawResponseText,
     });
 
-    const handleAIMediaAction = (actionType: string, charN: string, userN: string) => {
+    const handleAIMediaAction = async (actionType: string, charN: string, userN: string) => {
         // Find the target message in current messages (most recent matching user message with pending status)
         const targetMediaType = actionType.includes("payment_request")
             ? "payment_request"
@@ -2639,8 +2639,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         }
 
         const refundReason = actionType === "decline_red_packet" ? "红包退回" : actionType === "decline_transfer" ? "转账退回" : null;
+        const refunded = refundReason ? await refundOutgoingMoneyMessage(targetMsg, refundReason) : targetMsg.mediaData;
+        if (refundReason && !refunded) return;
         const updatedMediaData = {
-            ...(refundReason ? refundOutgoingMoneyMessage(targetMsg, refundReason) : targetMsg.mediaData),
+            ...refunded,
             status: newStatus,
             ...(targetMediaType === "payment_request" ? {
                 paymentResolvedAt: new Date().toISOString(),
@@ -2742,7 +2744,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     };
 
     // 转账：按 ownerName 匹配发送人，且验证 claimerName === recipientName
-    const handleGroupTransferAction = (action: "accept" | "decline", claimerName: string, ownerName?: string) => {
+    const handleGroupTransferAction = async (action: "accept" | "decline", claimerName: string, ownerName?: string) => {
         const freshMessages = loadChatMessages(session.id);
         const targetMsg = [...freshMessages].reverse().find(m => {
             if (m.mediaType !== "transfer" || m.mediaData?.status !== "pending") return false;
@@ -2758,8 +2760,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         const ownerDisplay = owner === (userIdentity?.name) ? "你" : owner;
         const newStatus = action === "accept" ? "received" as const : "declined" as const;
         const refundData = action === "decline" && targetMsg.role === "user"
-            ? refundOutgoingMoneyMessage(targetMsg, "转账退回")
+            ? await refundOutgoingMoneyMessage(targetMsg, "转账退回")
             : targetMsg.mediaData;
+        if (action === "decline" && targetMsg.role === "user" && !refundData) return;
         const updatedData = { ...refundData, status: newStatus };
         updateMessageMediaData(targetMsg.id, updatedData);
         setMessages(prev => prev.map(m => m.id === targetMsg.id ? { ...m, mediaData: updatedData } : m));
@@ -3952,10 +3955,14 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             return { ok: false };
         }
         const isRedPacket = mediaType === "red_packet";
+        const walletCurrency = loadWalletState().currency || "CNY";
+        const sourceCurrency = normalizeCurrency(mediaData?.currency);
+        const debitAmount = sourceCurrency === walletCurrency ? amount : mediaData?.walletDebitCurrency === walletCurrency ? mediaData.walletDebitAmount : undefined;
+        if (typeof debitAmount !== "number" || !Number.isFinite(debitAmount) || debitAmount <= 0) { showChatToast("请先完成汇率查询后发送"); return { ok: false }; }
         const result = payWithWalletBalance({
-            amount,
+            amount: debitAmount,
             title: isRedPacket ? "发红包" : "发转账",
-            detail: `${session.isGroup ? session.groupName || "群聊" : character?.name || "聊天"}：${isRedPacket ? "发红包" : "发转账"} ${amount.toFixed(2)} 元`,
+            detail: `${session.isGroup ? session.groupName || "群聊" : character?.name || "聊天"}：${isRedPacket ? "发红包" : "发转账"} ${amount.toFixed(2)} ${sourceCurrency}，扣款 ${debitAmount.toFixed(2)} ${walletCurrency}`,
             category: isRedPacket ? "红包" : "转账",
         });
         if (!result.ok || !result.transaction) {
@@ -3966,22 +3973,32 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             ok: true,
             mediaData: {
                 ...mediaData,
+                walletDebitAmount: debitAmount,
+                walletDebitCurrency: walletCurrency,
                 walletTransactionId: result.transaction.id,
             },
         };
     };
 
-    const refundOutgoingMoneyMessage = (msg: ChatMessage, reason: "红包退回" | "转账退回"): ChatMessage["mediaData"] => {
+    const refundOutgoingMoneyMessage = async (msg: ChatMessage, reason: "红包退回" | "转账退回"): Promise<ChatMessage["mediaData"]> => {
         const data = msg.mediaData;
         if (!data?.walletTransactionId || data.walletRefundTransactionId) return data;
-        const amount = getMoneyMediaAmount(data);
+        const targetCurrency = loadWalletState().currency || "CNY";
+        const sourceCurrency = data.walletDebitCurrency || "CNY";
+        const rate = await fetchExchangeRate(sourceCurrency, targetCurrency);
+        if (!rate || (loadWalletState().currency || "CNY") !== targetCurrency) { showChatToast("退款汇率查询失败，稍后重试"); return undefined; }
+        const latestData = loadChatMessages(session.id).find(item => item.id === msg.id)?.mediaData;
+        if (latestData?.walletRefundTransactionId) return latestData;
+        const amount = cnyAmount(data.walletDebitAmount ?? getMoneyMediaAmount(data), rate);
         if (amount <= 0) return data;
         const result = creditWalletBalance(amount, reason, `${reason}：${data.label || msg.content || "聊天款项"}`, "聊天退款");
         if (!result.ok || !result.transaction) return data;
-        return {
+        const refunded = {
             ...data,
             walletRefundTransactionId: result.transaction.id,
         };
+        updateMessageMediaData(msg.id, refunded);
+        return refunded;
     };
 
     const creditIncomingMoneyMessage = (msg: ChatMessage, actionType: string): ChatMessage => {
@@ -3993,8 +4010,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             ? Number(data?.claimedAmounts?.[userName] ?? data?.amount ?? 0)
             : Number(data?.amount ?? 0);
         const currency = normalizeCurrency(data?.currency);
-        const safeAmount = currency !== "CNY"
-            ? (typeof data?.cnyAmount === "number" && Number.isFinite(data.cnyAmount) ? data.cnyAmount : 0)
+        const walletCurrency = loadWalletState().currency || "CNY";
+        const safeAmount = typeof data?.receivedAmount === "number" && data.receivedCurrency === walletCurrency
+            ? data.receivedAmount : currency !== walletCurrency
+            ? (walletCurrency === "CNY" && typeof data?.cnyAmount === "number" && Number.isFinite(data.cnyAmount) ? data.cnyAmount : 0)
             : Number.isFinite(amount) ? Math.max(0, Math.round(amount * 100) / 100) : 0;
         if (safeAmount <= 0) return msg;
         const result = creditWalletBalance(
@@ -7709,7 +7728,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     mode="red_packet"
                     isGroup={session.isGroup}
                     onSend={(amount, label, count) => {
-                        const sent = sendRichMessage("red_packet", { amount, label, status: "pending", count: count || 1 });
+                        const sent = sendRichMessage("red_packet", { amount, label, currency: loadWalletState().currency || "CNY", status: "pending", count: count || 1 });
                         if (sent) setRichModal(null);
                     }}
                     onClose={() => setRichModal(null)}
@@ -7728,10 +7747,14 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             {richModal === "transfer" && (
                 <RedPacketModal
                     mode="transfer"
-                    onSend={(amount, label, _count, currency = "CNY") => {
+                    onSend={async (amount, label, _count, currency = "CNY") => {
+                        const targetCurrency = loadWalletState().currency || "CNY";
+                        const rate = await fetchExchangeRate(currency, targetCurrency);
+                        if (!rate || (loadWalletState().currency || "CNY") !== targetCurrency) { showChatToast("汇率查询失败，尚未扣款，请重试"); return; }
+                        const debit = { walletDebitAmount: cnyAmount(amount, rate), walletDebitCurrency: targetCurrency };
                         if (session.isGroup && transferTarget) {
                             const sent = sendRichMessage("transfer", {
-                                amount, label, currency: normalizeCurrency(currency), status: "pending",
+                                ...debit, amount, label, currency: normalizeCurrency(currency), status: "pending",
                                 senderName: userIdentity?.name || "你",
                                 recipientId: transferTarget.id,
                                 recipientName: transferTarget.name,
@@ -7741,7 +7764,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 setTransferTarget(null);
                             }
                         } else {
-                            const sent = sendRichMessage("transfer", { amount, label, currency: normalizeCurrency(currency), status: "pending" });
+                            const sent = sendRichMessage("transfer", { ...debit, amount, label, currency: normalizeCurrency(currency), status: "pending" });
                             if (sent) setRichModal(null);
                         }
                     }}

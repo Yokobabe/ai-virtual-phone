@@ -6,6 +6,7 @@ const source = fs.readFileSync(require('node:path').join(__dirname, '../lib/edge
 class Element {
   constructor() { this.disabled=false; this.isConnected=true; this.blocked=false; }
   closest() { return this.blocked ? this : null; }
+  getAttribute(name) { return name==='data-edge-back' ? this.edgeBack ?? null : null; }
   contains(el) { return el===this; }
   getBoundingClientRect() { return {left:60,top:60,width:40,height:40}; }
 }
@@ -33,6 +34,10 @@ const root={
  addEventListener:(name,fn)=>{handlers[name]=fn;},removeEventListener:name=>{delete handlers[name];},
 };
 const cleanup=installEdgeSwipeBack(root,p=>{hint=p;});
+const compose=new Element(); compose.edgeBack='off'; compose.click=()=>{throw new Error('Compose must not be a back action');};
+buttons=[outer,compose];
+assert.equal(context.exports.findExposedBackButton({...root,ownerDocument:{...root.ownerDocument,elementFromPoint:()=>outer}}),outer);
+buttons=[outer];
 const target=new Element();
 function emit(name,x,y,time,options={}) {
  const touch={identifier:1,clientX:x,clientY:y};

@@ -1,8 +1,16 @@
 import type { VoiceApiConfig } from "./settings-types";
 
 export const ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1";
-export const ELEVENLABS_MODELS = ["eleven_multilingual_v2", "eleven_flash_v2_5", "eleven_turbo_v2_5", "eleven_v3"];
+export const ELEVENLABS_MODELS = ["eleven_multilingual_v2", "eleven_flash_v2_5", "eleven_turbo_v2_5", "eleven_v3", "eleven_v4", "eleven_v4_turbo"];
 export const ELEVENLABS_DEFAULT_MODEL = ELEVENLABS_MODELS[0];
+
+export function isElevenLabsV4(model: string | undefined): boolean {
+    return ["eleven_v4", "eleven_v4_turbo"].includes(model?.trim() || "");
+}
+
+export function usesElevenLabsAccountVoiceSettings(model: string | undefined): boolean {
+    return model?.trim() === "eleven_v3";
+}
 
 function baseUrl(config: VoiceApiConfig): string {
     const url = new URL((config.baseUrl?.trim() || ELEVENLABS_BASE_URL).replace(/\/+$/, ""));
@@ -19,12 +27,18 @@ function clamp(value: number | undefined, fallback: number, min = 0, max = 1) {
 export function elevenLabsSpeechRequest(text: string, config: VoiceApiConfig) {
     if (!config.defaultVoice?.trim()) throw new Error("请先同步并选择 ElevenLabs 音色，或填写 Voice ID");
     const model = config.model?.trim() || ELEVENLABS_DEFAULT_MODEL;
+    const language = config.elevenLabs?.languageCode?.trim().toLowerCase() || "";
+    if (isElevenLabsV4(model) && language && !/^[a-z]{2}$/.test(language)) throw new Error("语言代码请填写两位字母，如 zh、ja、en；留空自动识别");
     return {
         url: `${baseUrl(config)}/v1/text-to-speech/${encodeURIComponent(config.defaultVoice.trim())}?output_format=mp3_44100_128`,
         body: {
             text, model_id: model,
-            // v3 has different controls. Keep its account defaults instead of sending v2 settings.
-            ...(model === "eleven_v3" ? {} : { voice_settings: {
+            ...(isElevenLabsV4(model) && language ? { language_code: language } : {}),
+            // Expressive models keep account defaults; don't assume v2 controls are compatible.
+            ...(isElevenLabsV4(model) ? { voice_settings: {
+                stability: clamp(config.elevenLabs?.stability, .5),
+                similarity_boost: clamp(config.elevenLabs?.similarity, .75),
+            } } : usesElevenLabsAccountVoiceSettings(model) ? {} : { voice_settings: {
                 stability: clamp(config.elevenLabs?.stability, .5),
                 similarity_boost: clamp(config.elevenLabs?.similarity, .75),
                 style: clamp(config.elevenLabs?.style, 0),

@@ -6,7 +6,7 @@ import { SettingsContext } from "../phone-settings-app";
 import type { VoiceApiConfig } from "@/lib/settings-types";
 import { loadVoiceConfigs, saveVoiceConfigs } from "@/lib/settings-storage";
 import { synthesizeSpeech } from "@/lib/tts-service";
-import { ELEVENLABS_BASE_URL, ELEVENLABS_DEFAULT_MODEL, ELEVENLABS_MODELS, listElevenLabsVoices } from "@/lib/elevenlabs-tts";
+import { ELEVENLABS_BASE_URL, ELEVENLABS_DEFAULT_MODEL, ELEVENLABS_MODELS, isElevenLabsV4, listElevenLabsVoices, usesElevenLabsAccountVoiceSettings } from "@/lib/elevenlabs-tts";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { Toggle, Input } from "@/components/ui/form";
 import { Alert } from "@/components/ui/feedback";
@@ -728,7 +728,16 @@ export function VoiceSettings() {
                                                     </select>
                                                     {!ELEVENLABS_MODELS.includes(config.model || "") && <Input aria-label="ElevenLabs 模型 ID" value={config.model || ""} onChange={e => updateConfig(config.id, { model: e.target.value })} placeholder={ELEVENLABS_DEFAULT_MODEL} />}
                                                 </label>
-                                                {config.model === "eleven_v3" ? <span className="menu-desc">v3 使用账户音色默认参数，不发送 v2 的语速／风格参数。</span> : <>
+                                                {isElevenLabsV4(config.model) ? <>
+                                                    {([ ["stability", "稳定性", .5], ["similarity", "相似度", .75] ] as const).map(([key, label, fallback]) => <label className="flex flex-col gap-1" key={key}>
+                                                        <span className="menu-desc">{label}：{Math.round((config.elevenLabs?.[key] ?? fallback) * 100)}%</span>
+                                                        <input aria-label={`v4 ${label}`} type="range" min="0" max="1" step="0.05" value={config.elevenLabs?.[key] ?? fallback} onChange={e => updateConfig(config.id, { elevenLabs: { ...config.elevenLabs, [key]: Number(e.target.value) } })} />
+                                                    </label>)}
+                                                    <label className="flex flex-col gap-1"><span className="menu-desc">语言代码 · Language code</span>
+                                                        <Input aria-label="v4 语言代码" value={config.elevenLabs?.languageCode || ""} maxLength={2} onChange={e => updateConfig(config.id, { elevenLabs: { ...config.elevenLabs, languageCode: e.target.value.trim().toLowerCase() } })} placeholder="自动识别（留空）" />
+                                                    </label>
+                                                    <span className="menu-desc">留空自动识别；中文 zh、日语 ja、英语 en、韩语 ko。混合语言建议留空；指定语言指导发音，不翻译台词。模型不支持时忽略。v4 不发送旧版语速、风格或音色增强参数。</span>
+                                                </> : usesElevenLabsAccountVoiceSettings(config.model) ? <span className="menu-desc">v3 使用音色默认参数。</span> : <>
                                                     {([
                                                         ["stability", "稳定性", .5], ["similarity", "相似度", .75], ["style", "风格强度", 0],
                                                     ] as const).map(([key, label, fallback]) => <label className="flex flex-col gap-1" key={key}>

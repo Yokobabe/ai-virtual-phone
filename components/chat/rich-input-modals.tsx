@@ -5,6 +5,8 @@ import { CallSttWarningDialog, hideCallSttWarningPermanently, isCallSttWarningHi
 import { isAndroidBrowser } from "./voice-input-platform";
 import { ApplePayBrand } from "./apple-pay-brand";
 import { LocationMap } from "./location-map";
+import { loadWalletState } from "@/lib/wallet-storage";
+import { WALLET_CURRENCY_OPTIONS, currencySymbol } from "@/lib/exchange-rates";
 
 // ── Photo Input Modal ─────────────────────────────
 
@@ -112,7 +114,7 @@ export function PhotoInputModal({ onSend, onClose }: PhotoInputModalProps) {
 interface RedPacketModalProps {
     mode: "red_packet" | "transfer";
     isGroup?: boolean;
-    onSend: (amount: number, label: string, count?: number, currency?: string) => void;
+    onSend: (amount: number, label: string, count?: number, currency?: string) => void | Promise<void>;
     onClose: () => void;
 }
 
@@ -120,7 +122,9 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
     const [amount, setAmount] = useState("");
     const [label, setLabel] = useState("");
     const [count, setCount] = useState("1");
-    const [currency, setCurrency] = useState("CNY");
+    const [currency, setCurrency] = useState(() => loadWalletState().currency || "CNY");
+    const [sending, setSending] = useState(false);
+    const sendingRef = useRef(false);
 
     const isRedPacket = mode === "red_packet";
     const title = isRedPacket ? "发红包" : "转账";
@@ -128,11 +132,14 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
     // Brand-specific colors: WeChat red packet / transfer (CSS variables)
     const color = isRedPacket ? "var(--c-redpacket)" : "var(--c-transfer)";
 
-    const handleSend = () => {
+    const handleSend = async () => {
+        if (sendingRef.current) return;
         const num = parseFloat(amount);
         if (!num || num <= 0) return;
         const cnt = isRedPacket ? (isGroup ? Math.max(1, parseInt(count, 10) || 1) : 1) : undefined;
-        onSend(num, label.trim() || defaultLabel, cnt, isRedPacket ? "CNY" : currency);
+        sendingRef.current = true; setSending(true);
+        try { await onSend(num, label.trim() || defaultLabel, cnt, currency); }
+        finally { sendingRef.current = false; setSending(false); }
     };
 
     return (
@@ -157,7 +164,7 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
                             <span
                                 className="ts-24 font-bold imessage-money-compose-currency"
                                 style={{ color }}
-                            >{currency === "CNY" || isRedPacket ? "¥" : currency}</span>
+                            >{currencySymbol(currency)}</span>
                             <input
                                 value={amount}
                                 onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
@@ -168,7 +175,7 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
                                 style={{ borderBottom: `2px solid ${color}` }}
                                         />
                         </div>
-                        {!isRedPacket && <select value={currency} onChange={e => setCurrency(e.target.value)} className="ui-input mt-2 w-full" aria-label="转账币种"><option value="CNY">人民币 CNY</option><option value="USD">美元 USD</option><option value="EUR">欧元 EUR</option><option value="GBP">英镑 GBP</option><option value="JPY">日元 JPY</option><option value="HKD">港币 HKD</option></select>}
+                        {!isRedPacket && <select value={currency} onChange={e => setCurrency(e.target.value)} disabled={sending} className="ui-input mt-2 w-full" aria-label="转账币种">{WALLET_CURRENCY_OPTIONS.map(item => <option key={item.code} value={item.code}>{item.label} {item.code}</option>)}</select>}
                     </div>
                     {isRedPacket && isGroup && (
                         <div>
@@ -201,7 +208,7 @@ export function RedPacketModal({ mode, isGroup, onSend, onClose }: RedPacketModa
                         >取消</button>
                         <button
                             onClick={handleSend}
-                            disabled={!parseFloat(amount)}
+                            disabled={sending || !parseFloat(amount)}
                             className="flex-1 py-2.5 rounded-lg border-none text-white ts-14 font-semibold imessage-rich-input-primary"
                             style={{
                                 background: parseFloat(amount) ? color : "var(--c-icon)",

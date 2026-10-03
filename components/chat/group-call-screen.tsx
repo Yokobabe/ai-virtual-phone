@@ -1,4 +1,5 @@
 "use client";
+import { voiceDisplayText, voiceSpeechText } from "@/lib/voice-expression";
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ChatSession, ChatMessage, loadChatMessages, pushChatMessage, getLatestCharacterStateValues } from "@/lib/chat-storage";
@@ -241,8 +242,9 @@ export function GroupCallScreen({ type, session, characters, onEnd, initiator = 
                     getLatestCharacterStateValues(r.characterId),
                 );
                 const textParts = parts.filter(p => !p.mediaType && p.content.trim());
-                const displayText = textParts.map(p => p.content).join("\n");
-                const speechText = stripBilingualForSpeech(displayText);
+                const spokenText = textParts.map(p => p.content).join("\n");
+                const displayText = voiceDisplayText(spokenText);
+                const speechText = voiceSpeechText(stripBilingualForSpeech(spokenText));
 
                 if (!displayText && !(statusPanel || innerMonologue)) continue;
 

@@ -187,6 +187,9 @@ export type ChatMessage = {
         exchangeRateToCny?: number; // 发送/领取时固定的联网参考汇率
         cnyAmount?: number;       // 已固定的人民币折算金额
         exchangeRateAt?: string;
+        receivedCurrency?: string;
+        receivedAmount?: number;
+        exchangeRate?: number;
         count?: number;           // 红包个数
         label?: string;           // 红包留言/转账备注/照片描述/位置名/表情名
         photoGroupId?: string;    // 同一次发送的照片组 ID
@@ -260,6 +263,8 @@ export type ChatMessage = {
         claimedBy?: string[];     // 群红包已领取人名列表
         claimedAmounts?: Record<string, number>; // 拼手气红包：每人领取金额
         walletTransactionId?: string; // 发送红包/转账时扣款流水
+        walletDebitAmount?: number;
+        walletDebitCurrency?: string;
         walletRefundTransactionId?: string; // 被拒收/退回时退款流水
         walletDepositTransactionId?: string; // 领取红包/转账时入账流水
         shoppingGiftId?: string; // 购物订单中的可送礼物实例 ID
@@ -319,6 +324,7 @@ export type ChatMessage = {
         xiaohongshuTone?: string;
         callDuration?: string;    // 通话时长（如 05:23）
         voiceDuration?: number;   // 语音条时长（秒）
+        speechText?: string; // Role-authored speech directions, separate from the visible transcript.
         synthesizedFromText?: string; // 语音条当前音频对应的合成文本
         memoryContent?: string;   // 记忆写入内容
         memoryReason?: string;    // 记忆写入原因

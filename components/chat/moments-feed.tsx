@@ -389,6 +389,7 @@ export function MomentsFeed({ onCloseApp }: MomentsFeedProps) {
                     title="发布朋友圈"
                     type="button"
                     aria-label="发布朋友圈"
+                    data-edge-back="off"
                 >
                     <svg className="feed-compose-camera" width={22} height={22} viewBox="0 0 24 24" fill="none" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" stroke="currentColor">
                         <rect x="2" y="6" width="20" height="14" rx="2" />

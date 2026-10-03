@@ -20,6 +20,7 @@ export function findExposedBackButton(root: HTMLElement): HTMLButtonElement | nu
         'button.page-back-btn, button.imessage-header-back, button[data-edge-back], button[aria-label="返回"]'
     ));
     return buttons.reverse().find(button => {
+        if (button.getAttribute('data-edge-back') === 'off') return false;
         if (button.disabled || button.closest('[inert], [aria-hidden="true"]')) return false;
         const r = button.getBoundingClientRect();
         if (!r.width || !r.height) return false;

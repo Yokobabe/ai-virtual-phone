@@ -153,7 +153,7 @@ export type VoiceApiConfig = {
     languageBoost?: string;
     /** Provider-specific speed: Minimax 0.5–2, ElevenLabs 0.7–1.2. */
     speechSpeed?: number;
-    elevenLabs?: { stability?: number; similarity?: number; style?: number; speakerBoost?: boolean };
+    elevenLabs?: { stability?: number; similarity?: number; style?: number; speakerBoost?: boolean; languageCode?: string };
     /** Minimax voice_setting.pitch（半音，±12）。缺省保持旧行为（0，原声）。 */
     speechPitch?: number;
     customVoices?: { id: string; name: string; createdAt?: number }[];
