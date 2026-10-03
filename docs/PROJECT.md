@@ -8,6 +8,8 @@
 
 ## 工程身份
 
+- 工程协作要求：主动把用户的产品规则转成可实施的数据模型、接口、兼容与验收方案，核对现有链路及第三方用例，不只逐条改代码；完整要求见 AGENTS.md。
+
 - 本机主仓库：`C:/Users/Effy/Documents/Codex/ai-virtual-phone`。
 - GitHub：`Yokobabe/ai-virtual-phone`；定制集成分支：`feat/imessage-private-chat`。
 - 2026-09-14 本地核对 HEAD：`5efb728`，`feat(chat): add avatar memory, group mentions and echo effects`；此前已推送。开始新任务仍须重新查 git 状态。
