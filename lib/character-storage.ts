@@ -1,5 +1,6 @@
 import type { Character, CanvasBgItem } from "./character-types";
 import { normalizeTimeZone } from "./character-time";
+import { canCurrentIdentityInteract } from "./identity-access";
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 
 /** Thrown when a character card contains fields unsupported by the current schema */
@@ -76,6 +77,10 @@ export function loadCharacters(): Character[] {
   } catch {
     return [];
   }
+}
+
+export function loadInteractableCharacters(): Character[] {
+  return loadCharacters().filter(character => canCurrentIdentityInteract(character.id));
 }
 
 export function saveCharacters(chars: Character[]): void {

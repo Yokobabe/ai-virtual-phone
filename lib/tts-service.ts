@@ -1,3 +1,4 @@
+import { identityLocalStorage } from "@/lib/identity-runtime";
 // lib/tts-service.ts — 语音合成服务
 
 import type { VoiceApiConfig, ContentAppId } from "./settings-types";
@@ -34,6 +35,8 @@ export async function synthesizeSpeech(
     voiceConfig: VoiceApiConfig,
     options?: { emotion?: string },
 ): Promise<Blob | null> {
+    const { assertIdentityActive } = await import("./identity-runtime");
+    assertIdentityActive();
     if (!text.trim()) return null;
 
     const provider = voiceConfig.provider;
@@ -201,7 +204,7 @@ const TTS_VOLUME_KEY = "ai_phone_tts_volume_v1";
 let _ttsVolume = ((): number => {
     if (typeof window === "undefined") return 1;
     try {
-        const raw = window.localStorage.getItem(TTS_VOLUME_KEY);
+        const raw = identityLocalStorage.getItem(TTS_VOLUME_KEY);
         const v = raw == null ? 1 : Number(raw);
         return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
     } catch { return 1; }
@@ -216,7 +219,7 @@ export function getTtsVolume(): number {
 
 export function setTtsVolume(volume: number): void {
     _ttsVolume = Math.min(1, Math.max(0, volume));
-    try { window.localStorage.setItem(TTS_VOLUME_KEY, String(_ttsVolume)); } catch { /* ignore */ }
+    try { identityLocalStorage.setItem(TTS_VOLUME_KEY, String(_ttsVolume)); } catch { /* ignore */ }
     if (_activeGain) { try { _activeGain.gain.value = _ttsVolume; } catch { /* ignore */ } }
     if (_sharedAudio) { try { _sharedAudio.volume = _ttsVolume; } catch { /* ignore */ } }
 }

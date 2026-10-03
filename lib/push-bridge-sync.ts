@@ -1,3 +1,4 @@
+import { currentIdentityCloudTag } from "./identity-runtime";
 // 现实桥离线联动·客户端同步器：
 // 把规则/云配置/触发状态 + 每条「让TA回话」规则的 prompt 快照（带占位哨兵）
 // 同步到服务端。快照用前台同一条组装链路构建，服务端只做占位符替换。
@@ -14,7 +15,7 @@ import {
     type ChatMessage,
     loadChatMessages,
 } from "./chat-storage";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { kvGet, kvRemove, kvSet } from "./kv-db";
 import { loadActiveAccountId } from "./account-client";
 import {
@@ -98,6 +99,7 @@ function toServerRule(rule: BridgeRule): (ServerBridgeRule & { actions: BridgeRu
         .map(([key]) => key);
     return {
         id: rule.id,
+        ...currentIdentityCloudTag(),
         name: rule.name,
         matchType: rule.matchType,
         cooldownMinutes: rule.cooldownMinutes,
@@ -175,6 +177,7 @@ async function buildRuleSnapshot(rule: BridgeRule): Promise<Record<string, unkno
                 sessionId: session.id,
                 regexes,
                 characterName: character.name,
+                ...currentIdentityCloudTag(),
                 userName: userIdentity?.name ?? "用户",
                 appId: "chat",
                 appTags: ["chat", "text"],
@@ -332,6 +335,7 @@ async function buildScreenChatSnapshot(): Promise<Record<string, unknown> | null
                 sessionId: session.id,
                 regexes,
                 characterName: character.name,
+                ...currentIdentityCloudTag(),
                 userName: userIdentity?.name ?? "用户",
                 appId: "chat",
                 appTags: ["chat", "text"],

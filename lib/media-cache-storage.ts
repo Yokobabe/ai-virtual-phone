@@ -1,3 +1,5 @@
+import { identityDatabaseName } from "./identity-runtime";
+import { protectIdentityDatabase } from "./identity-db-guard";
 import Dexie from "dexie";
 
 // ── Database ─────────────────────────────────────
@@ -14,7 +16,8 @@ class MediaCacheDatabase extends Dexie {
     entries!: Dexie.Table<MediaCacheEntry, string>;
 
     constructor() {
-        super("AiPhoneMediaCacheDB");
+        super(identityDatabaseName("AiPhoneMediaCacheDB"));
+        protectIdentityDatabase(this, "AiPhoneMediaCacheDB");
         this.version(1).stores({
             entries: "id, createdAt",
         });

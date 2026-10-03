@@ -1,3 +1,4 @@
+import { identityLocalStorage } from "@/lib/identity-runtime";
 // 共同建设：自部署用户把自己 fork 里的改动贡献回官方仓库。
 // 读侧全部走 GitHub 公共接口（compare API 直接给出"相对合并基准的差异"，
 // 换文件清单和逐行 patch 都不用自己算）；写侧走资源集市的上传中转函数
@@ -13,7 +14,7 @@ const FORK_STORE_KEY = "ai_phone_contrib_fork_v1";
 
 export function loadContribFork(): string {
     try {
-        return localStorage.getItem(FORK_STORE_KEY) || "";
+        return identityLocalStorage.getItem(FORK_STORE_KEY) || "";
     } catch {
         return "";
     }
@@ -21,7 +22,7 @@ export function loadContribFork(): string {
 
 export function saveContribFork(repo: string): void {
     try {
-        localStorage.setItem(FORK_STORE_KEY, repo);
+        identityLocalStorage.setItem(FORK_STORE_KEY, repo);
     } catch { /* 忽略 */ }
 }
 

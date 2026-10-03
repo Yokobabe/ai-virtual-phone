@@ -1,6 +1,6 @@
 import { jsonrepair } from "jsonrepair";
 
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import type { Character } from "./character-types";
 import type { UserIdentity } from "@/components/settings/user-identity";
 import { previewMessagesForApi, sendLLMRequest, ChatEngineError } from "./chat-engine";

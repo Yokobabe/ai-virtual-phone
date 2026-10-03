@@ -10,9 +10,10 @@
 //  - URL 加 ?plugin-safe-mode=1 手动进入安全模式（逃生舱）
 
 import { kvGet, kvSet, kvRemove, hydrateKvDb } from "./kv-db";
+import { hasActiveIdentity } from "./identity-runtime";
 import { hydrateChatStorage, loadChatMessages, loadChatSessions, loadChatContacts, pushChatMessage, updateChatMessage, type ChatMessage } from "./chat-storage";
 import { isMediaStoreRef, loadMediaBlob } from "./media-cache-storage";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { loadApiConfigs, loadBindingConfig } from "./settings-storage";
 import { simpleLLMCall } from "./api-helpers";
 import { getChatPluginHookBus } from "./chat-plugin-hooks";
@@ -111,7 +112,7 @@ class ChatPluginRuntime {
         }
         // 崩溃循环保护：连续三次启动未走完插件加载 → 自动进入安全模式。
         // 正常关闭页面（pagehide）会清除计数，避免 iOS 快速开关 App 误触发。
-        window.addEventListener("pagehide", () => kvRemove(BOOT_GUARD_KEY));
+        window.addEventListener("pagehide", () => { if (hasActiveIdentity()) kvRemove(BOOT_GUARD_KEY); });
         const guard = Number(kvGet(BOOT_GUARD_KEY) || "0");
         if (guard >= 3) {
             setChatPluginSafeMode(true);

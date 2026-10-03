@@ -2,7 +2,7 @@ import { ALBUM_REVIEW_REQUESTED, queueAlbumReview, albumParticipants, albumPhoto
 import { collectPhotoAlbumAssets, resolvePhotoAlbumMedia, getPhotoAlbumSourceUpdatedEvents, PHOTO_ALBUM_UPDATED_EVENT } from "./photo-album-storage";
 import { loadChatSessions } from "./chat-storage";
 import { kvGet } from "./kv-db";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { loadApiConfigs, loadBindingConfig, loadPresets, loadRegexes, loadWorldBooks, resolveBinding, resolveUserIdentity } from "./settings-storage";
 import { assemblePromptPayload } from "./llm-prompt-assembler";
 import { sendLLMRequest } from "./chat-engine";

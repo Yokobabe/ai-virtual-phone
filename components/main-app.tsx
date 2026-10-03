@@ -149,7 +149,7 @@ async function warmBuiltinFonts(shouldStop: () => boolean): Promise<void> {
   await Promise.all(BUILTIN_FONT_LOAD_SPECS.map((spec) => document.fonts.load(spec).catch(() => [])));
 }
 
-function SplashScreen({ ready = false, onEnter }: { ready?: boolean; onEnter?: () => void }) {
+function SplashScreen({ ready = false, onEnter, error }: { ready?: boolean; onEnter?: () => void; error?: string }) {
   return (
     <main className="app-root splash-root">
       <section
@@ -160,6 +160,7 @@ function SplashScreen({ ready = false, onEnter }: { ready?: boolean; onEnter?: (
           <div className="phone-frame">
             <div className="phone-shell splash-phone-screen">
               <SplashAnimation />
+              {error && <p role="alert" className="absolute bottom-20 left-6 right-6 rounded-2xl bg-white/90 p-4 text-center text-sm text-slate-700 dark:bg-slate-900/90 dark:text-slate-200">{error}</p>}
               <button
                 type="button"
                 className={ready ? "splash-enter-button splash-enter-button-show" : "splash-enter-button"}
@@ -229,6 +230,7 @@ async function prepareDesktopThemeForFirstPaint(): Promise<PreparedDesktopTheme>
 export function MainApp() {
   const [preparedDesktopTheme, setPreparedDesktopTheme] = useState<PreparedDesktopTheme | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [startupError, setStartupError] = useState("");
   const [splashDismissed, setSplashDismissed] = useState(false);
 
   useEffect(() => {
@@ -255,7 +257,9 @@ export function MainApp() {
       if (hasPendingMcpOAuthCallback()) {
         setSplashDismissed(true);
       }
-    })();
+    })().catch(error => {
+      if (!cancelled) setStartupError(`无法准备身份数据：${error instanceof Error ? error.message : "请检查浏览器存储后刷新"}`);
+    });
 
     // 安卓全屏兜底。是否请求全屏在每次点击时读取，设置切换后无需重载。
     const isMobile = window.matchMedia("(max-width: 500px) and (hover: none) and (pointer: coarse)").matches;
@@ -279,7 +283,7 @@ export function MainApp() {
   return (
     <AccountGate>
       {!splashDismissed ? (
-        <SplashScreen ready={hydrated} onEnter={() => setSplashDismissed(true)} />
+        <SplashScreen ready={hydrated} error={startupError} onEnter={() => setSplashDismissed(true)} />
       ) : (
         <main className="app-root">
           <MusicProvider>

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo, useDeferredVa
 import { loadChatContacts, ChatContact, createOrGetSession, ChatSession, addChatContact, pushChatMessage, loadChatMessages } from "@/lib/chat-storage";
 import { resolveUserIdentity } from "@/lib/settings-storage";
 import { PENDING_REPLY_PREFIX } from "@/lib/friend-request-engine";
-import { loadCharacters } from "@/lib/character-storage";
+import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import { Character } from "@/lib/character-types";
 import { loadMomentPosts } from "@/lib/moments-storage";
 import {

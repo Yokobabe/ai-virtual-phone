@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useSyncExternalStore } from "react";
-import { CHARACTERS_UPDATED_EVENT, loadCharacters } from "@/lib/character-storage";
+import { CHARACTERS_UPDATED_EVENT, loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 
 function subscribe(onChange: () => void) {
     window.addEventListener(CHARACTERS_UPDATED_EVENT, onChange);

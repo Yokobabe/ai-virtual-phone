@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 
 import { getChatImageFromIndexedDB, saveChatImageToIndexedDB } from "@/lib/chat-asset-storage";
-import { loadCharacters } from "@/lib/character-storage";
+import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import type { Character } from "@/lib/character-types";
 import { incrementEventCounter } from "@/lib/memory-storage";
 import { maybeRunSummarization } from "@/lib/memory-summarizer";

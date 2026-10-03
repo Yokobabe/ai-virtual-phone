@@ -100,6 +100,24 @@ export async function simpleLLMCall(
     messages: { role: string; content: string }[],
     options?: { temperature?: number; max_tokens?: number; signal?: AbortSignal; label?: string },
 ): Promise<{ content: string | null; error?: string; finishReason?: string; wasTruncated?: boolean }> {
+    const { registerIdentityRequest, assertIdentityActive } = await import("./identity-runtime");
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (options?.signal?.aborted) abort();
+    else options?.signal?.addEventListener("abort", abort, { once: true });
+    const release = registerIdentityRequest(controller);
+    try {
+      return await simpleLLMCallForIdentity(config, messages, { ...options, signal: controller.signal });
+    } finally { release(); options?.signal?.removeEventListener("abort", abort); }
+}
+
+async function simpleLLMCallForIdentity(
+    config: ApiConfig,
+    messages: { role: string; content: string }[],
+    options?: { temperature?: number; max_tokens?: number; signal?: AbortSignal; label?: string },
+): Promise<{ content: string | null; error?: string; finishReason?: string; wasTruncated?: boolean }> {
+    const { assertIdentityActive } = await import("./identity-runtime");
+    assertIdentityActive();
     const baseUrl = determineBaseUrl(config);
     if (!baseUrl || !config.apiKey) {
         return { content: null, error: "API 地址或密钥无效" };
@@ -176,6 +194,7 @@ export async function simpleLLMCall(
         }
 
         const data = await res.json();
+        assertIdentityActive();
 
         // Extract content — try multiple response formats for maximum compatibility
         const content = extractLLMContent(data, config.provider);

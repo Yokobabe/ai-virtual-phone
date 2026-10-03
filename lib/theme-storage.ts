@@ -1,6 +1,7 @@
 import { DEFAULT_THEME_PROFILE, normalizeThemeProfile, type ThemeAssetType, type ThemeProfile } from "@/lib/theme-types";
 import { kvGet, kvSet, kvRemove, registerKvMigration } from "./kv-db";
 import { openIndexedDbAtLeast } from "./idb-open";
+import { getCurrentIdentityId, assertIdentityActive } from "./identity-runtime";
 
 export const THEME_PROFILE_STORAGE_KEY = "ai_phone_theme_profile_v1";
 registerKvMigration(THEME_PROFILE_STORAGE_KEY);
@@ -47,6 +48,7 @@ export function describeAssetSaveError(error: unknown, fallback = "上传失败�
 }
 
 export type ThemeAssetRecord = {
+  ownerUserId?: string;
   id: string;
   type: ThemeAssetType;
   mimeType: string;
@@ -302,12 +304,14 @@ export async function saveThemeAssetFromBlob(
   const mimeType = normalized.type || dataUrlToMimeType(dataUrl);
   const id = providedId ?? createThemeAssetId(type);
   const record: ThemeAssetRecord = {
+    ...(["chat_bg", "vn_scene", "vn_sprite"].includes(type) ? { ownerUserId: getCurrentIdentityId() ?? undefined } : {}),
     id,
     type,
     mimeType,
     dataUrl,
     updatedAt: new Date().toISOString()
   };
+  if (record.ownerUserId) assertIdentityActive();
   await saveAssetRecord(record);
   return id;
 }

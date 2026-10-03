@@ -4,7 +4,7 @@
 // Prompts are assembled through the shared assemblePromptPayload() pipeline,
 // ensuring full character settings, world books, long-term memory, and user persona.
 
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { loadChatContacts } from "./chat-storage";
 import type { Character } from "./character-types";
 import {

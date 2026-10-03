@@ -8,7 +8,9 @@ import {
     dbReplaceContacts, dbReplaceSessions,
 } from "./chat-db";
 import { resolveUserIdentity } from "./settings-storage";
-import { loadCharacters } from "./character-storage";
+import { assertCharacterIdentityAccess } from "./identity-access";
+import { assertIdentityActive } from "./identity-runtime";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 import { emitChatPluginEvent, runChatPluginTransformSync } from "./chat-plugin-hooks";
 import { parseAIResponse } from "./rich-message-parser";
@@ -262,6 +264,8 @@ export type ChatMessage = {
         recipientName?: string;   // 转账收款人显示名
         claimedBy?: string[];     // 群红包已领取人名列表
         claimedAmounts?: Record<string, number>; // 拼手气红包：每人领取金额
+        claimedByUserIds?: string[];
+        claimedAmountsByUserId?: Record<string, number>;
         walletTransactionId?: string; // 发送红包/转账时扣款流水
         walletDebitAmount?: number;
         walletDebitCurrency?: string;
@@ -1136,6 +1140,7 @@ export function saveChatContacts(contacts: ChatContact[]) {
 }
 
 export function addChatContact(characterId: string): ChatContact | null {
+    assertCharacterIdentityAccess(characterId);
     // 任何一条"重新加上好友"的路径都会走到这里（通过好友申请、搜索添加、
     // 后台引擎重新建联系），统一在这里解除删除状态，不会漏。
     unmarkContactRemoved(characterId);
@@ -1201,6 +1206,7 @@ export function markChatSessionRead(sessionId: string): void {
 }
 
 export function createOrGetSession(contactId: string): ChatSession {
+    assertCharacterIdentityAccess(contactId);
     const sessions = loadChatSessions();
     const existing = sessions.find(s => s.contactId === contactId);
     if (existing) return existing;
@@ -1220,6 +1226,8 @@ export function createOrGetSession(contactId: string): ChatSession {
 }
 
 export function createGroupSession(groupName: string, participantIds: string[], options?: { isSpectator?: boolean; groupAvatar?: string; groupDescription?: string }): ChatSession {
+    assertIdentityActive();
+    participantIds.forEach(assertCharacterIdentityAccess);
     const sessions = loadChatSessions();
     const isSpectator = options?.isSpectator === true;
     const newSession: ChatSession = {
@@ -1296,6 +1304,8 @@ export function pushChatMessage(msg: Omit<ChatMessage, "id" | "createdAt" | "sta
     status?: ChatMessageStatus;
     createdAt?: string;
 }): ChatMessage {
+    assertIdentityActive();
+    if (msg.senderCharacterId) assertCharacterIdentityAccess(msg.senderCharacterId);
     let newMsg: ChatMessage = {
         ...msg,
         id: createMessageId(),

@@ -7,7 +7,7 @@ import { collectPhotoAlbumAssets, upsertAlbumNativeAsset, photoAlbumSourceId, re
 import { savePhotoDefinition, photoIdOf, contentVersionOf, variantVersionOf, type PhotoDefinitionInput } from "./photo-album-core";
 import { loadChatMessages, loadChatSessions, pushChatMessage, CHAT_REQUEST_REPLY_EVENT } from "./chat-storage";
 import { getChatImageFromIndexedDB } from "./chat-asset-storage";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { GENERATED_ALBUM_PERMISSION } from "./photo-album-permissions";
 
 let generating = false;

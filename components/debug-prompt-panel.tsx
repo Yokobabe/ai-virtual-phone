@@ -14,7 +14,7 @@ import {
 } from "@/lib/moments-engine";
 import { previewCalendarPromptPayload } from "@/lib/calendar-engine";
 import { CHAT_APP_SETTINGS_UPDATED_EVENT, loadChatAppSettings, loadChatContacts, loadChatMessages, loadChatSessions, type ChatSession } from "@/lib/chat-storage";
-import { loadCharacters } from "@/lib/character-storage";
+import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import { getAllPosts } from "@/lib/moments-storage";
 import type { LLMMessage } from "@/lib/llm-prompt-assembler";
 import { getWeekStartIso } from "@/lib/calendar-utils";

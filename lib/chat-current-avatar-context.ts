@@ -1,5 +1,5 @@
 import type { UserIdentity } from "@/components/settings/user-identity";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { loadChatSessions } from "./chat-storage";
 import { getChatCharacterAvatar } from "./chat-session-avatar";
 import { getCharacterWorldGroup } from "./character-world-storage";

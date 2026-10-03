@@ -13,7 +13,7 @@ import {
   reindexSessionMessageOrdersByTime,
   upsertImportedChatMessage,
 } from "./chat-storage";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import type { Character } from "./character-types";
 import {
   loadApiConfigs,

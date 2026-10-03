@@ -1,3 +1,5 @@
+import { identityIndexedDbFactory, identityDatabaseName } from "@/lib/identity-runtime";
+import { identityLocalStorage } from "@/lib/identity-runtime";
 import { callQaAgent, compactQaContext, formatQaErrorMessage, type QaContextEntry } from "./qa-agent-engine";
 import { QA_TOOLS, formatQaToolSubtitle, type QaCreatedContent, type QaProposedCommit } from "./qa-agent-tools";
 import { loadQaGithubConfig } from "./qa-github";
@@ -82,7 +84,7 @@ const DEFAULT_CONTEXT_BUDGET_CHARS = 1_000_000;
 
 function getContextBudget(): number {
     try {
-        const raw = Number(localStorage.getItem("ai_phone_qa_context_budget_chars"));
+        const raw = Number(identityLocalStorage.getItem("ai_phone_qa_context_budget_chars"));
         if (Number.isFinite(raw) && raw >= 2_000 && raw <= 2_000_000) return Math.floor(raw);
     } catch {
         // ignore
@@ -125,10 +127,10 @@ export function getQaContextBudgetChars(): number {
 /** 设置上下文预算（null = 恢复默认）；立即刷新进度条 */
 export function setQaContextBudgetChars(chars: number | null): void {
     try {
-        if (chars == null) localStorage.removeItem("ai_phone_qa_context_budget_chars");
+        if (chars == null) identityLocalStorage.removeItem("ai_phone_qa_context_budget_chars");
         else {
             const clamped = Math.min(QA_CONTEXT_BUDGET_MAX, Math.max(QA_CONTEXT_BUDGET_MIN, Math.floor(chars)));
-            localStorage.setItem("ai_phone_qa_context_budget_chars", String(clamped));
+            identityLocalStorage.setItem("ai_phone_qa_context_budget_chars", String(clamped));
         }
     } catch {
         // ignore
@@ -215,7 +217,7 @@ function makeId(): string {
 }
 
 function openQaDb(): IDBOpenDBRequest {
-    const request = indexedDB.open(QA_DB_NAME, QA_DB_VERSION);
+    const request = identityIndexedDbFactory().open(identityDatabaseName(QA_DB_NAME), QA_DB_VERSION);
     request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains(QA_STORE)) {
             request.result.createObjectStore(QA_STORE);

@@ -5489,3 +5489,21 @@
   gap: 6px;
   padding: 0 10px 8px;
 }
+
+/* Identity selection follows the system appearance without changing other pickers. */
+.binding-picker-dialog[data-identity-picker="true"] {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+@media (prefers-color-scheme: dark) {
+  .binding-picker-dialog[data-identity-picker="true"] {
+    --c-panel: rgba(30, 30, 34, .94);
+    --c-text-title: #f5f5f7;
+    --c-text: #a5a5ad;
+    --c-icon: #dedee5;
+    --c-icon-active: #70aaff;
+    --c-input: rgba(255, 255, 255, .10);
+    --c-page-body-bg: rgba(255, 255, 255, .12);
+    border: 1px solid rgba(255, 255, 255, .12);
+  }
+}

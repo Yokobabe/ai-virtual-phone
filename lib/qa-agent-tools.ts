@@ -1,3 +1,4 @@
+import { identityLocalStorage } from "@/lib/identity-runtime";
 import { buildProviderRequest, parseProviderResponse } from "./llm-provider-adapter";
 import { loadApiConfigs } from "./settings-storage";
 import type { ApiConfig } from "./settings-types";
@@ -203,7 +204,7 @@ const storageReportTool: QaTool = {
             // Safari 不支持 databases()
         }
         try {
-            lines.push(`localStorage 键数量：${localStorage.length}`);
+            lines.push(`localStorage 键数量：${identityLocalStorage.length}`);
         } catch {
             // ignore
         }

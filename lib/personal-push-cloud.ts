@@ -98,7 +98,11 @@ export async function personalPushFetch(
   action: string,
   init: RequestInit = {},
   params?: Record<string, string>,
+  identityMaintenance = false,
 ): Promise<Response> {
+  const { identityDispatchIsPaused, assertIdentityActive } = await import("./identity-runtime");
+  if (!identityMaintenance) assertIdentityActive();
+  if (identityDispatchIsPaused() && !identityMaintenance) throw new Error("身份切换中，已暂停云端任务");
   const { backup, state } = requirePersonalPushConfig();
   const headers = new Headers(init.headers);
   headers.set("x-ai-phone-service-key", backup.key.trim());
@@ -114,12 +118,12 @@ export async function personalPushFetch(
 
 /** 预约流量在个人云启用后直达用户 Supabase；未启用时保持原有站点通道。 */
 /** 在线开关个人云的每分钟任务扫描（网关函数直连数据库执行 cron 开关）。 */
-export async function setPersonalPushCloudScheduled(enabled: boolean): Promise<void> {
+export async function setPersonalPushCloudScheduled(enabled: boolean, identityMaintenance = false): Promise<void> {
   const res = await personalPushFetch("schedule", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enable: enabled }),
-  });
+  }, undefined, identityMaintenance);
   const data = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
   if (!res.ok || !data?.ok) {
     throw new Error(data?.error || `云函数返回 HTTP ${res.status}（旧版函数不支持在线开关，请到云服务部署里重新部署离线推送）`);

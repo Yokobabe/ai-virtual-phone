@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronLeft, ImagePlus, Sparkles, X } from "lucide-react";
-import { loadCharacters } from "@/lib/character-storage";
+import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import { getAlbumPermission, setAlbumPermission, updateUploadAlbum, GENERATED_ALBUM_PERMISSION } from "@/lib/photo-album-permissions";
 import { GroupAvatar } from "@/components/chat/group-avatar";
 import { getChatCharacterAvatar } from "@/lib/chat-session-avatar";

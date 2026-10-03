@@ -289,6 +289,8 @@ type SubscriptionRow = { endpoint: string; p256dh: string; auth: string };
 type BridgeItem = { id: string; type: string; payload: string; createdAt: string };
 
 type ServerBridgeRule = {
+  userIdentityId?: string | null;
+  identityRevision?: number;
   id: string;
   name: string;
   matchType: string;
@@ -980,6 +982,8 @@ Deno.serve(async (req: Request) => {
 
         const outboxId = `out_${crypto.randomUUID()}`;
         const outboxMeta: Record<string, unknown> = {
+          userIdentityId: rule.userIdentityId,
+          identityRevision: rule.identityRevision,
           kind: "bridge",
           item,
           ...(bridgeChatMessageId ? { chatMessageId: bridgeChatMessageId } : {}),

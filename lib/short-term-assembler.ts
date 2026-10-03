@@ -7,7 +7,7 @@ import { isReadingDiscussMessage, isSystemInstructionMessage, loadChatSessions, 
 import { buildGroupAdminBracketText } from "./group-admin";
 import { loadMomentPosts, loadMomentComments } from "./moments-storage";
 import { albumDiscussionMemory } from "./photo-album-discussion";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { resolveUserIdentity } from "./settings-storage";
 import { loadMemoryConfig } from "./memory-storage";
 import type { MemoryConfig } from "./memory-types";

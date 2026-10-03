@@ -5,15 +5,42 @@
 //    绕过 opencode.ai 未开放浏览器 CORS 的问题。
 
 import type { LlmRequestPayload } from "./llm-provider-adapter";
+import { registerIdentityRequest, assertIdentityActive } from "./identity-runtime";
 
 export type FetchLlmPayloadOptions = {
     signal?: AbortSignal;
 };
 
-export function fetchLlmPayload(
+export async function fetchLlmPayload(
     payload: LlmRequestPayload,
     options: FetchLlmPayloadOptions = {},
 ): Promise<Response> {
+    const controller = new AbortController();
+    const abort = () => controller.abort(options.signal?.reason);
+    if (options.signal?.aborted) abort();
+    else options.signal?.addEventListener("abort", abort, { once: true });
+    const release = registerIdentityRequest(controller);
+    const finish = () => { release(); options.signal?.removeEventListener("abort", abort); };
+    try {
+    const response = await fetchPayload(payload, controller.signal);
+    assertIdentityActive();
+    if (!response.body) { finish(); return response; }
+    const reader = response.body.getReader();
+    return new Response(new ReadableStream({
+        async pull(stream) {
+            try {
+                assertIdentityActive();
+                const chunk = await reader.read();
+                assertIdentityActive();
+                if (chunk.done) { finish(); stream.close(); } else stream.enqueue(chunk.value);
+            } catch (error) { controller.abort(); finish(); stream.error(error); }
+        },
+        async cancel(reason) { controller.abort(); finish(); await reader.cancel(reason); },
+    }), { status: response.status, statusText: response.statusText, headers: response.headers });
+    } catch (error) { finish(); throw error; }
+}
+
+function fetchPayload(payload: LlmRequestPayload, signal: AbortSignal): Promise<Response> {
     const bodyText = JSON.stringify(payload.body);
     if (payload.serverProxy) {
         return fetch("/api/llm-proxy", {
@@ -24,13 +51,13 @@ export function fetchLlmPayload(
                 headers: payload.headers,
                 body: bodyText,
             }),
-            signal: options.signal,
+            signal,
         });
     }
     return fetch(payload.url, {
         method: "POST",
         headers: payload.headers,
         body: bodyText,
-        signal: options.signal,
+        signal,
     });
 }

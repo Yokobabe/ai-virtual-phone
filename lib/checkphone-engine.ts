@@ -1,4 +1,4 @@
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { CHARACTER_CURRENCY_INSTRUCTION } from "./currency-context";
 import { normalizeBilingualTextInput, splitBilingualText } from "./bilingual-text";
 import { previewMessagesForApi, sendLLMRequest } from "./chat-engine";

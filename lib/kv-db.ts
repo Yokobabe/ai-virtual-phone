@@ -1,8 +1,10 @@
+import { identityLocalStorage } from "@/lib/identity-runtime";
 // lib/kv-db.ts
 // Generic IndexedDB-backed key-value store with synchronous in-memory cache.
 // Replaces all localStorage usage to avoid the ~5-10MB quota limit.
 
 import Dexie from "dexie";
+import { physicalIdentityKey, logicalIdentityKey, isSharedIdentityKey, assertIdentityActive } from "./identity-runtime";
 
 class KvDatabase extends Dexie {
     entries!: Dexie.Table<{ key: string; value: string }, string>;
@@ -13,6 +15,7 @@ class KvDatabase extends Dexie {
 }
 
 const kvDb = new KvDatabase();
+if (typeof window !== "undefined") window.addEventListener("float-identity-silenced", () => kvDb.close());
 
 // ── In-memory cache ──
 const _cache = new Map<string, string>();
@@ -39,20 +42,20 @@ export function registerDynamicPrefix(prefix: string): void {
 // from localStorage. Used by both initial hydration and late registration.
 function migrateLegacyKey(lsKey: string): void {
     if (typeof window === "undefined") return;
-    const raw = localStorage.getItem(lsKey);
+    const raw = identityLocalStorage.getItem(lsKey);
     if (raw === null) return;
     if (_cache.get(lsKey) !== raw) {
         _cache.set(lsKey, raw);
-        kvDb.entries.put({ key: lsKey, value: raw }).catch(() => {});
+        kvDb.entries.put({ key: physicalIdentityKey(lsKey), value: raw }).catch(() => {});
     }
-    localStorage.removeItem(lsKey);
+    identityLocalStorage.removeItem(lsKey);
 }
 
 function migrateLegacyPrefix(prefix: string): void {
     if (typeof window === "undefined") return;
     const matched: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
+    for (let i = 0; i < identityLocalStorage.length; i++) {
+        const k = identityLocalStorage.key(i);
         if (k && k.startsWith(prefix)) matched.push(k);
     }
     for (const k of matched) migrateLegacyKey(k);
@@ -69,7 +72,7 @@ function isManagedLegacyKey(key: string): boolean {
 function removeLegacyLocalStorageKey(key: string): void {
     if (typeof window === "undefined") return;
     try {
-        localStorage.removeItem(key);
+        identityLocalStorage.removeItem(key);
     } catch {
         // Ignore localStorage cleanup failures; IndexedDB remains the source of truth.
     }
@@ -78,7 +81,7 @@ function removeLegacyLocalStorageKey(key: string): void {
 function removeLegacyLocalStorageKeyIfValue(key: string, value: string): void {
     if (typeof window === "undefined") return;
     try {
-        if (localStorage.getItem(key) === value) localStorage.removeItem(key);
+        if (identityLocalStorage.getItem(key) === value) identityLocalStorage.removeItem(key);
     } catch {
         // Ignore localStorage cleanup failures; IndexedDB remains the source of truth.
     }
@@ -92,7 +95,7 @@ function writeFallbackLocalStorage(key: string, value: string): void {
     if (typeof window === "undefined" || !isManagedLegacyKey(key)) return;
     if (value.length > LOCAL_STORAGE_MIRROR_MAX_LENGTH) return;
     try {
-        localStorage.setItem(key, value);
+        identityLocalStorage.setItem(key, value);
     } catch {
         // Ignore fallback persistence failures; in-memory cache is already updated.
     }
@@ -109,13 +112,20 @@ function isAbortLikeError(err: unknown): boolean {
 }
 
 // ── Hydration (call once at app startup) ──
-export async function hydrateKvDb(): Promise<void> {
+let hydrationPromise: Promise<void> | null = null;
+export function hydrateKvDb(): Promise<void> {
+    if (hydrationPromise) return hydrationPromise;
+    hydrationPromise = hydrateKvDbOnce();
+    return hydrationPromise;
+}
+async function hydrateKvDbOnce(): Promise<void> {
     if (_hydrated || typeof window === "undefined") return;
     try {
         // Load existing IDB data into cache
         const all = await kvDb.entries.toArray();
-        for (const { key, value } of all) {
-            if (!_cache.has(key)) _cache.set(key, value);
+        for (const { key: physical, value } of all) {
+            const key = logicalIdentityKey(physical);
+            if (key !== null && !_cache.has(key)) _cache.set(key, value);
         }
 
         // Migrate from localStorage
@@ -124,23 +134,23 @@ export async function hydrateKvDb(): Promise<void> {
 
         // Fixed keys
         for (const lsKey of _fixedKeys) {
-            const raw = localStorage.getItem(lsKey);
+            const raw = identityLocalStorage.getItem(lsKey);
             if (raw === null) continue;
             if (_cache.get(lsKey) !== raw) {
-                batch.push({ key: lsKey, value: raw });
+                batch.push({ key: physicalIdentityKey(lsKey), value: raw });
                 _cache.set(lsKey, raw);
             }
             removeKeys.add(lsKey);
         }
 
         // Dynamic prefix keys
-        for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
+        for (let i = 0; i < identityLocalStorage.length; i++) {
+            const k = identityLocalStorage.key(i);
             if (!k || !matchesDynamicPrefix(k)) continue;
-            const raw = localStorage.getItem(k);
+            const raw = identityLocalStorage.getItem(k);
             if (raw !== null) {
                 if (_cache.get(k) !== raw) {
-                    batch.push({ key: k, value: raw });
+                    batch.push({ key: physicalIdentityKey(k), value: raw });
                     _cache.set(k, raw);
                 }
                 removeKeys.add(k);
@@ -148,11 +158,14 @@ export async function hydrateKvDb(): Promise<void> {
         }
 
         if (batch.length > 0) await kvDb.entries.bulkPut(batch);
-        for (const k of removeKeys) localStorage.removeItem(k);
+        for (const k of removeKeys) identityLocalStorage.removeItem(k);
     } catch (err) {
         console.warn("[KvDB] hydration error:", err);
+        throw err;
     }
     _hydrated = true;
+    const { initializePhoneIdentity } = await import("./identity-lifecycle");
+    await initializePhoneIdentity(_cache);
 }
 
 // ── Synchronous read (IndexedDB-backed in-memory cache only) ──
@@ -170,9 +183,10 @@ export function kvGet(key: string): string | null {
 
 // ── Write: update cache + fire-and-forget to IDB ──
 export function kvSet(key: string, value: string): void {
+    if (!isSharedIdentityKey(key)) assertIdentityActive();
     _cache.set(key, value);
     if (isManagedLegacyKey(key)) writeFallbackLocalStorage(key, value);
-    kvDb.entries.put({ key, value }).then(() => {
+    kvDb.entries.put({ key: physicalIdentityKey(key), value }).then(() => {
         if (isManagedLegacyKey(key)) removeLegacyLocalStorageKeyIfValue(key, value);
     }).catch(err => {
         writeFallbackLocalStorage(key, value);
@@ -183,10 +197,11 @@ export function kvSet(key: string, value: string): void {
 }
 
 export async function kvSetAsync(key: string, value: string): Promise<void> {
+    if (!isSharedIdentityKey(key)) assertIdentityActive();
     _cache.set(key, value);
     if (isManagedLegacyKey(key)) writeFallbackLocalStorage(key, value);
     try {
-        await kvDb.entries.put({ key, value });
+        await kvDb.entries.put({ key: physicalIdentityKey(key), value });
         if (isManagedLegacyKey(key)) removeLegacyLocalStorageKeyIfValue(key, value);
     } catch (err) {
         writeFallbackLocalStorage(key, value);
@@ -199,9 +214,10 @@ export async function kvSetAsync(key: string, value: string): Promise<void> {
 
 // ── Delete ──
 export function kvRemove(key: string): void {
+    if (!isSharedIdentityKey(key)) assertIdentityActive();
     _cache.delete(key);
     if (isManagedLegacyKey(key)) removeLegacyLocalStorageKey(key);
-    kvDb.entries.delete(key).catch(err =>
+    kvDb.entries.delete(physicalIdentityKey(key)).catch(err =>
         console.warn("[KvDB] delete failed:", key, err));
 }
 

@@ -10,7 +10,7 @@ import {
   type ChatPhotoAnnotation,
   type ChatSession,
 } from "./chat-storage";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { deleteMediaRef, isMediaStoreRef, loadMediaObjectUrl } from "./media-cache-storage";
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 import { deleteThemeAsset } from "./theme-storage";

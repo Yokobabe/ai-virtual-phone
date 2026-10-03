@@ -24,6 +24,8 @@ import {
     hydrateSettingsDb,
 } from "./settings-db";
 import { kvGet, kvSet, kvRemove, registerKvMigration } from "./kv-db";
+import { getCurrentIdentityId, isIdentityInitialized, IDENTITY_BASE_BINDING_KEY } from "./identity-runtime";
+import { updateIdentityDirectory } from "./identity-lifecycle";
 
 // --- Unsupported import format detection ---
 export const UNSUPPORTED_IMPORT_FORMAT = "UNSUPPORTED_IMPORT_FORMAT";
@@ -759,7 +761,7 @@ function normalizeBindingConfig(config: BindingConfig): { config: BindingConfig;
 export function loadBindingConfig(): BindingConfig {
     if (typeof window === "undefined") return { ...DEFAULT_BINDING_CONFIG };
     try {
-        const raw = kvGet(BINDINGS_KEY);
+        const raw = kvGet(BINDINGS_KEY) ?? kvGet(IDENTITY_BASE_BINDING_KEY);
         if (!raw) {
             // Attempt migration from legacy overrides
             const migrated = migrateLegacyOverrides();
@@ -771,6 +773,7 @@ export function loadBindingConfig(): BindingConfig {
         }
         const normalized = normalizeBindingConfig(JSON.parse(raw) as BindingConfig);
         if (normalized.changed) saveBindingConfig(normalized.config, false);
+        if (isIdentityInitialized()) normalized.config.globalDefaults.userIdentityId = getCurrentIdentityId() ?? undefined;
         return normalized.config;
     } catch {
         return { ...DEFAULT_BINDING_CONFIG };
@@ -779,6 +782,7 @@ export function loadBindingConfig(): BindingConfig {
 
 export function saveBindingConfig(config: BindingConfig, notify: boolean = true): void {
     if (typeof window === "undefined") return;
+    if (isIdentityInitialized()) config.globalDefaults.userIdentityId = getCurrentIdentityId() ?? undefined;
     kvSet(BINDINGS_KEY, JSON.stringify(config));
     if (notify) window.dispatchEvent(new CustomEvent("settings-bindings-updated"));
 }
@@ -792,6 +796,7 @@ export function saveBindingConfig(config: BindingConfig, notify: boolean = true)
  */
 export function ensureGlobalBindingDefaults(): void {
     if (typeof window === "undefined") return;
+    if (isIdentityInitialized() && !getCurrentIdentityId()) return;
     const config = loadBindingConfig();
     const global = config.globalDefaults;
     let changed = false;
@@ -807,7 +812,7 @@ export function ensureGlobalBindingDefaults(): void {
         changed = true;
     }
     const identities = loadUserIdentities();
-    if (identities.length > 0 && !identities.some(i => i.id === global.userIdentityId)) {
+    if (!isIdentityInitialized() && identities.length > 0 && !identities.some(i => i.id === global.userIdentityId)) {
         global.userIdentityId = identities[0].id;
         changed = true;
     }
@@ -903,12 +908,9 @@ export function resolveBinding(
         if (slot.apiConfigId) resolved.apiConfigId = slot.apiConfigId;
         if (slot.voiceConfigId) resolved.voiceConfigId = slot.voiceConfigId;
         if (slot.presetId) resolved.presetId = slot.presetId;
-        if (slot.userIdentityId) resolved.userIdentityId = slot.userIdentityId;
         if (slot.worldBookIds && slot.worldBookIds.length > 0) resolved.worldBookIds = [...slot.worldBookIds];
         if (slot.regexIds && slot.regexIds.length > 0) resolved.regexIds = [...slot.regexIds];
     };
-
-    if (!characterId) return resolved;
 
     // Apply character defaults
     const charBinding = config.characterBindings.find(b => b.characterId === characterId);
@@ -924,6 +926,7 @@ export function resolveBinding(
         applySlot(charBinding.appOverrides[appId]!);
     }
 
+    if (isIdentityInitialized()) resolved.userIdentityId = getCurrentIdentityId() ?? undefined;
     return resolved;
 }
 
@@ -1056,7 +1059,15 @@ export function loadUserIdentities(): UserIdentity[] {
 
 export function saveUserIdentities(identities: UserIdentity[]): void {
     if (typeof window === "undefined") return;
+    const previous = loadUserIdentities();
+    identities = identities.map(identity => {
+        const old = previous.find(item => item.id === identity.id);
+        return old
+            ? { ...identity, previousNames: [...new Set([...(old.previousNames ?? []), ...(identity.previousNames ?? []), ...(old.name !== identity.name ? [old.name] : [])])] }
+            : identity;
+    });
     kvSet(USER_IDENTITIES_KEY, JSON.stringify(identities));
+    updateIdentityDirectory(identities);
 }
 
 /**
@@ -1067,6 +1078,7 @@ export function saveUserIdentities(identities: UserIdentity[]): void {
 export function resolveUserIdentity(characterId?: string, appId?: string): UserIdentity | null {
     const identities = loadUserIdentities();
     if (identities.length === 0) return null;
+    if (isIdentityInitialized()) return identities.find(identity => identity.id === getCurrentIdentityId()) ?? null;
     const config = loadBindingConfig();
     const resolved = resolveBinding(config, characterId, appId);
     if (resolved.userIdentityId) {

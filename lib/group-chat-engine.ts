@@ -7,7 +7,8 @@ import { getGroupDirectorNote, buildGroupTurnDirectionContext } from "./group-di
 import { buildGroupDialogueFlowInstruction } from "./group-dialogue-flow";
 import { ONLINE_CHAT_CADENCE_INSTRUCTION } from "./chat-cadence";
 import type { ApiConfig, PresetConfig, RegexConfig } from "./settings-types";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
+import { assertCharacterIdentityAccess } from "./identity-access";
 import { buildGroupTapbackPrompt, buildPokeUsagePrompt } from "./chat-tapback";
 import { buildEchoPrompt, echoHistoryText } from "./chat-echo";
 import { buildLovePrompt, loveHistoryText } from "./chat-love";
@@ -310,6 +311,7 @@ async function buildGroupChatPromptMessages(
     const chars = loadCharacters();
     const charMap = new Map(chars.map(c => [c.id, c]));
     const participantIds = session.participantIds || [];
+    for (const id of participantIds) assertCharacterIdentityAccess(id);
 
     const bindings = loadBindingConfig();
     const activeSlot = resolveBinding(bindings, undefined, "group_chat");

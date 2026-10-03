@@ -10,7 +10,7 @@ import { UserProfilePanel } from "./user-profile-panel";
 import { MessageCircle, Users, Aperture } from "lucide-react";
 import { ChatSession, loadChatSessions, pushChatMessage, hydrateChatStorage } from "@/lib/chat-storage";
 import { notifyMascotPageContext } from "@/lib/mascot-events";
-import { loadCharacters } from "@/lib/character-storage";
+import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import { SessionCustomCSS } from "@/components/ui/session-custom-css";
 import { kvGet } from "@/lib/kv-db";
 import { formatXiaohongshuShareForPrompt, type ChatSharePayload } from "@/lib/chat-share";

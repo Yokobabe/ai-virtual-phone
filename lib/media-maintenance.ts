@@ -1,4 +1,7 @@
 "use client";
+import { identityDatabaseName } from "@/lib/identity-runtime";
+import { identityLocalStorage } from "@/lib/identity-runtime";
+
 
 import { chatDb } from "./chat-db";
 import { collectPhotoAlbumAssets } from "./photo-album-storage";
@@ -519,7 +522,7 @@ async function openExistingDb(name: string): Promise<IDBDatabase | null> {
   if (!hasBrowserApi()) return null;
   return new Promise((resolve) => {
     let created = false;
-    const request = indexedDB.open(name);
+    const request = indexedDB.open(identityDatabaseName(name));
     request.onupgradeneeded = () => {
       created = true;
       request.transaction?.abort();
@@ -664,6 +667,22 @@ async function scanIndexedDbSourceWithScanner(dbName: string, scan: StorageStrin
  *  完全依赖这里覆盖到所有可能藏引用的地方——新增存储位置时必须登记进
  *  data-management/modules.ts（本函数按那份契约遍历）。 */
 export async function scanAllStorageStrings(scan: StorageStringScanner, excludeDbNames: string[] = []): Promise<void> {
+  // Theme assets are shared physically. Reference checks must include every identity,
+  // including worlds that are currently inactive, before deleting an asset.
+  if (typeof indexedDB !== "undefined" && indexedDB.databases) {
+    for (const database of await indexedDB.databases()) {
+      if (!database.name || database.name === "AiPhoneIdentityRecoveryDB" || excludeDbNames.includes(database.name)) continue;
+      const request = indexedDB.open(database.name);
+      const db = await new Promise<IDBDatabase>((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+      try {
+        for (const name of Array.from(db.objectStoreNames)) {
+          const records = db.transaction(name).objectStore(name).getAll();
+          const values = await new Promise<unknown[]>((resolve, reject) => { records.onsuccess = () => resolve(records.result); records.onerror = () => reject(records.error); });
+          scanValueWithScanner(values, scan);
+        }
+      } finally { db.close(); }
+    }
+  }
   for (const { key, value } of kvEntries()) {
     scan(key);
     // JSON 值走结构化深扫（每个字符串叶子都会被扫到），不再对原始 JSON 串
@@ -676,11 +695,11 @@ export async function scanAllStorageStrings(scan: StorageStringScanner, excludeD
   }
 
   if (typeof localStorage !== "undefined") {
-    for (let index = 0; index < localStorage.length; index += 1) {
-      const key = localStorage.key(index);
+    for (let index = 0; index < identityLocalStorage.length; index += 1) {
+      const key = identityLocalStorage.key(index);
       if (!key) continue;
       scan(key);
-      scan(localStorage.getItem(key) ?? "");
+      scan(identityLocalStorage.getItem(key) ?? "");
     }
   }
 

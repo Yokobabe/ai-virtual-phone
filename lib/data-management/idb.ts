@@ -1,3 +1,5 @@
+import { identityIndexedDbFactory, identityDatabaseName, logicalIdentityKey, physicalIdentityKey, assertIdentityActive } from "@/lib/identity-runtime";
+import { identityLocalStorage } from "@/lib/identity-runtime";
 import type {
   ClearResult,
   DataSource,
@@ -21,6 +23,8 @@ import {
   type MediaResolver,
 } from "./serializers";
 import { kvEntries, kvGet, kvRemove, kvSetAsync } from "../kv-db";
+import { updateIdentityDirectory } from "../identity-lifecycle";
+const IDENTITY_MANAGED_KEYS = new Set(["ai_phone_user_identities_v1", "float_identity_runtime_v1", "float_identity_character_access_v1", "float_identity_default_bindings_v1"]);
 
 type SourceStats = {
   records: number;
@@ -141,7 +145,7 @@ function tryReplaceEmptyJsonValue(existingRaw: string, incomingRaw: string): str
 export function deleteDatabase(dbName: string): Promise<void> {
   return new Promise((resolve) => {
     if (!hasIndexedDb()) return resolve();
-    const request = indexedDB.deleteDatabase(dbName);
+    const request = indexedDB.deleteDatabase(identityDatabaseName(dbName));
     request.onsuccess = () => resolve();
     request.onerror = () => resolve();
     request.onblocked = () => resolve();
@@ -156,7 +160,7 @@ async function openDb(
 ): Promise<IDBDatabase | null> {
   if (!hasIndexedDb()) return null;
   return new Promise((resolve) => {
-    const request = version ? indexedDB.open(dbName, version) : indexedDB.open(dbName);
+    const request = version ? identityIndexedDbFactory().open(identityDatabaseName(dbName), version) : identityIndexedDbFactory().open(identityDatabaseName(dbName));
     let settled = false;
     let blockedTimer: ReturnType<typeof setTimeout> | undefined;
     let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
@@ -308,7 +312,8 @@ async function readKvRecords(source: KvSource): Promise<{ key: string; value: st
           const cursor = request.result;
           if (!cursor) return resolve();
           const record = cursor.value as { key: string; value: string };
-          if (matchesKey(record.key, source)) byKey.set(record.key, record);
+          const logical = logicalIdentityKey(record.key);
+          if (logical !== null && matchesKey(logical, source)) byKey.set(logical, { key: logical, value: record.value });
           cursor.continue();
         };
         request.onerror = () => reject(request.error);
@@ -340,10 +345,10 @@ async function exportKvSource(source: KvSource, collector?: MediaCollector): Pro
 async function exportLocalStorageSource(source: LocalStorageSource, collector?: MediaCollector): Promise<LocalStorageSourceBackup> {
   if (typeof window === "undefined") return { type: "localStorage", records: [] };
   const records: { key: string; value: string }[] = [];
-  for (let index = 0; index < window.localStorage.length; index += 1) {
-    const key = window.localStorage.key(index);
+  for (let index = 0; index < identityLocalStorage.length; index += 1) {
+    const key = identityLocalStorage.key(index);
     if (!key || !matchesKey(key, source)) continue;
-    const value = window.localStorage.getItem(key);
+    const value = identityLocalStorage.getItem(key);
     if (value !== null) records.push({ key, value: await serializeStorageString(value, collector) });
   }
   return { type: "localStorage", records };
@@ -526,13 +531,18 @@ export async function importSource(
     for (const record of payload.records) {
       // 单条失败（配额满、单条数据损坏）只损失这一条，剩下的照常导入。
       try {
-        const exists = window.localStorage.getItem(record.key) !== null;
+        if (record.key === "ai_phone_user_identities_v1") {
+          const imported = await importSource({ type: "kv", records: [record] }, overwrite, resolver);
+          result.added += imported.added; result.skipped += imported.skipped;
+          result.overwritten += imported.overwritten; result.errors.push(...imported.errors); continue;
+        }
+        const exists = identityLocalStorage.getItem(record.key) !== null;
         if (exists && !overwrite) {
           result.skipped += 1;
           continue;
         }
         const value = await deserializeStorageString(record.value, resolver);
-        window.localStorage.setItem(record.key, value);
+        identityLocalStorage.setItem(record.key, value);
         if (exists) result.overwritten += 1;
         else result.added += 1;
       } catch (error) {
@@ -551,6 +561,19 @@ export async function importSource(
       try {
         const incoming = await deserializeStorageString(record.value, resolver);
         const existing = kvGet(record.key);
+        if (record.key === "ai_phone_user_identities_v1") {
+          const current = existing ? JSON.parse(existing) : [];
+          const incomingIdentities = JSON.parse(incoming);
+          if (!Array.isArray(incomingIdentities)) throw new Error("身份备份格式错误");
+          const identities = new Map<string, { id: string }>(current.map((identity: { id: string }) => [identity.id, identity]));
+          for (const identity of incomingIdentities) {
+            if (typeof identity?.id !== "string" || !identity.id) continue;
+            if (overwrite || !identities.has(identity.id)) identities.set(identity.id, identity);
+          }
+          const merged = [...identities.values()];
+          await kvSetAsync(record.key, JSON.stringify(merged)); updateIdentityDirectory(merged);
+          result.overwritten += 1; continue;
+        }
         const exists = existing !== null;
         if (!exists) {
           await kvSetAsync(record.key, incoming);
@@ -642,12 +665,13 @@ export async function clearSource(source: DataSource): Promise<ClearResult> {
 
   if (source.type === "localStorage") {
     const keys: string[] = [];
-    for (let index = 0; index < window.localStorage.length; index += 1) {
-      const key = window.localStorage.key(index);
+    for (let index = 0; index < identityLocalStorage.length; index += 1) {
+      const key = identityLocalStorage.key(index);
       if (key && matchesKey(key, source)) keys.push(key);
     }
     for (const key of keys) {
-      window.localStorage.removeItem(key);
+      if (IDENTITY_MANAGED_KEYS.has(key)) continue;
+      identityLocalStorage.removeItem(key);
       result.removed += 1;
     }
     return result;
@@ -662,7 +686,9 @@ export async function clearSource(source: DataSource): Promise<ClearResult> {
       const transaction = db.transaction("entries", "readwrite");
       const store = transaction.objectStore("entries");
       for (const record of records) {
-        store.delete(record.key);
+        if (IDENTITY_MANAGED_KEYS.has(record.key)) continue;
+        assertIdentityActive();
+        store.delete(physicalIdentityKey(record.key));
         removedKeys.push(record.key);
         result.removed += 1;
       }

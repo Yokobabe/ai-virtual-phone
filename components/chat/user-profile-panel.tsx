@@ -21,7 +21,7 @@ import { ChatPluginPageBoundary } from "./chat-plugin-page-boundary";
 import { WalletPanel } from "./wallet-panel";
 import { loadMomentsConfig, saveMomentsConfig, DEFAULT_MOMENTS_CONFIG, type MomentsInteractionConfig, getAllPosts } from "@/lib/moments-storage";
 import { loadChatContacts } from "@/lib/chat-storage";
-import { loadCharacters } from "@/lib/character-storage";
+import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import { triggerImmediatePost } from "@/lib/moments-engine";
 import type { Character } from "@/lib/character-types";
 import { requestNotificationPermission } from "@/lib/browser-notification";

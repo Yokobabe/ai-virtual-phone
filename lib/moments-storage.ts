@@ -2,7 +2,7 @@
 // KV-DB persistence for Moments (朋友圈) feature.
 
 import type { MomentPost, MomentComment, AIMomentSchedule, PendingReaction } from "./moments-types";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 import { DEFAULT_MOMENTS_BILINGUAL_PROMPT } from "./bilingual-prompt-defaults";
 import { canCharacterSeeMomentPost, getVisibleMomentCommentsForCharacter } from "./character-world-storage";

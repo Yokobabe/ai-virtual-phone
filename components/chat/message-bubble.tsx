@@ -1,4 +1,6 @@
 "use client";
+import { getCurrentIdentityId } from "@/lib/identity-runtime";
+import { resolveUserIdentity } from "@/lib/settings-storage";
 import { VoiceReferenceGraphic } from "./voice-reference-graphic";
 import { PhotoMarkupEditor } from "./photo-markup-editor";
 
@@ -9,7 +11,7 @@ import { isMediaStoreRef, loadMediaObjectUrl } from "@/lib/media-cache-storage";
 import { getChatImageFromIndexedDB } from "@/lib/chat-asset-storage";
 import { ChatMessage, createOrGetSession, loadChatMessages, updateMessageMediaStatus, updateMessageMediaData, type ChatPhotoAnnotation, type ChatPhotoGroupItem } from "@/lib/chat-storage";
 import { resolveContactCard } from "@/lib/contact-card";
-import { loadCharacters } from "@/lib/character-storage";
+import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import { CHAT_OPEN_SESSION_EVENT, dispatchOpenAddContact } from "@/lib/chat-notification-events";
 import { ContactCardGenerateFlow } from "@/components/chat/contact-card-generate-flow";
 import { MediaPreviewOverlay } from "@/components/chat/media-preview-overlay";
@@ -715,7 +717,9 @@ function RedPacketBubble({ msg, charName, userName, groupSize, onShowDetail }: {
     const totalRecipients = d?.count || 1;
     const allClaimed = d?.status === "opened" || claimedBy.length >= totalRecipients;
     const isDone = allClaimed || isDeclined;
-    const userShare = userName ? claimedAmounts[userName] : undefined;
+    const userId = getCurrentIdentityId() ?? "";
+    const names = [userName ?? "", ...(resolveUserIdentity()?.previousNames ?? [])];
+    const userShare = d?.claimedAmountsByUserId?.[userId] ?? names.map(name => claimedAmounts[name]).find(amount => amount !== undefined);
 
     const bgClass = isDeclined
         ? "bg-declined-gradient"
@@ -2049,14 +2053,17 @@ export function MediaDetailModal({ msg, userName, charName, groupSize, onAccept,
     const claimedAmounts = d?.claimedAmounts || {};
     const totalRecipients = d?.count || 1;
     const allClaimed = d?.status === "opened" || claimedBy.length >= totalRecipients;
-    const alreadyClaimed = claimedBy.includes(userName);
-    const userShare = claimedAmounts[userName];
+    const identityId = getCurrentIdentityId() ?? "";
+    const identity = resolveUserIdentity();
+    const userNames = [userName, ...(identity?.previousNames ?? [])];
+    const alreadyClaimed = d?.claimedByUserIds?.includes(identityId) || userNames.some(name => claimedBy.includes(name));
+    const userShare = d?.claimedAmountsByUserId?.[identityId] ?? userNames.map(name => claimedAmounts[name]).find(amount => amount !== undefined);
     const isDeclined = d?.status === "declined";
     const isReceived = d?.status === "received";
     const isPaid = d?.status === "paid";
 
     // ── Transfer state ──
-    const isRecipient = !d?.recipientName || d.recipientName === userName;
+    const isRecipient = !d?.recipientName || userNames.includes(d.recipientName);
     const transferDone = isReceived || isDeclined;
     const paymentDone = isPaid || isDeclined || d?.status === "canceled";
 
@@ -2084,7 +2091,7 @@ export function MediaDetailModal({ msg, userName, charName, groupSize, onAccept,
         const newClaimedAmounts = { ...claimedAmounts, [userName]: share };
         const newAllClaimed = newClaimedBy.length >= totalRecipients;
         const newStatus = newAllClaimed ? "opened" as const : "pending" as const;
-        const updatedData = { ...d, status: newStatus, claimedBy: newClaimedBy, claimedAmounts: newClaimedAmounts, receivedCurrency: walletCurrency, receivedAmount: cnyAmount(share, currency === walletCurrency ? 1 : liveRate!), exchangeRate: currency === walletCurrency ? 1 : liveRate!, exchangeRateAt: new Date().toISOString() };
+        const updatedData = { ...d, status: newStatus, claimedBy: newClaimedBy, claimedAmounts: newClaimedAmounts, claimedByUserIds: [...(d?.claimedByUserIds ?? []), identityId], claimedAmountsByUserId: { ...d?.claimedAmountsByUserId, [identityId]: share }, receivedCurrency: walletCurrency, receivedAmount: cnyAmount(share, currency === walletCurrency ? 1 : liveRate!), exchangeRate: currency === walletCurrency ? 1 : liveRate!, exchangeRateAt: new Date().toISOString() };
         updateMessageMediaData(msg.id, updatedData);
         onAccept({ ...msg, mediaData: updatedData }, `${userName}领取了${senderDisplay}的红包，金额:${share} ${currency}`, "accept_red_packet");
     };

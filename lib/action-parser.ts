@@ -14,7 +14,7 @@ import {
 } from "./moments-storage";
 import { loadChatContacts, loadChatSessions, loadChatMessages, createOrGetSession, addChatContact } from "./chat-storage";
 import { parseAndSaveResponse } from "./follow-up-service";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { clearRequestsForCharacter, dispatchFriendRequestUpdated } from "./friend-request-storage";
 import { sendBrowserNotification } from "./browser-notification";
 import type { MomentPost, MomentComment } from "./moments-types";

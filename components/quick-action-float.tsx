@@ -12,7 +12,7 @@ import {
     setCharacterBinding,
 } from "@/lib/settings-storage";
 import type { ApiConfig, BindingConfig, BindingSlot, WorldBookConfig } from "@/lib/settings-types";
-import { loadCharacters } from "@/lib/character-storage";
+import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import type { Character } from "@/lib/character-types";
 
 type QuickScope = "global" | "character";

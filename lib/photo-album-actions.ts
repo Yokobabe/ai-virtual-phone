@@ -3,7 +3,7 @@ import { albumParticipants, getAlbumDiscussion, saveAlbumDiscussion } from "./ph
 import { claimPhotoAction, releasePhotoAction, recordPhotoAction, getPhotoSeen, photoSeenBy, contentVersionOf, variantVersionOf, photoIdOf } from "./photo-album-core";
 import { getAlbumPermission } from "./photo-album-permissions";
 import { loadChatSessions, pushChatMessage } from "./chat-storage";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { storeMediaBlob, deleteMediaRef } from "./media-cache-storage";
 
 export type AlbumActionKind = "forward" | "avatar" | "comment";

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { loadChatContacts } from "@/lib/chat-storage";
-import { loadCharacters } from "@/lib/character-storage";
+import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import { resolveUserIdentity } from "@/lib/settings-storage";
 import { Character } from "@/lib/character-types";
 import { Input, Textarea } from "@/components/ui/form";

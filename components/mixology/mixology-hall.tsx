@@ -1,4 +1,6 @@
 "use client";
+import { identityLocalStorage } from "@/lib/identity-runtime";
+
 
 // 独家特调 · 酒材页（在线材料）与配方页（在线配方）：
 // 双列瀑布 / 宽卡列表 + 详情弹层（入柜·点赞·评论楼中楼）。官网专用，
@@ -67,7 +69,7 @@ const THUMB_REDO_KEY = "mix-thumb-redone";
 
 function loadThumbRedone(): Set<string> {
     try {
-        const parsed = JSON.parse(window.localStorage.getItem(THUMB_REDO_KEY) ?? "") as { v?: number; ids?: unknown };
+        const parsed = JSON.parse(identityLocalStorage.getItem(THUMB_REDO_KEY) ?? "") as { v?: number; ids?: unknown };
         if (parsed?.v === THUMB_PIPELINE_VERSION && Array.isArray(parsed.ids)) return new Set(parsed.ids.map(String));
     } catch { /* 没存过或格式不对：当作全部没按当前版本拍过 */ }
     return new Set();
@@ -75,7 +77,7 @@ function loadThumbRedone(): Set<string> {
 
 function saveThumbRedone(ids: Set<string>): void {
     try {
-        window.localStorage.setItem(THUMB_REDO_KEY, JSON.stringify({ v: THUMB_PIPELINE_VERSION, ids: [...ids].slice(-500) }));
+        identityLocalStorage.setItem(THUMB_REDO_KEY, JSON.stringify({ v: THUMB_PIPELINE_VERSION, ids: [...ids].slice(-500) }));
     } catch { /* 私隐模式等存不进就算了：重拍是幂等的，大不了下次再拍一遍 */ }
 }
 

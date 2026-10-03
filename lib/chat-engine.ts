@@ -1,9 +1,10 @@
+import { registerIdentityRequest } from "./identity-runtime";
 // lib/chat-engine.ts
 
 import { createSseJsonParser } from "./sse-json";
 import { ONLINE_CHAT_CADENCE_INSTRUCTION } from "./chat-cadence";
 import { maybeAppendShortcutCapability } from "./offline-shortcut-capability";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
 import { emitChatPluginEvent, runChatPluginTransform } from "./chat-plugin-hooks";
 import { buildChatPluginPromptFragments } from "./chat-plugin-storage";
@@ -929,6 +930,7 @@ export async function sendLLMStreamRequest(
     publishDebugPromptSnapshot({ request, config, preset: effectivePreset, meta, options, requestKind: "completion" });
     const llmAbort = new AbortController();
     const llmTimeout = setTimeout(() => llmAbort.abort(), 500_000);
+    const releaseIdentityRequest = registerIdentityRequest(llmAbort);
     const detachExternalAbort = attachExternalAbort(llmAbort, options?.signal);
 
     try {
@@ -990,6 +992,7 @@ export async function sendLLMStreamRequest(
     } finally {
         clearTimeout(llmTimeout);
         detachExternalAbort();
+        releaseIdentityRequest();
     }
 }
 
@@ -1048,6 +1051,7 @@ export async function sendLLMRequest(
 
     const llmAbort = new AbortController();
     const llmTimeout = setTimeout(() => llmAbort.abort(), 500_000);
+    const releaseIdentityRequest = registerIdentityRequest(llmAbort);
     const detachExternalAbort = attachExternalAbort(llmAbort, options?.signal);
 
     try {
@@ -1127,6 +1131,7 @@ export async function sendLLMRequest(
     } finally {
         clearTimeout(llmTimeout);
         detachExternalAbort();
+        releaseIdentityRequest();
     }
 }
 
@@ -1218,6 +1223,7 @@ export async function sendLLMToolStreamRequest(
     publishDebugPromptSnapshot({ request, config, preset: effectivePreset, meta, options, requestKind: "native-tools-stream", tools });
     const llmAbort = new AbortController();
     const llmTimeout = setTimeout(() => llmAbort.abort(), 500_000);
+    const releaseIdentityRequest = registerIdentityRequest(llmAbort);
     const detachExternalAbort = attachExternalAbort(llmAbort, options?.signal);
     let rawResponse = "";
     let content = "";
@@ -1345,6 +1351,7 @@ export async function sendLLMToolStreamRequest(
     } finally {
         clearTimeout(llmTimeout);
         detachExternalAbort();
+        releaseIdentityRequest();
     }
 }
 
@@ -1372,6 +1379,7 @@ export async function sendLLMToolRequest(
     publishDebugPromptSnapshot({ request, config, preset: effectivePreset, meta, options, requestKind: "native-tools", tools });
     const llmAbort = new AbortController();
     const llmTimeout = setTimeout(() => llmAbort.abort(), 500_000);
+    const releaseIdentityRequest = registerIdentityRequest(llmAbort);
     const detachExternalAbort = attachExternalAbort(llmAbort, options?.signal);
 
     try {
@@ -1452,6 +1460,7 @@ export async function sendLLMToolRequest(
     } finally {
         clearTimeout(llmTimeout);
         detachExternalAbort();
+        releaseIdentityRequest();
     }
 }
 

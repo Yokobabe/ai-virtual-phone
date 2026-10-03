@@ -1,5 +1,5 @@
 import { loadChatMessages, loadChatSessions, saveChatSessions, pushChatMessage, normalizeVisionImagePromptLimit, MAX_VISION_IMAGE_PROMPT_LIMIT, type ChatMessage, type ChatSession } from "./chat-storage";
-import { loadCharacters } from "./character-storage";
+import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import type { Character, CharacterAvatarHistoryEntry } from "./character-types";
 import { CHAT_SESSION_AVATARS_UPDATED_EVENT, getChatCharacterAvatar, getChatCharacterAvatarHistory } from "./chat-session-avatar";
 

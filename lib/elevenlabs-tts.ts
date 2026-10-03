@@ -53,6 +53,8 @@ async function request<T>(config: VoiceApiConfig, url: string, init: RequestInit
     const key = config.apiKey?.trim();
     if (!key) throw new Error("ElevenLabs API Key 未配置");
     const controller = new AbortController();
+    const { registerIdentityRequest, assertIdentityActive } = await import("./identity-runtime");
+    const releaseIdentityRequest = registerIdentityRequest(controller);
     const timer = setTimeout(() => controller.abort(), 120_000);
     try {
         const response = await fetch(url, {
@@ -71,12 +73,14 @@ async function request<T>(config: VoiceApiConfig, url: string, init: RequestInit
             // Do not echo arbitrary upstream text (it may contain credentials or user text).
             throw new Error(`ElevenLabs (${response.status})：${hint}`);
         }
-        return await read(response); // Timeout includes downloading/parsing the response body.
+        const result = await read(response);
+        assertIdentityActive();
+        return result;
     } catch (error) {
         if (controller.signal.aborted) throw new Error("ElevenLabs 请求超时（120 秒），请稍后重试");
         if (error instanceof TypeError) throw new Error("无法连接 ElevenLabs，请检查网络及接口地址（自定义中转须支持浏览器跨域）");
         throw error;
-    } finally { clearTimeout(timer); }
+    } finally { clearTimeout(timer); releaseIdentityRequest(); }
 }
 
 export async function synthesizeElevenLabs(text: string, config: VoiceApiConfig): Promise<Blob> {

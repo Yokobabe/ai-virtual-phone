@@ -3,7 +3,7 @@
 import { memo, useCallback, useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Trash2, Plus, Smile, ImagePlus, Check, ChevronDown, ChevronRight, Info, Pencil, Sticker, Layers } from "lucide-react";
-import { loadCharacters } from "@/lib/character-storage";
+import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import type { Character } from "@/lib/character-types";
 import { parseStickerImport, stickerNameFromUrl, uniqueStickerNames } from "@/lib/sticker-import-parser";
 import {

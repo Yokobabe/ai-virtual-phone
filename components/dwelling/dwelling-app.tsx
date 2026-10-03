@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ChevronLeft, RefreshCw, Trash2, Wand2, X } from "lucide-react";
 import type { Character } from "@/lib/character-types";
-import { loadCharacters } from "@/lib/character-storage";
+import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import type { DwellingLayout, DwellingRoom, DwellingFurniture, DwellingFurnitureItem } from "@/lib/dwelling-storage";
 import {
     loadDwellingLayout,

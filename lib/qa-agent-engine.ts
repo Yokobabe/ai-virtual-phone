@@ -1,3 +1,4 @@
+import { identityLocalStorage } from "@/lib/identity-runtime";
 import {
     buildProviderRequest,
     nativeToolProtocolForConfig,
@@ -85,7 +86,7 @@ function parseSseEvents(buffer: string): { events: string[]; rest: string } {
 // 可用 localStorage 键 ai_phone_qa_stream_idle_ms 覆盖（调参/测试用）。
 function qaStreamIdleMs(): number {
     try {
-        const raw = Number(localStorage.getItem("ai_phone_qa_stream_idle_ms"));
+        const raw = Number(identityLocalStorage.getItem("ai_phone_qa_stream_idle_ms"));
         if (Number.isFinite(raw) && raw >= 1_000 && raw <= 600_000) return Math.floor(raw);
     } catch {
         // ignore
