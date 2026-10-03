@@ -4,6 +4,8 @@
 
 ## 未完成 / 待讨论
 
+- [ ] 2026-10-03 身份隔离改写已获授权；改写前检查点 7ab09a5。基础身份边界、宿主上下文及事务仓库已实现，隔离/真实IDB回归通过；尚未接入现有应用、迁移、UI或后台，不代表功能完成。详见 `handoffs/2026-10-03-identity-isolation-foundation.md`。其余任务改动保留，未 push。
+
 - 2026-10-03 身份隔离工程可行性最终核对完成，并固化主动产品落地/接口兼容/验收职责。设计可实施，尚未开发；第三方SDK可集中适配，自存储需验证。见 `handoffs/2026-10-03-identity-engineering-feasibility.md`。
 
 - 2026-10-03 抽查公开集市 Bubble/Char动物园/2048 源码：前两者主要使用 AiPhone SDK 存档，底层身份分库可保持 API；2048 直接 localStorage，需沙箱存储兼容另验。未安装执行，仅诊断，见 `handoffs/2026-10-03-market-app-identity-compatibility.md`。
