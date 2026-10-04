@@ -1,6 +1,6 @@
 "use client";
 
-import { Component, useState, useEffect, useCallback, type CSSProperties, type ReactNode } from "react";
+import { Component, useState, useEffect, useLayoutEffect, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
 import { Trash2, Zap, Clock, Users, Archive, AlertCircle, Search, Brain, FileText, MoreHorizontal, Plus, Edit3, X, Check, ChevronRight, Filter, type LucideIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { MemoryTimeline } from "./memory-timeline";
@@ -13,12 +13,14 @@ import {
     loadMemoryConfig,
     saveMemoryConfig,
     loadMemoryEntriesByType,
+    loadPersistedMemoryCognition,
     saveMemoryEntry,
     deleteMemoryEntry,
     deleteCharacterMemoriesByType,
     getAllCharacterIdsWithMemories,
     getMemoryCountByType,
     getLastSummarizedTimestamp,
+    getPendingSummaryTimestamp,
     getLastCoreSummarizedTimestamp,
 } from "@/lib/memory-storage";
 import { hydrateChatStorage } from "@/lib/chat-storage";
@@ -27,10 +29,13 @@ import { runSummarizationPipeline } from "@/lib/memory-summarizer";
 import { runCoreMemoryPipeline } from "@/lib/core-memory-builder";
 import { resolveAuxiliaryApiConfig, resolveUserIdentity } from "@/lib/settings-storage";
 import { generateEmbedding, resolveEmbeddingModel } from "@/lib/memory-embedding";
-import { BINDING_ACCENTS } from "@/lib/ui-accent-colors";
+import { MemorySurface } from "./memory-surface";
+import { MemoryCharacterGarden, MemoryGarden, MemorySectionHeader, MemoryFactsTabs, MemoryCognitionPanel, MemoryEvidenceList } from "./memory-garden";
+import { loadMemoryCognition, emptyCognition, saveMemoryCognition, type MemoryCognition, type MemoryEvidence } from "@/lib/memory-cognition";
+import { loadMemoryRecallInfo } from "@/lib/memory-service";
 
 type MemoryView = "list" | "detail" | "settings";
-type MemoryTab = "short" | "shared" | "core" | "long";
+type MemoryTab = "home" | "short" | "shared" | "core" | "long" | "open" | "mirror" | "gaze";
 type MemoryBudgetKey = "shortTermTokenBudget" | "coreMemoryTokenBudget" | "longTermTokenBudget";
 
 const MEMORY_TOKEN_BUDGET_MAX = 100000;
@@ -181,12 +186,21 @@ type Props = {
     selectedCharId?: string;
     onSelectChar: (charId: string) => void;
     onNotice?: (msg: string) => void;
+    resetSectionToken?: number;
+    onSectionChange?: (inSection: boolean) => void;
 };
 
-export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }: Props) {
+export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice, resetSectionToken, onSectionChange }: Props) {
     const [config, setConfig] = useState<MemoryConfig>(loadMemoryConfig);
     const [characters, setCharacters] = useState<CharacterMemoryInfo[]>([]);
-    const [activeTab, setActiveTab] = useState<MemoryTab>("short");
+    const [activeTab, setActiveTab] = useState<MemoryTab>("home");
+    const detailScrollRef = useRef<HTMLDivElement>(null);
+    useLayoutEffect(() => { detailScrollRef.current?.scrollTo({ top: 0 }); }, [activeTab]);
+    const [cognition, setCognition] = useState<MemoryCognition>(() => emptyCognition(selectedCharId || ""));
+    const [savingCognition, setSavingCognition] = useState(false);
+    const [summaryContinuation, setSummaryContinuation] = useState<string | undefined>();
+    useEffect(() => { setActiveTab("home"); }, [resetSectionToken]);
+    useEffect(() => { onSectionChange?.(activeTab !== "home"); }, [activeTab, onSectionChange]);
     const [coreEntries, setCoreEntries] = useState<MemoryEntry[]>([]);
     const [longTermEntries, setLongTermEntries] = useState<MemoryEntry[]>([]);
     const [shortTermEvents, setShortTermEvents] = useState<NativeTimelineEntry[]>([]);
@@ -199,7 +213,6 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
     const [editingCorePrompt, setEditingCorePrompt] = useState<string | null>(null);
     const [confirmDeleteEntryId, setConfirmDeleteEntryId] = useState<string | null>(null);
     const [confirmClearAll, setConfirmClearAll] = useState(false);
-    const [pickedCharId, setPickedCharId] = useState<string | null>(null);
     const [entryMenuId, setEntryMenuId] = useState<string | null>(null);
     const [memoryEditor, setMemoryEditor] = useState<MemoryEditorState | null>(null);
     const [savingMemory, setSavingMemory] = useState(false);
@@ -276,8 +289,9 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                 loadMemoryEntriesByType(charId, "core"),
                 loadMemoryEntriesByType(charId, "long_term"),
             ]);
-            setCoreEntries(core);
+            setCoreEntries(core.sort((a, b) => Number(b.metadata?.active !== false) - Number(a.metadata?.active !== false) || b.createdAt.localeCompare(a.createdAt)));
             setLongTermEntries(lt);
+            setCognition(await loadPersistedMemoryCognition(charId) || loadMemoryCognition(charId));
         } catch {
             setCoreEntries([]);
             setLongTermEntries([]);
@@ -285,10 +299,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
         // Native timeline is sync (localStorage) — no await needed.
         // 只取最近一段（全量可能几万条），防止解析+渲染把 iOS Safari 内存顶爆
         const timeline = loadNativeTimeline(charId).slice(-MEMORY_TIMELINE_ENTRY_CAP);
-        setShortTermEvents(timeline.filter(e =>
-            !(e.sourceApp === "moments" && e.postAuthorType === "user")
-            && !(e.sourceApp === "interview_magazine" && e.sourceDetail === "interview_shared_issue")
-        ));
+        setShortTermEvents(timeline);
         setSharedEvents(timeline.filter(e =>
             (e.sourceApp === "moments" && e.postAuthorType === "user") ||
             (e.sourceApp === "chat" && e.sourceDetail === "group") ||
@@ -300,7 +311,8 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
     // Reload detail data when view changes to detail
     useEffect(() => {
         if (view === "detail" && selectedCharId) {
-            setActiveTab("short");
+            setActiveTab("home");
+            setSummaryContinuation(undefined);
             setExpandedId(null);
             loadDetailData(selectedCharId);
         }
@@ -345,7 +357,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
         try {
             const sinceTimestamp = typeof range === "number"
                 ? new Date(Date.now() - range * 86400000).toISOString()
-                : undefined;
+                : range === "auto" ? summaryContinuation || getPendingSummaryTimestamp(selectedCharId) || undefined : undefined;
             const afterTimestamp = range === "all"
                 ? undefined
                 : sinceTimestamp ?? getLastSummarizedTimestamp(selectedCharId) ?? undefined;
@@ -353,8 +365,8 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                 selectedCharId,
                 afterTimestamp ? { afterTimestamp } : undefined,
             ).length;
-            if (timelineCount < 4) {
-                showNotice("所选范围内事件不足 4 条");
+            if (timelineCount === 0) {
+                showNotice("所选范围内没有新事件");
                 return;
             }
 
@@ -364,7 +376,8 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                 range === "all" ? { force: true } : sinceTimestamp ? { sinceTimestamp } : undefined,
             );
             if (result.success) {
-                showNotice("总结完成");
+                setSummaryContinuation(result.remainingCount ? result.nextSinceTimestamp : undefined);
+                showNotice(result.remainingCount ? `本批整理完成，剩余 ${result.remainingCount} 条；可继续接着总结` : "总结完成");
                 loadDetailData(selectedCharId);
                 loadCharacterList();
             } else {
@@ -527,6 +540,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                         ...(source.metadata ?? {}),
                         origin: isManualMemoryEntry(source) ? "user_manual" : "user_edited",
                         editedByUser: true,
+                        ...(type === "core" ? { active: true } : {}),
                     },
                 }
                 : {
@@ -658,6 +672,10 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                                         : entry.content
                                 }
                             </div>
+                            {expandedId === entry.id && <div onClick={event => event.stopPropagation()}>
+                                {entry.metadata?.active === false && <p className="ts-11 text-secondary">历史核心快照 · 已被新摘要替代，不再注入</p>}
+                                <MemoryEvidenceList evidence={(entry.metadata?.evidence as MemoryEvidence[]) || []} />
+                            </div>}
                         </div>
                     ))
                 )}
@@ -669,17 +687,35 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
     // ── Detail View ──
     if (view === "detail" && selectedChar) {
         return (
-            <div className="flex flex-col absolute inset-0 overflow-hidden" style={{ padding: "0 16px" }}>
+            <MemorySurface avatar={selectedChar.avatar} section={["short", "long", "shared", "home"].includes(activeTab) ? "facts" : activeTab}>
+            <div className="flex flex-col absolute inset-0 overflow-hidden" style={{ padding: activeTab === "home" ? 0 : "0 16px" }}>
                 {/* Content */}
-                <div className="memory-detail-scroll flex-1 overflow-y-auto flex flex-col gap-2 min-h-0">
+                <div ref={detailScrollRef} className="memory-detail-scroll flex-1 overflow-y-auto flex flex-col gap-2 min-h-0" style={{ "--memory-detail-bottom-reserve": "20px", paddingBottom: activeTab === "home" ? 0 : 18 } as CSSProperties}>
+                    {activeTab !== "home" && <MemorySectionHeader tab={activeTab} />}
+                    {(activeTab === "short" || activeTab === "long" || activeTab === "shared") && <MemoryFactsTabs tab={activeTab} onChange={setActiveTab} />}
                     <MemoryDetailBoundary>
                     {loading ? (
                         <p className="text-center ts-14 mt-10 text-secondary">
                             加载中...
                         </p>
+                    ) : activeTab === "home" ? (
+                        <MemoryGarden character={selectedChar} userName={resolveUserIdentity()?.name || "用户"}
+                            counts={{ facts: shortTermEvents.length + longTermEntries.length, core: coreEntries.filter(e => e.metadata?.active !== false).length,
+                                open: cognition.openItems.filter(e => e.status === "open").length }} onOpen={tab => setActiveTab(tab === "facts" ? "short" : tab)} />
+                    ) : activeTab === "mirror" || activeTab === "gaze" || activeTab === "open" ? (
+                        <MemoryCognitionPanel tab={activeTab} state={cognition} recall={loadMemoryRecallInfo(selectedCharId!)} busy={summarizing || savingCognition}
+                            onSummarize={() => void handleManualSummarize()}
+                            onStatusChange={(id, status) => {
+                                if (savingCognition || summarizing) return;
+                                setSavingCognition(true);
+                                const now = new Date().toISOString();
+                                const next = { ...cognition, updatedAt: now, openItems: cognition.openItems.map(e => e.id === id ? { ...e, status, updatedAt: now } : e) };
+                                void saveMemoryCognition(next).then(() => setCognition(next)).catch(() => showNotice("事项保存失败，请重试")).finally(() => setSavingCognition(false));
+                            }} />
                     ) : activeTab === "short" ? (
                         /* ── Short-term: card view ── */
                         <>
+                            <button className="ui-chip self-start" type="button" onClick={() => setActiveTab("shared")}>查看共同经历</button>
                             <MemoryTimeline
                                 events={shortTermEvents}
                                 userName={resolveUserIdentity(selectedCharId!)?.name || "用户"}
@@ -704,28 +740,6 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                         renderMemoryEntries("long_term", longTermEntries, "暂无长期记忆。点击设置页的手动总结，或直接新增一条记忆。")
                     )}
                     </MemoryDetailBoundary>
-                </div>
-
-                {/* Bottom tab bar — floating above bottom */}
-                <div className="chat-tab-bar" style={{ position: "absolute", bottom: 40, left: 40, right: 40, zIndex: 10, borderRadius: 28, borderTop: "none", padding: "10px 0" }}>
-                    {([
-                        { key: "short" as const, icon: Clock, label: "短期" },
-                        { key: "shared" as const, icon: Users, label: "共享事件" },
-                        { key: "long" as const, icon: Archive, label: "长期" },
-                        { key: "core" as const, icon: Archive, label: "核心" },
-                    ]).map(tab => (
-                        <button
-                            key={tab.key}
-                            className={`chat-tab${activeTab === tab.key ? " chat-tab-active" : ""}`}
-                            onClick={() => {
-                                setActiveTab(tab.key);
-                                setEntryMenuId(null);
-                            }}
-                        >
-                            <tab.icon size={18} />
-                            <span>{tab.label}</span>
-                        </button>
-                    ))}
                 </div>
 
                 {/* Manual memory editor */}
@@ -815,6 +829,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                     />
                 )}
             </div>
+            </MemorySurface>
         );
     }
 
@@ -828,6 +843,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
         const isCoreDefault = (config.coreMemoryPrompt ?? DEFAULT_CORE_MEMORY_PROMPT) === DEFAULT_CORE_MEMORY_PROMPT;
 
         return (
+            <MemorySurface avatar={selectedChar?.avatar} section="settings">
             <div className="page-menu memory-settings-menu">
                 {/* Manual summarize */}
                 {selectedCharId && (
@@ -835,7 +851,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                         <p className="menu-group-desc mx-2">手动操作</p>
                         <div className="menu-group">
                             <div className="menu-item">
-                                <MemorySettingsIcon icon={Zap} color={BINDING_ACCENTS.memory} />
+                                <MemorySettingsIcon icon={Zap} color={"var(--memory-facts-ink)"} />
                                 <div className="menu-label-group">
                                     <span className="menu-label">长期记忆手动总结</span>
                                     <span className="menu-desc">将新产生的事件整理为长期记忆</span>
@@ -852,7 +868,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                                 </div>
                             </div>
                             <div className="menu-item">
-                                <MemorySettingsIcon icon={Brain} color={BINDING_ACCENTS.embedding} />
+                                <MemorySettingsIcon icon={Brain} color={"var(--memory-core-ink)"} />
                                 <div className="menu-label-group">
                                     <span className="menu-label">核心记忆手动总结</span>
                                     <span className="menu-desc">将长期记忆整理为核心记忆</span>
@@ -905,7 +921,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                 <p className="menu-group-desc mx-2">记忆来源</p>
                 <div className="menu-group">
                     <button type="button" className="menu-item" onClick={() => setSourcePickerOpen(true)}>
-                        <MemorySettingsIcon icon={Filter} color={BINDING_ACCENTS.memory} />
+                        <MemorySettingsIcon icon={Filter} color={"var(--memory-facts-ink)"} />
                         <div className="menu-label-group">
                             <span className="menu-label">记忆来源</span>
                             <span className="menu-desc">选择哪些内容参与记忆</span>
@@ -926,7 +942,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                                 <button className="modal-header-btn modal-header-btn-muted" onClick={() => setSourcePickerOpen(false)}><X size={18} /></button>
                             </div>
                             <div className="modal-body modal-body-tight" data-ui="modal-body">
-                                <div className="memory-source-chips" style={{ "--chip-accent": BINDING_ACCENTS.memory } as CSSProperties}>
+                                <div className="memory-source-chips" >
                                     {MEMORY_SOURCE_OPTIONS.map(source => {
                                         const allowed = config.shortTermAllowedSources ?? {};
                                         const isChecked = allowed[source.key] !== false;
@@ -960,7 +976,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                 <p className="menu-group-desc mx-2">自动化</p>
                 <div className="menu-group">
                     <div className="menu-item">
-                        <MemorySettingsIcon icon={Clock} color={BINDING_ACCENTS.memory} />
+                        <MemorySettingsIcon icon={Clock} color={"var(--memory-facts-ink)"} />
                         <div className="menu-label-group">
                             <span className="menu-label">长期记忆自动总结</span>
                             <span className="menu-desc">每隔一定条数自动将新事件整理为长期记忆</span>
@@ -974,7 +990,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                         </div>
                     </div>
                     <div className="menu-item">
-                        <MemorySettingsIcon icon={Brain} color={BINDING_ACCENTS.embedding} />
+                        <MemorySettingsIcon icon={Brain} color={"var(--memory-core-ink)"} />
                         <div className="menu-label-group">
                             <span className="menu-label">核心记忆自动总结</span>
                             <span className="menu-desc">每隔一定条数长期记忆，自动整理为核心记忆</span>
@@ -988,10 +1004,10 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                         </div>
                     </div>
                     <div className="menu-item">
-                        <MemorySettingsIcon icon={Search} color={BINDING_ACCENTS.embedding} />
+                        <MemorySettingsIcon icon={Search} color={"var(--memory-core-ink)"} />
                         <div className="menu-label-group">
                             <span className="menu-label">向量召回</span>
-                            <span className="menu-desc">长期记忆超出预算时，通过 embedding 按相关性检索</span>
+                            <span className="menu-desc">有多条已向量化记忆时，结合当前话题检索；未向量化的记忆仍可由关键词召回</span>
                         </div>
                         <div className="menu-right">
                             <Toggle checked={config.vectorRecallEnabled ?? true} onChange={(v) => {
@@ -1004,11 +1020,25 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                 </div>
 
                 {/* Token budget sliders */}
+                <p className="menu-group-desc mx-2">人物认知与相关记忆</p>
+                <div className="menu-group">
+                    <div className="menu-item">
+                        <MemorySettingsIcon icon={Brain} color={"var(--memory-facts-ink)"} />
+                        <div className="menu-label-group"><span className="menu-label">镜子、凝视与未了</span><span className="menu-desc">同一次记忆总结整理认知；按预算注入角色演绎</span></div>
+                        <div className="menu-right"><Toggle checked={config.cognitionEnabled !== false} onChange={value => {
+                            const next = { ...config, cognitionEnabled: value }; setConfig(next); saveMemoryConfig(next);
+                        }} /></div>
+                    </div>
+                    <MemorySettingsSliderItem icon={Search} color={"var(--memory-core-ink)"} label="每次相关长期记忆" desc="估算 token 上限，同时受下方长期记忆截断量限制"
+                        min={200} max={8000} step={200} value={config.recallTokenBudget ?? 1800} onChange={value => { const next = { ...config, recallTokenBudget: value }; setConfig(next); saveMemoryConfig(next); }} />
+                    <MemorySettingsSliderItem icon={Brain} color={"var(--memory-facts-ink)"} label="人物认知注入" desc="镜子、凝视、当前心境与少量未了事项的正文预算"
+                        min={0} max={2000} step={100} value={config.cognitionTokenBudget ?? 800} onChange={value => { const next = { ...config, cognitionTokenBudget: value }; setConfig(next); saveMemoryConfig(next); }} />
+                </div>
                 <p className="menu-group-desc mx-2">控制截断量</p>
                 <div className="menu-group">
                     <MemorySettingsSliderItem
                         icon={Users}
-                        color={BINDING_ACCENTS.voice}
+                        color={"var(--memory-open-ink)"}
                         label="短期记忆+最近上下文"
                         desc="聊天历史、朋友圈、群聊与跨应用近期事件截断量"
                         value={config.shortTermTokenBudget}
@@ -1019,7 +1049,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                     />
                     <MemorySettingsSliderItem
                         icon={Archive}
-                        color={BINDING_ACCENTS.memory}
+                        color={"var(--memory-facts-ink)"}
                         label="长期记忆"
                         desc="总结记忆注入量"
                         value={config.longTermTokenBudget}
@@ -1030,7 +1060,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                     />
                     <MemorySettingsSliderItem
                         icon={Brain}
-                        color={BINDING_ACCENTS.embedding}
+                        color={"var(--memory-core-ink)"}
                         label="核心记忆"
                         desc="高优先级里程碑注入量"
                         value={config.coreMemoryTokenBudget}
@@ -1046,7 +1076,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                 <div className="menu-group">
                     <MemorySettingsSliderItem
                         icon={Clock}
-                        color={BINDING_ACCENTS.api}
+                        color={"var(--memory-mirror-ink)"}
                         label="总结间隔"
                         desc="每 N 条事件自动触发总结"
                         value={config.summarizationEventInterval ?? 50}
@@ -1057,7 +1087,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                     />
                     <MemorySettingsSliderItem
                         icon={Brain}
-                        color={BINDING_ACCENTS.embedding}
+                        color={"var(--memory-core-ink)"}
                         label="核心记忆总结间隔"
                         desc="每 N 条长期记忆自动触发核心记忆总结"
                         value={config.coreSummarizationInterval ?? 5}
@@ -1072,7 +1102,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                 <p className="menu-group-desc mx-2">长期记忆提示词</p>
                 <div className="menu-group">
                     <div className="menu-item">
-                        <MemorySettingsIcon icon={FileText} color={BINDING_ACCENTS.preset} />
+                        <MemorySettingsIcon icon={FileText} color={"var(--memory-gaze-ink)"} />
                         <div className="menu-label-group">
                             <span className="menu-label">长期记忆总结提示词</span>
                             <span className="menu-desc">
@@ -1107,7 +1137,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                 <p className="menu-group-desc mx-2">核心记忆提示词</p>
                 <div className="menu-group">
                     <div className="menu-item">
-                        <MemorySettingsIcon icon={FileText} color={BINDING_ACCENTS.embedding} />
+                        <MemorySettingsIcon icon={FileText} color={"var(--memory-core-ink)"} />
                         <div className="menu-label-group">
                             <span className="menu-label">核心记忆总结提示词</span>
                             <span className="menu-desc">
@@ -1139,77 +1169,14 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice }:
                     </div>
                 </div>
             </div>
+            </MemorySurface>
         );
     }
 
     // ── Character List View ──
-    return (
-        <div className="mem-picker">
-            <div className="mem-picker-card">
-                <p className="mem-picker-cover-title">Every moment we shared becomes a timeless memory</p>
-                <div className="mem-picker-divider"><span>✦</span></div>
-                <div className="mem-picker-cover-wrap">
-                    {"MEMORY".split("").map((ch, i) => (
-                        <span key={i} className={`mem-picker-cover-letter mem-picker-letter-${i}`}>{ch}</span>
-                    ))}
-                    <div className="mem-picker-cover-clip">
-                        {(() => {
-                            const coverSrc = pickedCharId
-                                ? (characters.find(c => c.character.id === pickedCharId)?.character.avatar || "")
-                                : (resolveUserIdentity()?.avatarUrl || "");
-                            return coverSrc ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                    src={coverSrc}
-                                    alt=""
-                                    className="mem-picker-cover"
-                                    draggable={false}
-                                />
-                            ) : null;
-                        })()}
-                    </div>
-                </div>
-
-                <div className="mem-picker-body">
-                    <p className="mem-picker-prompt">
-                        你想查看谁的记忆呢？<br />
-                        <span className="mem-picker-hint">点击TA的卡片查看吧</span>
-                    </p>
-
-                    <div className="mem-picker-chips">
-                        {characters.map(({ character }) => (
-                            <button
-                                key={character.id}
-                                className="ui-chip"
-                                {...(pickedCharId === character.id ? { "data-selected": "" } : {})}
-                                onClick={() => setPickedCharId(pickedCharId === character.id ? null : character.id)}
-                            >
-                                {character.name}
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="mem-picker-tear">
-                        <div className="mem-picker-tear-line"><span>✦</span></div>
-                    </div>
-
-                    <div className="mem-picker-action">
-                        <button
-                            className="ui-chip ui-chip-lg"
-                            {...(pickedCharId ? { "data-selected": "" } : {})}
-                            onClick={() => pickedCharId && handleSelectChar(loadCharacters().find(c => c.id === pickedCharId)!)}
-                        >
-                            查看TA的记忆
-                        </button>
-                    </div>
-
-                    <div className="mem-picker-footer">
-                        <span>OBSERVER · 记忆观察员</span>
-                        <span>{characters.length} PROFILES · {characters.reduce((s, c) => s + c.shortTermCount + c.coreCount + c.longTermCount, 0)} RECORDS</span>
-                        <span>{new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" })}</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
+    return <MemorySurface section="characters"><MemoryCharacterGarden
+        identity={resolveUserIdentity() || { name: "用户" }}
+        characters={characters}
+        onOpen={handleSelectChar}
+    /></MemorySurface>;
 }

@@ -1,0 +1,60 @@
+.scope { display: contents; color: var(--c-text-title); }
+
+.scope :global(.ui-btn-primary),
+.scope :global(.ui-btn-action),
+.scope :global(.mem-entry-add-btn),
+.scope :global(.mem-empty-add-btn),
+.scope :global(.mem-tl-load-more) {
+    color: var(--memory-control-ink);
+    background: var(--memory-control);
+    box-shadow: inset 0 1px 0 #ffffff20, 0 2px 8px #00000008;
+}
+.scope :global(.ui-btn-outline),
+.scope :global(.ui-btn-ghost),
+.scope :global(.ui-chip),
+.scope :global(.mem-entry-menu-btn),
+.scope :global(.modal-header-btn-action) {
+    color: var(--memory-accent);
+    background: var(--memory-soft);
+}
+.scope :global(.mem-entry-clear-btn) { color: var(--c-danger); background: var(--memory-surface); border-color: var(--memory-line); }
+.scope :global(.mem-entry-menu),
+.scope :global(.g-card),
+.scope :global(.mem-empty-card),
+.scope :global(.menu-group),
+.scope :global(.modal-sheet),
+.scope :global(.modal-dialog) { background: var(--memory-surface); border-color: var(--memory-line); }
+.scope :global(.mem-entry-menu button:not(.is-danger):active) { background: var(--memory-soft); }
+.scope :global(.mem-origin-badge),
+.scope :global(.mem-origin-badge.is-manual),
+.scope :global(.ui-status-tag:not([data-variant="danger"])) {
+    color: var(--memory-accent); background: var(--memory-soft);
+}
+.scope :global(.mem-tl-bubble-r .mem-tl-bubble-body) { color: var(--memory-control-ink); }
+.scope :global(.memory-source-chip) { color: var(--memory-control-ink); background: var(--memory-control); }
+.scope :global(.memory-source-chip[data-off]) {
+    color: var(--c-text); background: var(--memory-surface); box-shadow: inset 0 0 0 1px var(--memory-line);
+}
+.scope :global(.ui-toggle) { background: var(--memory-line); }
+.scope :global(.ui-toggle[data-checked]) { background: var(--memory-accent); }
+.scope :global(.ui-toggle-knob) { background: var(--memory-surface); }
+.scope :global(.ui-slider) {
+    --ui-slider-track: var(--memory-control);
+    --ui-slider-thumb: var(--memory-accent);
+    --ui-slider-thumb-border: var(--memory-surface);
+}
+.scope :global(.memory-slider-current) { color: var(--memory-accent); }
+.scope :global(.card-icon) {
+    background: var(--memory-soft); box-shadow: inset 0 1px 0 #ffffff25;
+}
+.scope :global(.ui-textarea) { border-color: var(--memory-line); }
+.scope :global(.ui-textarea:focus) { border-color: var(--memory-accent); box-shadow: 0 0 0 2px var(--memory-soft); }
+.scope :global(button:focus-visible), .scope :global(input:focus-visible) { outline: 2px solid var(--memory-accent); outline-offset: 3px; }
+.scope :global(.memory-settings-menu .menu-item:not(:last-child)::after) { background: var(--memory-line); }
+.scope :global(.memory-settings-menu button:disabled) { opacity: .45; cursor: default; }
+@media (hover: hover) {
+    .scope :global(.ui-btn-primary:not(:disabled):hover),
+    .scope :global(.mem-entry-add-btn:hover),
+    .scope :global(.mem-empty-add-btn:hover),
+    .scope :global(.mem-tl-load-more:hover) { background: var(--memory-hover); }
+}

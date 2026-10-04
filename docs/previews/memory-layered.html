@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Memory · Link — 层叠入口预览</title>
+  <style>
+    :root {
+      --canvas: #f1f3f5; --page: #fff; --ink: #1c1c1e; --muted: #636366;
+      --facts: #e3f1fb; --core: #a8d0ef; --list: #c1e4f3; --mirror: #fff9e6; --gaze: #99c3e4;
+      --card-ink: #263d4e; --card-muted: #465d6b; --focus: #2479b5;
+      --line: #e7eaee; --surface: #f6f7f9;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--canvas); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; }
+    button { font: inherit; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    button:focus-visible { outline: 3px solid var(--focus); outline-offset: -5px; }
+    button:active { filter: brightness(.97); }
+    .phone { width: min(100%, 390px); min-height: 844px; margin: 32px auto; background: var(--page); border-radius: 36px; overflow: clip; box-shadow: 0 16px 64px #182b4212, 0 0 0 1px #152f4310; }
+    .header { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; padding: 19px 14px 12px; min-height: 76px; background: var(--page); }
+    .header h1 { font-size: 16px; font-weight: 600; text-align: center; margin: 0; }
+    .back { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: transparent; color: var(--ink); transition: background 140ms ease; }
+    .back svg { width: 21px; height: 21px; }
+    .back:disabled { visibility: hidden; }
+    .intro { padding: 29px 25px 27px; }
+    .intro h2 { margin: 0 0 9px; font-size: 23px; font-weight: 550; letter-spacing: -.6px; }
+    .intro p { margin: 0; font-size: 13px; color: var(--muted); }
+    .stack { margin: 0 16px; isolation: isolate; }
+    .layer { position: relative; display: block; width: 100%; height: 96px; padding: 17px 23px 25px; border-radius: 30px 30px 0 0; text-align: left; color: var(--card-ink); background: var(--color); transition: filter 140ms ease; }
+    .layer + .layer { margin-top: -18px; }
+    .layer:last-child { height: 78px; padding-bottom: 7px; border-radius: 30px; }
+    .layer-title { display: flex; align-items: baseline; gap: 10px; line-height: 28px; }
+    .english { font-family: "Baskerville", "Iowan Old Style", "Palatino Linotype", Georgia, serif; font-size: 24px; font-style: italic; font-weight: 400; letter-spacing: -.4px; }
+    .number { margin-left: auto; padding-right: 18px; color: var(--card-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .desc { display: block; margin-top: 6px; font-size: 12px; color: var(--card-muted); line-height: 18px; }
+    .arrow { position: absolute; top: 27px; right: 20px; width: 14px; height: 14px; opacity: .65; }
+    .footer { margin: 23px 20px 0; padding-bottom: 30px; text-align: center; color: var(--muted); font-size: 11px; letter-spacing: .25px; }
+    [hidden] { display: none !important; }
+    .detail { padding: 27px 22px; }
+    .detail-title { margin: 0 0 25px; display: flex; align-items: baseline; gap: 10px; }
+    .detail-title .english { font-size: 28px; }
+    .sample { background: var(--sample-color); border-radius: 26px; padding: 23px; }
+    .sample h3 { margin: 0 0 13px; font-size: 16px; font-weight: 550; }
+    .sample p { margin: 0; font-size: 14px; line-height: 1.95; }
+    .sample small { display: block; margin-top: 19px; color: var(--muted); font-size: 11px; }
+    .preview-note { color: var(--muted); text-align: center; font-size: 11px; margin: 22px 0; }
+    .try-avatar { padding: 0 24px 30px; text-align: center; }
+    .try-avatar button { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 7px 14px; border-radius: 22px; color: var(--ink); background: var(--surface); transition: filter 140ms ease; }
+    .try-avatar img { width: 28px; height: 28px; object-fit: cover; border-radius: 50%; }
+    .try-avatar p { margin: 10px 0 0; font-size: 11px; line-height: 1.6; color: var(--muted); }
+    @media (hover: hover) { .layer:hover { filter: brightness(1.025); } .back:hover { background: var(--surface); } .try-avatar button:hover { filter: brightness(.97); } }
+    @media (max-width: 440px) {
+      body { background: var(--page); }
+      .phone { margin: 0 auto; border-radius: 0; min-height: 100svh; box-shadow: none; }
+      .header { padding-top: max(13px, env(safe-area-inset-top)); min-height: 70px; }
+    }
+    @media (max-width: 350px) {
+      .intro { padding-inline: 22px; } .intro h2 { font-size: 21px; }
+      .stack { margin-inline: 12px; } .layer { padding-inline: 20px; }
+      .english { font-size: 22px; } .layer-title { gap: 8px; }
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --canvas: #101113; --page: #1c1c1e; --ink: #f5f5f7; --muted: #aaaab1; --line: #38383c; --surface: #303034; --facts: #2b3d4c; --core: #344f65; --list: #304b56; --mirror: #423e30; --gaze: #334c62; --card-ink: #edf3f7; --card-muted: #c0cdd6; --focus: #90c9f2; }
+    }
+    @media (prefers-reduced-motion: reduce) { button { transition: none !important; } }
+  </style>
+</head>
+<body>
+  <main class="phone" aria-label="记忆入口结构预览">
+    <header class="header">
+      <button class="back" id="back" aria-label="返回"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m14.5 5-7 7 7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <h1 id="header-title">周景衡</h1><span aria-hidden="true"></span>
+    </header>
+    <section id="home" aria-label="记忆栏目">
+      <div class="intro"><h2>周景衡 的记忆</h2><p>与 瑶瑶</p></div>
+      <nav class="stack" aria-label="五个记忆栏目">
+        <button class="layer" data-section="facts" style="--color:var(--facts)"><span class="layer-title"><span class="english">FACTS</span><span class="number">682</span></span><span class="desc">短期与长期，记得共同经历</span></button>
+        <button class="layer" data-section="core" style="--color:var(--core)"><span class="layer-title"><span class="english">CORE</span><span class="number">0</span></span><span class="desc">永远不会忘记的事</span></button>
+        <button class="layer" data-section="list" style="--color:var(--list)"><span class="layer-title"><span class="english">LIST</span><span class="number">2</span></span><span class="desc">约定、期待，还有悬而未决</span></button>
+        <button class="layer" data-section="mirror" style="--color:var(--mirror)"><span class="layer-title"><span class="english">MIRROR</span></span><span class="desc">他如何理解自己与此刻的心境</span></button>
+        <button class="layer" data-section="gaze" style="--color:var(--gaze)"><span class="layer-title"><span class="english">GAZE</span></span><span class="desc">他眼中的你，与这段关系</span></button>
+      </nav>
+      <p class="footer">每一段相处，都有自己的来处。</p>
+      <div class="try-avatar">
+        <button type="button" id="choose-avatar"><img id="avatar-preview" alt="" hidden><span>用角色头像试色</span></button>
+        <input id="avatar-file" type="file" accept="image/*" hidden>
+        <p id="avatar-status" role="status">独立预览：选择图片试色，不会上传或更改档案头像</p>
+      </div>
+    </section>
+    <section class="detail" id="detail" hidden tabindex="-1" aria-labelledby="detail-heading">
+      <h2 class="detail-title" id="detail-heading"><span class="english" id="detail-en"></span></h2>
+      <article class="sample" id="sample"><h3 id="sample-title"></h3><p id="sample-text"></p><small>与 瑶瑶 · 示例内容</small></article>
+      <p class="preview-note">此页仅演示布局与返回交互</p>
+    </section>
+  </main>
+  <script id="avatar-sampler">
+    /* PROJECT_AVATAR_SAMPLER_START */
+// Snapshot compiled directly from lib/avatar-name-color.ts; production sources are unchanged.
+(function(){const exports={};
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_AVATAR_NAME_COLOR = void 0;
+exports.pickAvatarNameColor = pickAvatarNameColor;
+exports.extractAvatarNameColor = extractAvatarNameColor;
+exports.DEFAULT_AVATAR_NAME_COLOR = "#8e8e93";
+/** Dominant chromatic family, rather than the often black/white background. */
+function pickAvatarNameColor(pixels, bubble = false) {
+    const bins = Array.from({ length: 24 }, () => ({ weight: 0, r: 0, g: 0, b: 0 }));
+    let visible = 0;
+    const total = [0, 0, 0];
+    let chromatic = 0;
+    for (let i = 0; i + 3 < pixels.length; i += 4) {
+        if (pixels[i + 3] < 128)
+            continue;
+        visible++;
+        const r = pixels[i] / 255, g = pixels[i + 1] / 255, b = pixels[i + 2] / 255;
+        total[0] += r;
+        total[1] += g;
+        total[2] += b;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
+        if (delta < .065 || max < .12 || min > .9)
+            continue;
+        chromatic++;
+        let hue = max === r ? ((g - b) / delta + 6) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+        hue *= 60;
+        const bin = bins[Math.round(hue / 15) % 24];
+        const weight = .5 + delta; // Area wins; saturation only gently breaks ties.
+        bin.weight += weight;
+        bin.r += r * weight;
+        bin.g += g * weight;
+        bin.b += b * weight;
+    }
+    if (!visible)
+        return exports.DEFAULT_AVATAR_NAME_COLOR;
+    if (chromatic / visible < .025)
+        return bubble ? `rgb(${total.map(c => Math.round(c / visible * 255)).join(", ")})` : exports.DEFAULT_AVATAR_NAME_COLOR;
+    const bin = bins.reduce((best, item) => item.weight > best.weight ? item : best);
+    const r = bin.r / bin.weight, g = bin.g / bin.weight, b = bin.b / bin.weight;
+    if (bubble)
+        return `rgb(${[r, g, b].map(c => Math.round(c * 255)).join(", ")})`;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
+    const lightness = (max + min) / 2;
+    const saturation = Math.min(.48, Math.max(.2, delta / (1 - Math.abs(2 * lightness - 1))));
+    const hue = (max === r ? ((g - b) / delta + 6) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4) / 6;
+    // Consistent muted ink, with at least 4.5:1 contrast against white.
+    for (let l = .43; l >= .2; l -= .01) {
+        const a = saturation * Math.min(l, 1 - l);
+        const channel = (n) => {
+            const k = (n + hue * 12) % 12;
+            return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+        };
+        const rgb = [channel(0), channel(8), channel(4)];
+        const linear = rgb.map(v => v / 255 <= .04045 ? v / 255 / 12.92 : ((v / 255 + .055) / 1.055) ** 2.4);
+        if (1.05 / (.2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2] + .05) >= 4.5) {
+            return `rgb(${rgb.join(", ")})`;
+        }
+    }
+    return exports.DEFAULT_AVATAR_NAME_COLOR;
+}
+const cache = new Map();
+function extractAvatarNameColor(src, bubble = false) {
+    if (typeof window === "undefined" || !src)
+        return Promise.resolve(exports.DEFAULT_AVATAR_NAME_COLOR);
+    const cacheKey = `${bubble ? "bubble:" : "name:"}${src}`;
+    const cached = cache.get(cacheKey);
+    if (cached)
+        return cached;
+    const result = new Promise(resolve => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        let settled = false;
+        const finish = (color) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            img.onload = img.onerror = null;
+            resolve(color);
+        };
+        const timer = setTimeout(() => finish(exports.DEFAULT_AVATAR_NAME_COLOR), 8000);
+        img.onerror = () => finish(exports.DEFAULT_AVATAR_NAME_COLOR);
+        img.onload = () => {
+            try {
+                const canvas = document.createElement("canvas");
+                canvas.width = canvas.height = 40;
+                const ctx = canvas.getContext("2d", { willReadFrequently: true });
+                if (!ctx)
+                    return finish(exports.DEFAULT_AVATAR_NAME_COLOR);
+                // Match the avatar's centered, circular object-cover crop.
+                const side = Math.min(img.naturalWidth, img.naturalHeight);
+                ctx.beginPath();
+                ctx.arc(20, 20, 20, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 40, 40);
+                finish(pickAvatarNameColor(ctx.getImageData(0, 0, 40, 40).data, bubble));
+            }
+            catch {
+                finish(exports.DEFAULT_AVATAR_NAME_COLOR);
+            }
+        };
+        img.src = src;
+    });
+    // Bound data-URL retention; one request shared by all messages of an avatar.
+    if (cache.size >= 128)
+        cache.delete(cache.keys().next().value);
+    cache.set(cacheKey, result);
+    return result;
+}
+
+window.MemoryAvatarSampler=exports;})();
+// Snapshot compiled directly from lib/chat-bubble-colors.ts; production sources are unchanged.
+(function(){const exports={};
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.BUBBLE_COLORS_EVENT = void 0;
+exports.validColor = validColor;
+exports.rgb = rgb;
+exports.hex = hex;
+exports.mix = mix;
+exports.ink = ink;
+exports.alpha = alpha;
+exports.avatarBubblePalette = avatarBubblePalette;
+exports.resolveBubbleColors = resolveBubbleColors;
+exports.BUBBLE_COLORS_EVENT = "chat-bubble-colors-updated";
+function validColor(v) { return v && /^#[\da-f]{6}$/i.test(v) ? v : undefined; }
+function rgb(color) { return color.startsWith("rgb") ? (color.match(/[\d.]+/g) || []).slice(0, 3).map(Number) : [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16)); }
+function hex(channels) { return "#" + channels.map(n => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0")).join(""); }
+function mix(base, color, weight) { const a = rgb(base), b = rgb(color); return hex(a.map((n, i) => n * (1 - weight) + b[i] * weight)); }
+function ink(bg) {
+    const [r, g, b] = rgb(bg).map(n => { const c = n / 255; return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4; });
+    return .2126 * r + .7152 * g + .0722 * b > .179 ? "#101012" : "#ffffff";
+}
+function alpha(color, opacity = 1) {
+    const amount = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
+    return amount === 1 ? color : `rgba(${rgb(color).join(", ")}, ${amount})`;
+}
+/** Preserve avatar hue, not its exposure: bright white-based pastels by day. */
+function avatarBubblePalette(sample, dark) {
+    const [r, g, b] = rgb(sample).map(c => c / 255);
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    const h = d === 0 ? 0 : (max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4) / 6;
+    const rawS = d === 0 ? 0 : d / (1 - Math.abs(max + min - 1));
+    const sourceL = (max + min) / 2;
+    // Do not flatten navy, ice blue and slate into the same pastel.
+    const s = Math.min(.85, rawS * (.78 + .12 * (1 - sourceL))), l = dark ? .16 + sourceL * .16 : .38 + sourceL * .38;
+    const a = s * Math.min(l, 1 - l);
+    const tone = hex([0, 8, 4].map(n => { const k = (n + h * 12) % 12; return 255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))); }));
+    // Keep the bubble visibly tied to the avatar. The old very pale wash made
+    // distinct avatars converge to nearly the same gray surface.
+    const strength = .38 + .22 * (1 - sourceL) + .12 * rawS;
+    const surface = dark ? tone : mix("#ffffff", tone, strength);
+    const candidate = dark ? mix("#ffffff", tone, .16) : mix("#101012", tone, .38);
+    const luminance = (color) => rgb(color).map(c => c / 255).map(c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4).reduce((sum, c, i) => sum + c * [.2126, .7152, .0722][i], 0);
+    const aLum = luminance(surface), bLum = luminance(candidate);
+    const contrast = (Math.max(aLum, bLum) + .05) / (Math.min(aLum, bLum) + .05);
+    return { surface, voice: contrast >= 4.5 ? candidate : ink(surface) };
+}
+function resolveBubbleColors(config, dark, user, sample) {
+    const auto = !user && config.charMode === "auto";
+    const userColor = validColor(config.user) || "#38acfc";
+    let color = user ? userColor : dark ? "#353539" : "#e9e9eb";
+    let customized = user ? !!validColor(config.user) : false;
+    if (!user && config.charMode === "manual") {
+        color = validColor(config.char) || color;
+        customized = true;
+    }
+    const palette = auto ? avatarBubblePalette(sample || "#a0a0a0", dark) : undefined;
+    if (palette) {
+        color = palette.surface;
+        customized = true;
+    }
+    // Manual choices are literal: changing the surface must never change text.
+    const text = auto ? ink(color) : validColor(user ? config.userText : config.charText) || (user || dark ? "#ffffff" : "#101012");
+    const opacity = auto ? 1 : (user ? config.userOpacity : config.charOpacity) ?? 1;
+    const textOpacity = auto ? 1 : (user ? config.userTextOpacity : config.charTextOpacity) ?? 1;
+    return {
+        surface: color, opacity: Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1,
+        background: alpha(color, opacity), text: alpha(text, textOpacity),
+        voice: palette?.voice || alpha(user || customized ? text : dark ? "#9bd6ff" : userColor, textOpacity),
+    };
+}
+
+window.MemoryBubbleColors=exports;})();
+/* PROJECT_AVATAR_SAMPLER_END */
+  </script>
+  <script>
+    const $ = id => document.getElementById(id);
+    const samples = {
+      facts: ['Facts','事实','共同经历','那天聊到周末的安排，他记住了你想去海边，也记住了你说想慢一点走。'],
+      core: ['Core','核心','还没有核心记忆','那些重要而长久的事，会留在这里。'],
+      list: ['List','未了事项','周末，一起去海边','一件还没有兑现的约定。你们都还记得，也都在等一个合适的晴天。'],
+      mirror: ['Mirror','镜子','人物理解','他习惯先把事情安排妥当，再表达自己的在意。最近，他开始愿意把尚未想清楚的感受也告诉你。'],
+      gaze: ['Gaze','凝视','他眼中的你','他觉得你比自己说的更认真，也更容易把小事放在心上。他想让你知道，被记住的不只是那些约定，还有你当时的心情。']
+    };
+    let current = 'home', lastButton;
+    function show(view) {
+      current = view;
+      for (const id of ['home','detail']) $(id).hidden = id !== view;
+      $('back').disabled = view === 'home';
+    }
+    document.querySelectorAll('.layer').forEach(button => {
+      button.insertAdjacentHTML('beforeend','<svg class="arrow" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3 5 5-5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+      button.addEventListener('click', () => {
+        lastButton = button;
+        const [en,cn,title,text] = samples[button.dataset.section];
+        $('detail-en').textContent = en.toUpperCase();
+        $('sample-title').textContent = title; $('sample-text').textContent = text;
+        $('sample').style.setProperty('--sample-color', `var(--${button.dataset.section})`);
+        show('detail'); $('detail').focus({preventScroll:true});
+      });
+    });
+    $('back').addEventListener('click', () => {
+      if (current === 'detail') { show('home'); lastButton?.focus({preventScroll:true}); }
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && current === 'detail') $('back').click();
+    });
+    show('home');
+
+    const bubble = window.MemoryBubbleColors;
+    const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+    const keys = ['facts','core','list','mirror','gaze'];
+    let avatarSample = null, avatarRevision = 0, objectUrl;
+    function hslOf(color) {
+      const [r,g,b] = bubble.rgb(color).map(c=>c/255);
+      const hi=Math.max(r,g,b),lo=Math.min(r,g,b),d=hi-lo,l=(hi+lo)/2;
+      const h=d===0?0:(hi===r?((g-b)/d+6)%6:hi===g?(b-r)/d+2:(r-g)/d+4)*60;
+      return [h,d===0?0:d/(1-Math.abs(2*l-1)),l];
+    }
+    function hslColor(h,s,l) {
+      const a=s*Math.min(l,1-l);
+      return bubble.hex([0,8,4].map(n=>{const k=(n+((h%360+360)%360)/30)%12;return 255*(l-a*Math.max(-1,Math.min(k-3,9-k,1)));}));
+    }
+    const hueDistance=(a,b)=>Math.min(Math.abs(a-b),360-Math.abs(a-b));
+    const ramp=(lo,hi,x)=>{const t=Math.max(0,Math.min(1,(x-lo)/(hi-lo)));return t*t*(3-2*t);};
+    function representativeColors(pixels) {
+      const bins=Array.from({length:36},()=>({weight:0,r:0,g:0,b:0,count:0,saturations:[],samples:[]}));
+      let visible=0,chromatic=0,centralWarm=0;const total=[0,0,0];
+      const size=Math.sqrt(pixels.length/4);
+      for(let i=0;i+3<pixels.length;i+=4) {
+        if(pixels[i+3]<128)continue;
+        const c=[pixels[i],pixels[i+1],pixels[i+2]],hi=Math.max(...c)/255,lo=Math.min(...c)/255,d=hi-lo;
+        visible++;c.forEach((v,k)=>total[k]+=v);
+        if(d<.055||hi<.15||lo>.92)continue;
+        const [h,s,l]=hslOf(bubble.hex(c));
+        const x=(i/4%size)/size,y=Math.floor(i/4/size)/size;
+        const skinLike=x>.27&&x<.73&&y>.2&&y<.75&&h>8&&h<50&&s>.15&&s<.75&&l>.42;
+        if(skinLike)centralWarm++;
+        // Saturated midtones express the image's identity; near-black shadows do not.
+        const weight=(.08+Math.pow(s,2)*3)*(.025+.975*ramp(.14,.44,l))*(1-.75*ramp(.82,.98,l))*(skinLike?.3:1);
+        const bin=bins[Math.round(h/10)%36];bin.weight+=weight;bin.count++;
+        if(weight>.1)bin.saturations.push(s);
+        bin.samples.push({rgb:c,s,l,weight});
+        c.forEach((v,k)=>bin[['r','g','b'][k]]+=v*weight);chromatic++;
+      }
+      if(!visible)return null;
+      const average=bubble.hex(total.map(c=>c/visible));
+      if(chromatic/visible<.025)return {neutral:average,colors:[]};
+      const candidates=bins.map((_,index)=>{
+        const members=bins.map((b,j)=>({b,j})).filter(({b,j})=>b.weight&&hueDistance(j*10,index*10)<=10);
+        const weight=members.reduce((v,{b})=>v+b.weight,0);
+        let rgb=['r','g','b'].map(k=>weight?members.reduce((v,{b})=>v+b[k],0)/weight:0);
+        const saturations=members.flatMap(({b})=>b.saturations).sort((a,b)=>a-b);
+        const chroma=saturations[Math.floor((saturations.length-1)*.9)]||hslOf(bubble.hex(rgb))[1];
+        const accents=members.flatMap(({b})=>b.samples).filter(p=>p.s>=chroma*.85&&p.l>.32&&p.l<.86);
+        const accentWeight=accents.reduce((v,p)=>v+p.weight,0);
+        if(accentWeight)rgb=[0,1,2].map(k=>accents.reduce((v,p)=>v+p.rgb[k]*p.weight,0)/accentWeight);
+        const color=bubble.hex(rgb),[h,s,l]=hslOf(color);
+        const score=Math.pow(weight,.25)*Math.pow(chroma,3);
+        return {color,h,s,l,weight,chroma,score};
+      }).filter(c=>c.weight>0);
+      const largestWeight=Math.max(...candidates.map(c=>c.weight));
+      const warm=c=>c.h>8&&c.h<50&&c.l>.42;
+      // In portraits, a large central warm skin-like area is a supporting color.
+      // Keep it when no substantial alternative family exists (e.g. a peach-only avatar).
+      if(centralWarm/visible>.07&&candidates.some(c=>!warm(c)&&c.weight>largestWeight*.18)) {
+        for(const c of candidates)if(warm(c))c.score*=.2;
+      }
+      candidates.sort((a,b)=>b.score-a.score);
+      const colors=[];
+      for(const c of candidates) {
+        if(c.weight<largestWeight*.03)continue;
+        if(colors.every(old=>hueDistance(c.h,old.h)>32))colors.push(c);
+        if(colors.length===3)break;
+      }
+      return {neutral:average,colors};
+    }
+    const paletteCache=new Map();
+    function extractMemoryColors(src) {
+      if(paletteCache.has(src))return paletteCache.get(src);
+      const result=new Promise(resolve=>{
+        const img=new Image();img.crossOrigin='anonymous';let settled=false;
+        const finish=value=>{if(settled)return;settled=true;clearTimeout(timer);img.onload=img.onerror=null;resolve(value);};
+        const timer=setTimeout(()=>finish(null),8000);img.onerror=()=>finish(null);
+        img.onload=()=>{
+          try {
+            const canvas=document.createElement('canvas');canvas.width=canvas.height=64;
+            const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)return finish(null);
+            const side=Math.min(img.naturalWidth,img.naturalHeight);
+            ctx.beginPath();ctx.arc(32,32,32,0,Math.PI*2);ctx.clip();
+            ctx.drawImage(img,(img.naturalWidth-side)/2,(img.naturalHeight-side)/2,side,side,0,0,64,64);
+            finish(representativeColors(ctx.getImageData(0,0,64,64).data));
+          }catch{finish(null);}
+        };img.src=src;
+      });
+      if(paletteCache.size>=64)paletteCache.delete(paletteCache.keys().next().value);
+      paletteCache.set(src,result);return result;
+    }
+    function memoryPalette(sample,dark) {
+      if(!sample.colors.length) {
+        const [, ,l]=hslOf(sample.neutral);
+        const light=dark?[.22,.28,.25,.19,.31]:[.965,.865,.925,.99,.825].map(v=>v+Math.min(.025,l*.025));
+        return light.map(v=>hslColor(0,0,v));
+      }
+      const primary=sample.colors[0],secondary=sample.colors[1]||primary;
+      // Five pastel roles from the sampled families, including the photograph's warm/cool supporting color.
+      const make=(c,scale,l)=>hslColor(c.h,Math.min(.58,Math.max(.12,(c.s*.35+c.chroma*.65)*scale)),l);
+      if(dark)return [make(primary,.55,.23),make(primary,.65,.29),make(secondary,.5,.26),make(secondary,.3,.2),make(primary,.58,.32)];
+      return [make(primary,.42,.94),make(primary,.68,.82),make(secondary,.45,.91),make(secondary,.28,.975),make(primary,.58,.865)];
+    }
+    function applyPalette() {
+      if (!avatarSample) {
+        for (const key of keys) document.documentElement.style.removeProperty(`--${key}`);
+        document.querySelectorAll('.layer').forEach(n=>{n.style.removeProperty('--card-muted');n.style.removeProperty('--card-ink');});
+        return;
+      }
+      memoryPalette(avatarSample,systemTheme.matches).forEach((color,i)=>{
+        document.documentElement.style.setProperty(`--${keys[i]}`,color);
+        const luminance=c=>bubble.rgb(c).map(n=>n/255).map(n=>n<=.04045?n/12.92:((n+.055)/1.055)**2.4).reduce((v,n,i)=>v+n*[.2126,.7152,.0722][i],0);
+        const surfaceLum=luminance(color);
+        let label=bubble.ink(color);
+        for(let weight=.26;weight>=.1;weight-=.04) {
+          const candidate=bubble.mix(systemTheme.matches?'#ffffff':'#101012',color,weight),textLum=luminance(candidate);
+          if((Math.max(surfaceLum,textLum)+.05)/(Math.min(surfaceLum,textLum)+.05)>=4.5) {label=candidate;break;}
+        }
+        const layer=document.querySelector(`[data-section="${keys[i]}"]`);
+        layer.style.setProperty('--card-muted',label);
+        const main=systemTheme.matches?'#edf3f7':'#263d4e',mainLum=luminance(main);
+        layer.style.setProperty('--card-ink',(Math.max(surfaceLum,mainLum)+.05)/(Math.min(surfaceLum,mainLum)+.05)>=4.5?main:bubble.ink(color));
+      });
+    }
+    // Integration input is Character.avatar (archive), never the session's chat avatar.
+    async function applyCharacterAvatar(character) {
+      const revision=++avatarRevision;
+      avatarSample=null; applyPalette();
+      if (!character?.avatar) {
+        $('avatar-preview').hidden=true;
+        $('avatar-status').textContent='没有档案头像，使用默认配色';
+        return;
+      }
+      $('avatar-status').textContent='正在从头像生成五层配色…';
+      const color=await extractMemoryColors(character.avatar);
+      if (revision!==avatarRevision) return;
+      const valid=!!color;
+      avatarSample=valid?color:null; applyPalette();
+      $('avatar-preview').hidden=!valid;
+      if(valid) $('avatar-preview').src=character.avatar;
+      $('avatar-status').textContent=valid?'已按这张头像取色 · 图片只在本地预览':'头像无法取色，使用默认配色';
+    }
+    systemTheme.addEventListener('change',applyPalette);
+    $('choose-avatar').addEventListener('click',()=>$('avatar-file').click());
+    $('avatar-file').addEventListener('change',()=>{
+      const file=$('avatar-file').files[0]; if(!file) return;
+      if(objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl=URL.createObjectURL(file);
+      void applyCharacterAvatar({avatar:objectUrl});
+      $('avatar-file').value='';
+    });
+    window.addEventListener('pagehide',()=>{if(objectUrl) URL.revokeObjectURL(objectUrl);});
+    window.memoryPreview={applyCharacterAvatar,memoryPalette,extractMemoryColors,representativeColors};
+  </script>
+</body>
+</html>

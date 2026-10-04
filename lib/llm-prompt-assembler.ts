@@ -26,6 +26,8 @@ import { TRANSFER_CURRENCY_GUIDANCE } from "./transfer-protocol";
 import { voiceExpressionInstruction } from "./voice-expression";
 import { walletCurrencyInstruction, CHARACTER_CURRENCY_INSTRUCTION } from "./currency-context";
 import { albumChatContext } from "./photo-album-discussion";
+import { formatCognitionForPrompt, CHARACTER_EMOTION_GUIDANCE } from "./memory-cognition";
+import { loadMemoryConfig } from "./memory-storage";
 
 export type LLMMessageRole = "system" | "user" | "assistant" | "tool";
 export type LLMToolCallPayload = { id: string; name: string; args: Record<string, unknown>; thoughtSignature?: string };
@@ -1177,6 +1179,11 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
         const albumContext = albumChatContext(input.character.id);
         if (albumContext) finalPayload.push({ role: "system", content: albumContext, _debugMeta: { marker: "shared_album_context" } });
     }
+    const memoryConfig = loadMemoryConfig();
+    if (memoryConfig.cognitionEnabled !== false) {
+        const cognition = formatCognitionForPrompt(character.id, history.slice(-6).map(m => m.content).join("\n"), memoryConfig.cognitionTokenBudget ?? 800);
+        finalPayload.push({ role: "system", content: [CHARACTER_EMOTION_GUIDANCE, cognition].filter(Boolean).join("\n"), _debugMeta: { marker: "memory_cognition" } });
+    }
     return finalPayload;
 }
 
@@ -2288,6 +2295,16 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
     blocks.push({ text: `${TRANSFER_CURRENCY_GUIDANCE}\n${CHARACTER_CURRENCY_INSTRUCTION}\n${walletCurrencyInstruction()}`, role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "transfer_currency_protocol" });
     const voiceInstruction = voiceExpressionInstruction(members.map(member => member.character.id), input.appTags?.includes("voice") || input.appTags?.includes("video"));
     if (voiceInstruction) blocks.push({ text: voiceInstruction, role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "voice_expression" });
+    const memoryConfig = loadMemoryConfig();
+    if (memoryConfig.cognitionEnabled !== false) {
+        const context = input.history.slice(-6).map(m => m.content).join("\n");
+        const perMemberBudget = Math.max(0, Math.floor((memoryConfig.cognitionTokenBudget ?? 800) / Math.max(1, members.length)));
+        const cognition = members.map(m => {
+            const content = formatCognitionForPrompt(m.character.id, context, perMemberBudget);
+            return content ? `${m.character.name}（仅该角色知晓）：\n${content}` : "";
+        }).filter(Boolean).join("\n\n");
+        blocks.push({ text: [CHARACTER_EMOTION_GUIDANCE, cognition].filter(Boolean).join("\n"), role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "memory_cognition" });
+    }
     // Sort: depth descending, then order ascending
     blocks.sort((a, b) => {
         if (b.depth !== a.depth) return b.depth - a.depth;

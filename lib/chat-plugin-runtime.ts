@@ -90,10 +90,23 @@ class ChatPluginRuntime {
     private startPromise: Promise<void> | null = null;
     private started = false;
     private reloading = Promise.resolve();
+    private retired = false;
+    private onPluginsChanged = () => {
+        if (this.retired) return;
+        this.reloading = this.reloading.then(() => this.applyPluginListChange());
+    };
+
+    /** Retire this identity's hooks, slots, timers and registered plugin cleanup. */
+    silence(): void {
+        this.retired = true;
+        this.started = false;
+        window.removeEventListener(CHAT_PLUGINS_CHANGED_EVENT, this.onPluginsChanged);
+        for (const id of [...this.active.keys()]) void this.stopPlugin(id);
+    }
 
     /** 幂等启动：应用启动时由 ChatPluginBootstrap 调用一次 */
     ensureStarted(): Promise<void> {
-        if (typeof window === "undefined") return Promise.resolve();
+        if (typeof window === "undefined" || this.retired) return Promise.resolve();
         if (!this.startPromise) this.startPromise = this.start();
         return this.startPromise;
     }
@@ -104,6 +117,7 @@ class ChatPluginRuntime {
 
     private async start(): Promise<void> {
         await Promise.allSettled([hydrateKvDb(), hydrateChatStorage()]);
+        if (this.retired || !hasActiveIdentity()) return;
 
         if (isChatPluginSafeMode()) {
             recordChatPluginLog({ pluginId: "*", where: "runtime", message: "安全模式：已跳过全部插件加载", level: "info" });
@@ -133,20 +147,21 @@ class ChatPluginRuntime {
         for (const installed of loadChatPlugins()) {
             if (installed.enabled) await this.startPlugin(installed);
         }
+        if (this.retired || !hasActiveIdentity()) return;
         kvRemove(BOOT_GUARD_KEY);
         this.finishStart();
         bus.emitEvent("app.ready", {});
     }
 
     private finishStart(): void {
+        if (this.retired) return;
         this.started = true;
-        window.addEventListener(CHAT_PLUGINS_CHANGED_EVENT, () => {
-            this.reloading = this.reloading.then(() => this.applyPluginListChange());
-        });
+        window.addEventListener(CHAT_PLUGINS_CHANGED_EVENT, this.onPluginsChanged);
     }
 
     /** 对齐"存储里的启用集合"与"内存里的运行集合"（免刷新启停/覆盖安装/设置变更） */
     private async applyPluginListChange(): Promise<void> {
+        if (this.retired || !hasActiveIdentity()) return;
         const installedList = loadChatPlugins();
         const wanted = new Map(installedList.filter(p => p.enabled).map(p => [p.manifest.id, p]));
         if (isChatPluginSafeMode()) return;
@@ -187,9 +202,11 @@ class ChatPluginRuntime {
     }
 
     private async startPlugin(installed: InstalledChatPlugin): Promise<void> {
+        if (this.retired || !hasActiveIdentity()) return;
         const pluginId = installed.manifest.id;
         if (this.active.has(pluginId)) return;
         const { module, error } = await loadChatPluginModule(installed.code);
+        if (this.retired || !hasActiveIdentity()) return;
         if (!module) {
             recordChatPluginLog({ pluginId, where: "setup", message: error ?? "加载失败", level: "error" });
             return;
@@ -208,9 +225,12 @@ class ChatPluginRuntime {
         try {
             const ctx = this.buildCtx(activePlugin);
             const cleanup = await module.setup(ctx);
-            if (typeof cleanup === "function") activePlugin.disposables.push(cleanup);
+            if (typeof cleanup === "function") {
+                if (this.retired) cleanup();
+                else activePlugin.disposables.push(cleanup);
+            }
         } catch (e) {
-            recordChatPluginLog({ pluginId, where: "setup", message: e instanceof Error ? e.message : String(e), level: "error" });
+            if (!this.retired && hasActiveIdentity()) recordChatPluginLog({ pluginId, where: "setup", message: e instanceof Error ? e.message : String(e), level: "error" });
             await this.stopPlugin(pluginId);
         }
     }
@@ -314,6 +334,7 @@ class ChatPluginRuntime {
         const pluginId = activePlugin.installed.manifest.id;
         const bus = getChatPluginHookBus();
         const track = (dispose: Disposable): Disposable => {
+            if (this.retired) { dispose(); return () => {}; }
             let done = false;
             const once: Disposable = () => {
                 if (done) return;

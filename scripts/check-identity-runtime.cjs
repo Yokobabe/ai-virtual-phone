@@ -4,7 +4,7 @@ const http = require('node:http');
 const ts = require('typescript');
 const assert = require('node:assert/strict');
 const { chromium } = require('C:/Users/Effy/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
-const files = ['identity-space', 'identity-runtime', 'identity-db-guard', 'identity-recovery', 'identity-media-cleanup', 'identity-lifecycle', 'identity-access', 'kv-db'];
+const files = ['identity-space', 'identity-runtime', 'phone-session-protocol', 'identity-db-guard', 'identity-recovery', 'identity-media-cleanup', 'identity-lifecycle', 'identity-access', 'kv-db'];
 const sources = Object.fromEntries(files.map(name => [name, ts.transpileModule(fs.readFileSync(`lib/${name}.ts`, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText]));
 sources.idb = ts.transpileModule(fs.readFileSync('lib/data-management/idb.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
 async function main() {
@@ -63,7 +63,18 @@ async function main() {
    await Promise.all([page.waitForNavigation(), page.evaluate(id => module('identity-lifecycle').switchPhoneIdentity(id), id)]);
    await load(); await page.evaluate(() => module('kv-db').hydrateKvDb());
   };
-  await change('B');
+  // Phone hosts consume the cancelable remount event; the retired realm must stay on A.
+  await page.evaluate(async()=>{
+   const runtime=module('identity-runtime'), controller=new AbortController();runtime.registerIdentityRequest(controller);
+   let remounts=0;const host=event=>{event.preventDefault();remounts++};window.addEventListener('float-phone-session-remount',host);
+   await module('identity-lifecycle').switchPhoneIdentity('A');check(remounts===0,'Same owner remounted');
+   await module('identity-lifecycle').switchPhoneIdentity('B');
+   check(remounts===1,'Host did not receive remount');check(controller.signal.aborted,'Old request survived');
+   check(runtime.getCurrentIdentityId()==='A'&&runtime.readIdentityRuntime().activeUserId==='B','Retired lease rebound to B');
+   let blocked=false;try{runtime.identityLocalStorage.setItem('app-test','late A')}catch{blocked=true}check(blocked,'Late old-realm write accepted');
+   window.removeEventListener('float-phone-session-remount',host);
+  });
+  await page.reload();await load();await page.evaluate(()=>module('kv-db').hydrateKvDb());
   await page.evaluate(async () => {
    const kv = module('kv-db'), runtime = module('identity-runtime');
    check(kv.kvGet('wallet') === null && kv.kvGet('memory:C') === null, 'B sees A data');
@@ -94,7 +105,14 @@ async function main() {
    const controller = new AbortController(); module('identity-runtime').registerIdentityRequest(controller);
    window.testController = controller;
   });
-  await Promise.all([page.waitForNavigation(), page.evaluate(() => module('identity-lifecycle').deletePhoneIdentity('A'))]);
+  await page.evaluate(async()=>{
+   let remounts=0;const host=event=>{event.preventDefault();remounts++};window.addEventListener('float-phone-session-remount',host);
+   await module('identity-lifecycle').deletePhoneIdentity('A');
+   check(remounts===1&&module('identity-runtime').readIdentityRuntime().activeUserId==='B','Deletion did not request an internal remount after selecting B');
+   check(window.testController.signal.aborted,'Delete did not cancel old requests');
+   window.removeEventListener('float-phone-session-remount',host);
+  });
+  await page.reload();
   await load(); await page.evaluate(() => module('kv-db').hydrateKvDb());
   await page.evaluate(async () => {
    check(module('identity-runtime').getCurrentIdentityId() === 'B', 'Deleting A did not select B');
@@ -136,7 +154,7 @@ async function main() {
    check(!rows.some(row=>row.key==='wallet'||row.key==='memory:C'||row.key.startsWith('identity:B:')),'Restore resurrected deleted private data');
    check(rows.some(row=>row.key==='ai_phone_characters_v1'),'Restore lost shared archive');db.close();
   });
-  console.log('PASS: production runtime + KV + real databases: legacy ownership, A/B isolation, return, rename ID, whitelist, delete A retain B, last deletion fresh default. Cloud APIs mocked; no user origin/model calls.');
+  console.log('PASS: production runtime/KV/IDB: host-consumed switch/delete remounts preserve immutable leases and abort late writes; same-owner no-op; A/B isolation/return, rename ID, whitelist, delete A retain B, last deletion fresh default; no-host reload fallback. Cloud APIs mocked; no user origin/model calls.');
  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

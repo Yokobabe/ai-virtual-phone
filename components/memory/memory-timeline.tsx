@@ -638,7 +638,7 @@ export function MemoryTimeline({ events, userName }: Props) {
                             onClick={() => setExpandedClusterId(expanded ? null : cluster.id)}
                         >
                             <span className="ts-10 font-bold uppercase tracking-widest" style={{
-                                color: "var(--c-danger)", opacity: 0.6, position: "absolute", right: 12, top: 12
+                                color: "var(--memory-accent, var(--c-text))", opacity: 0.8, position: "absolute", right: 12, top: 12
                             }}>REPORT</span>
                             <div className="flex justify-between items-center pb-2 mb-2" style={{ borderBottom: "1px dashed var(--c-panel-border)" }}>
                                 <span className="ts-11 text-secondary" style={{ letterSpacing: "1px" }}>[ DATE: {formatClusterDate(cluster)} ]</span>

@@ -7,6 +7,7 @@ import {
 } from "./identity-runtime";
 import { createIdentityRecoveryPoint, listIdentityRecoveryPoints, purgeIdentityRecoveryData } from "./identity-recovery";
 import { deleteIdentityMedia } from "./identity-media-cleanup";
+import { requestPhoneSessionRemount } from "./phone-session-protocol";
 
 let initializing: Promise<void> | null = null;
 const IDENTITIES = "ai_phone_user_identities_v1";
@@ -77,7 +78,7 @@ export function switchPhoneIdentity(userId: string): Promise<void> {
     await retireScheduledWork();
     silenceIdentityRuntime();
     installIdentityRuntime(next);
-    window.location.reload();
+    requestPhoneSessionRemount();
   })().finally(() => { transition = null; pauseIdentityDispatch(false); });
   return transition;
 }
@@ -146,7 +147,7 @@ async function deletePhoneIdentityOnce(userId: string): Promise<void> {
     ]);
     const finished = finishIdentityDeletion(deleting, userId);
     installIdentityRuntime({ ...finished, userIds: identities.map(identity => identity.id), activeUserId: finished.activeUserId ?? identities[0].id });
-    window.location.reload();
+    requestPhoneSessionRemount();
   } finally { kv.close(); }
 }
 

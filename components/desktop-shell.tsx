@@ -146,6 +146,7 @@ import { WeixinSyncToast } from "@/components/weixin-sync-toast";
 import { sendBrowserNotification } from "@/lib/browser-notification";
 import type { ChatSharePayload } from "@/lib/chat-share";
 import { completePendingMcpOAuthCallback } from "@/lib/tool-executor";
+import { phoneSessionParent } from "@/lib/phone-session-protocol";
 import { LayoutGrid, LoaderCircle, RefreshCw } from "lucide-react";
 
 const EMOJI_FONTS = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla"';
@@ -932,7 +933,7 @@ function useAndroidCaretKeyboardLift() {
     }
 
     const mobileMq = window.matchMedia("(max-width: 500px) and (hover: none) and (pointer: coarse)");
-    const viewport = window.visualViewport;
+    const viewport = (phoneSessionParent() ?? window).visualViewport;
     let focusedElement: HTMLElement | null = null;
     let raf = 0;
     let currentLift = 0;

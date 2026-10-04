@@ -284,6 +284,7 @@ export function BindingManager() {
 
     const updateGlobalSlot = (field: keyof BindingSlot, value: string | string[] | undefined) => {
         if (field === "userIdentityId" && typeof value === "string") {
+            if (value === getCurrentIdentityId()) return;
             setIdentityBusy(true); setIdentityError("");
             void switchPhoneIdentity(value).catch(error => {
                 setIdentityError(error instanceof Error ? error.message : "身份切换失败");

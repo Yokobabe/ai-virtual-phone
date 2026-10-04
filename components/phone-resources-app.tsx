@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Brain, MoreHorizontal, Sparkles } from "lucide-react";
 import { MemoryBankPage } from "./memory/memory-bank-page";
+import memoryGardenStyles from "./memory/memory-garden.module.css";
 import { VnAssetPage } from "./vn/vn-asset-page";
 import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import { PageShell } from "./ui/page-shell";
@@ -37,6 +38,8 @@ export function PhoneResourcesApp({ onClose, onNotice, initialPage }: { onClose:
     const [prevMemoryView, setPrevMemoryView] = useState<MemoryView>("list");
     const [memoryCharId, setMemoryCharId] = useState<string>("");
     const [memoryCharName, setMemoryCharName] = useState<string>("");
+    const [inMemorySection, setInMemorySection] = useState(false);
+    const [resetMemorySection, setResetMemorySection] = useState(0);
 
     useEffect(() => {
         if (initialPage) setCurrentPage(initialPage);
@@ -47,7 +50,8 @@ export function PhoneResourcesApp({ onClose, onNotice, initialPage }: { onClose:
             if (memoryView === "settings") {
                 setMemoryView(prevMemoryView);
             } else if (memoryView === "detail") {
-                setMemoryView("list");
+                if (inMemorySection) setResetMemorySection(value => value + 1);
+                else setMemoryView("list");
             } else {
                 setCurrentPage("main");
                 setMemoryView("list");
@@ -66,6 +70,8 @@ export function PhoneResourcesApp({ onClose, onNotice, initialPage }: { onClose:
     const handleSelectChar = (charId: string) => {
         const chars = loadCharacters();
         const char = chars.find(c => c.id === charId);
+        if (!char) return;
+        setInMemorySection(false);
         setMemoryCharId(charId);
         setMemoryCharName(char?.name ?? "");
         setMemoryView("detail");
@@ -75,7 +81,7 @@ export function PhoneResourcesApp({ onClose, onNotice, initialPage }: { onClose:
         : currentPage === "memory"
             ? (memoryView === "settings" ? "记忆设置"
                 : memoryView === "detail" ? (memoryCharName || "记忆详情")
-                    : "记忆库")
+                    : <span className={memoryGardenStyles.wordmark}>Memory · Link</span>)
             : currentPage === "vn_assets" ? "漫卷资源"
                 : "资源库";
 
@@ -85,7 +91,7 @@ export function PhoneResourcesApp({ onClose, onNotice, initialPage }: { onClose:
         <PageShell
             title={title}
             onBack={handleBack}
-            className={currentPage === "memory" && memoryView === "detail" ? "mem-detail" : undefined}
+            className={currentPage === "memory" ? `${memoryView === "detail" ? "mem-detail " : ""}${memoryGardenStyles.shell}` : undefined}
             rightAction={showSettingsIcon ? (
                 <button
                     onClick={() => { setPrevMemoryView(memoryView); setMemoryView("settings"); }}
@@ -132,6 +138,8 @@ export function PhoneResourcesApp({ onClose, onNotice, initialPage }: { onClose:
                         selectedCharId={memoryCharId}
                         onSelectChar={handleSelectChar}
                         onNotice={onNotice}
+                        onSectionChange={setInMemorySection}
+                        resetSectionToken={resetMemorySection}
                     />
                 )}
             </div>

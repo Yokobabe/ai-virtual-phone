@@ -16,6 +16,8 @@ import { getThemeAssetMap, readThemeProfile } from "@/lib/theme-storage";
 import { resolveActiveIconSkins, type ThemeProfile } from "@/lib/theme-types";
 import { hasPendingMcpOAuthCallback } from "@/lib/tool-executor";
 import { shouldRequestPwaFullscreen } from "@/lib/pwa-display-mode";
+import { phoneSessionParent } from "@/lib/phone-session-protocol";
+import { PhoneSessionLoading } from "./phone-session-host";
 
 const TEXT = {
   loading: "\u52A0\u8F7D\u4E2D...",
@@ -227,14 +229,15 @@ async function prepareDesktopThemeForFirstPaint(): Promise<PreparedDesktopTheme>
   return { profile, assets };
 }
 
-export function MainApp() {
+export function MainApp({ resumeAfterIdentitySwitch = false }: { resumeAfterIdentitySwitch?: boolean } = {}) {
   const [preparedDesktopTheme, setPreparedDesktopTheme] = useState<PreparedDesktopTheme | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [startupError, setStartupError] = useState("");
-  const [splashDismissed, setSplashDismissed] = useState(false);
+  const [splashDismissed, setSplashDismissed] = useState(resumeAfterIdentitySwitch);
 
   useEffect(() => {
     let cancelled = false;
+    if (phoneSessionParent()) setSplashDismissed(true);
 
     // 申请持久化存储：批准后 iOS/安卓不会再因存储压力擅自回收 IndexedDB
     // （摊主钥匙、聊天记录等都存在里面）。静默尽力而为，被拒也无碍。
@@ -269,8 +272,9 @@ export function MainApp() {
 
     function tryFullscreen() {
       if (!shouldRequestPwaFullscreen()) return;
-      const doc = document.documentElement;
-      if (document.fullscreenElement) return;
+      const surface = phoneSessionParent() ?? window;
+      const doc = surface.document.documentElement;
+      if (surface.document.fullscreenElement) return;
       doc.requestFullscreen?.().catch(() => { });
     }
     document.addEventListener("click", tryFullscreen);
@@ -284,6 +288,8 @@ export function MainApp() {
     <AccountGate>
       {!splashDismissed ? (
         <SplashScreen ready={hydrated} error={startupError} onEnter={() => setSplashDismissed(true)} />
+      ) : !hydrated ? (
+        <PhoneSessionLoading error={startupError} onRetry={() => window.location.reload()} />
       ) : (
         <main className="app-root">
           <MusicProvider>

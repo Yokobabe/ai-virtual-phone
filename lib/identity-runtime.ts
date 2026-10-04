@@ -1,4 +1,5 @@
 import { IdentityBoundaryError, identityStoragePrefix, type IdentitySpaceManifest, normalizeIdentitySpace } from "./identity-space";
+import { requestPhoneSessionRemount } from "./phone-session-protocol";
 
 export const IDENTITY_RUNTIME_KEY = "float_identity_runtime_v1";
 export const IDENTITY_ACCESS_KEY = "float_identity_character_access_v1";
@@ -40,7 +41,7 @@ export function readIdentityRuntime(): IdentitySpaceManifest | null {
   try { return normalizeIdentitySpace(JSON.parse(raw)); } catch { throw new IdentityBoundaryError("身份配置损坏，请恢复数据备份"); }
 }
 
-// A page is bound to one identity. Switching always remounts via reload.
+// Each phone realm is bound to one immutable identity; retired callbacks never rebind.
 let bootState = readIdentityRuntime();
 let blocked = false;
 let dispatchPaused = false;
@@ -179,7 +180,7 @@ if (typeof window !== "undefined") {
     if (event.key === IDENTITY_RUNTIME_KEY) {
       const now = readIdentityRuntime();
       if (now?.activeUserId === bootState?.activeUserId && now?.revision === bootState?.revision) return;
-      silenceIdentityRuntime(); window.location.reload();
+      silenceIdentityRuntime(); requestPhoneSessionRemount();
     }
   });
 }

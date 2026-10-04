@@ -26,6 +26,10 @@ export type MemoryConfig = {
     shortTermTokenBudget: number;           // token limit for short-term event log
     coreMemoryTokenBudget: number;          // token limit for injected core memories
     longTermTokenBudget: number;            // token limit for injected long-term memories
+    recallTokenBudget?: number;             // bounded relevant long-term selection, within legacy budget
+    recallMaxEntries?: number;
+    cognitionEnabled?: boolean;
+    cognitionTokenBudget?: number;
     summarizationPrompt: string;            // user-editable prompt template for memory summarization
     coreMemoryPrompt: string;               // user-editable prompt template for core-memory extraction
     vnSummaryPrompt: string;                // user-editable prompt for VN chapter summarization
@@ -65,11 +69,12 @@ export const DEFAULT_SUMMARIZATION_PROMPT = `你是一个记忆整理助手。�
 
 要求：
 - 用第三人称描述{{char}}和用户之间的互动
-- 保留关键事实：提到的名字、做出的承诺、情感变化、关系里程碑
+- 保留关键事实、具体原话含义、关系演化和有事件依据的人物变化
+- 按时间整理变化，区分角色主观理解与已确认事实、未完成约定与实际结果
 - 保留用户分享的具体信息（生日、偏好、习惯）
 - 保留朋友圈等非聊天事件中的关键信息
 - 100-200字
-- 不要包含格式标记
+- 摘要正文不加标题或格式标记
 
 总结：`;
 
@@ -92,11 +97,8 @@ export const DEFAULT_CORE_MEMORY_PROMPT = `你是一个核心记忆整理助手�
 - 恋爱周年、结婚纪念日、在一起多久
 - 明确的长期关系身份（如恋人、前任、配偶）
 - 共同生活的重要里程碑（如同居、见家长、共同养宠物）
-- 普通日常聊天
-- 一般情绪波动
-- 暂时性的矛盾或暧昧
-- 普通偏好信息
-- 任何不确定、推测性的内容
+- 不纳入普通日常聊天、一般情绪波动、暂时矛盾、普通偏好和无依据推测
+- 与已有核心记忆合并，保留重要历史转折；新证据纠正已过时的关系状态，不能同时把旧状态当作现在
 - 用第三人称，事实性描述
 - 80-180字
 - 不要使用 JSON、列表符号、标题或格式标记
@@ -113,6 +115,10 @@ export const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
     shortTermTokenBudget: 100000,
     coreMemoryTokenBudget: 100000,
     longTermTokenBudget: 100000,
+    recallTokenBudget: 1800,
+    recallMaxEntries: 8,
+    cognitionEnabled: true,
+    cognitionTokenBudget: 800,
     summarizationPrompt: DEFAULT_SUMMARIZATION_PROMPT,
     coreMemoryPrompt: DEFAULT_CORE_MEMORY_PROMPT,
     vnSummaryPrompt: "",

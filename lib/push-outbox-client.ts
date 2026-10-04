@@ -286,6 +286,7 @@ export function installServerOutboxConsumer(): void {
     // 启动时保留 5 分钟节流；回前台和 SW 明确告知新消息时强制补拉。
     // iOS 会在后台冻结页面，如果回前台仍被节流，屏幕速聊消息只能等到下次重启才会合并。
     const requestConsume = (force = false) => {
+        if (!hasActiveIdentity()) return;
         if (consumeRequestTimer !== null) window.clearTimeout(consumeRequestTimer);
         consumeRequestTimer = window.setTimeout(() => {
             consumeRequestTimer = null;
@@ -298,6 +299,7 @@ export function installServerOutboxConsumer(): void {
         if (!document.hidden) requestConsume(true);
     });
     navigator.serviceWorker?.addEventListener("message", (event) => {
+        if (!hasActiveIdentity()) return;
         if (event.data?.type === "push_outbox_ready") {
             requestConsume(true);
             return;
