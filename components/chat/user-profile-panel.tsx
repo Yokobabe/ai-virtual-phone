@@ -343,7 +343,6 @@ export function UserProfilePanel({ onClose, className }: UserProfilePanelProps) 
                             <div className="apple-profile-name-row">
                                 <div className="ts-22 font-bold text-[var(--c-text-title)] leading-none truncate">{identity?.name || "未设置身份"}</div>
                             </div>
-                            {identity && <div className="apple-profile-id">ID：{identity.id}</div>}
 
                             {/* Data Stats inline */}
                             <div className="flex items-center justify-between w-full ts-12 text-[var(--c-text-title)] font-medium mt-0.5">
