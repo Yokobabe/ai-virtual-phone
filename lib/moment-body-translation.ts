@@ -3,6 +3,11 @@ import { resolveAuxiliaryApiConfig } from "./settings-storage";
 import { simpleLLMCall } from "./api-helpers";
 import { loadMomentPosts, updateMomentPost } from "./moments-storage";
 import { currentIdentityCloudTag } from "./identity-runtime";
+import type { MomentPost } from "./moments-types";
+
+export function momentTranslationSource(post: MomentPost): string {
+    return post.musicLyricShare ? post.musicLyricShare.caption || "" : post.content;
+}
 
 /** Foreign sentences, excluding Chinese sentences containing a few loanwords. */
 export function needsMomentBodyTranslation(text: string): boolean {
@@ -25,8 +30,9 @@ export function translateMomentBody(postId: string): Promise<void> {
     if (existing) return existing;
     const task = (async () => {
         const post = loadMomentPosts().find(item => item.id === postId);
-        if (!post || !needsMomentBodyTranslation(post.content)) return;
-        const source = post.content;
+        if (!post) return;
+        const source = momentTranslationSource(post);
+        if (!needsMomentBodyTranslation(source)) return;
         if (post.contentTranslationSource === source && post.contentTranslation) return;
         const config = resolveAuxiliaryApiConfig("reasoningTranslateApiConfigId");
         if (!config) throw new Error("请先设置翻译 API 或全局默认 API");
@@ -41,7 +47,7 @@ export function translateMomentBody(postId: string): Promise<void> {
             if (!translated || !containsChinese(translated) || translated === source.trim()) throw new Error(result.error || "未获得有效中文译文，请重试");
             if (JSON.stringify(currentIdentityCloudTag()) !== JSON.stringify(identity)) return;
             const latest = loadMomentPosts().find(item => item.id === postId);
-            if (!latest || latest.content !== source) return;
+            if (!latest || momentTranslationSource(latest) !== source) return;
             updateMomentPost(postId, { contentTranslation: translated, contentTranslationSource: source });
             window.dispatchEvent(new Event("moments-updated"));
         } finally { clearTimeout(timer); }

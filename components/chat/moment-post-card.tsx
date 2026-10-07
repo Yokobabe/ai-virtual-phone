@@ -19,7 +19,7 @@ import { resolveUserIdentity } from "@/lib/settings-storage";
 import { buildTwoLevelMomentThreads } from "@/lib/moments-comment-threading";
 import { getChatImageFromIndexedDB } from "@/lib/chat-asset-storage";
 import { splitBilingualText } from "@/lib/bilingual-text";
-import { needsMomentBodyTranslation, translateMomentBody } from "@/lib/moment-body-translation";
+import { needsMomentBodyTranslation, translateMomentBody, momentTranslationSource } from "@/lib/moment-body-translation";
 import { retryMomentGeneratedPhoto } from "@/lib/generated-image-retry";
 import { GeneratedImageErrorDialog } from "./generated-image-error-dialog";
 import { Trash2, MoreHorizontal, MapPin, Heart, MessageCircle, Pencil } from "lucide-react";
@@ -43,8 +43,9 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
     const [translatingBody, setTranslatingBody] = useState(false);
     const [bodyTranslationError, setBodyTranslationError] = useState("");
     const bodyTranslationPending = useRef(false);
-    const storedTranslation = post.contentTranslationSource === post.content ? post.contentTranslation : undefined;
-    const bodyText = storedTranslation && !splitBilingualText(post.content) ? `${post.content}|${storedTranslation}` : post.content;
+    const sourceText = momentTranslationSource(post);
+    const storedTranslation = post.contentTranslationSource === sourceText ? post.contentTranslation : undefined;
+    const bodyText = storedTranslation && !splitBilingualText(sourceText) ? `${sourceText}|${storedTranslation}` : sourceText;
     const translateBody = async () => {
         if (bodyTranslationPending.current) return;
         bodyTranslationPending.current = true;
@@ -341,11 +342,11 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
             {/* Text content */}
             <div className="feed-post-content ts-16 leading-[1.75] text-[var(--c-text-title)] whitespace-pre-wrap break-words mb-3 w-full">
                 <BilingualTextBlock
-                    text={post.musicLyricShare ? post.musicLyricShare.caption || "" : bodyText}
+                    text={bodyText}
                     mode="plain"
                     defaultExpanded={defaultTranslationExpanded}
                 />
-                {!post.musicLyricShare && !storedTranslation && needsMomentBodyTranslation(post.content) && <button type="button" className="moment-body-translate" disabled={translatingBody} onClick={translateBody}>{translatingBody ? "翻译中…" : "翻译"}</button>}
+                {!storedTranslation && needsMomentBodyTranslation(sourceText) && <button type="button" className="moment-body-translate" disabled={translatingBody} onClick={translateBody}>{translatingBody ? "翻译中…" : "翻译"}</button>}
                 {bodyTranslationError && <div role="status" className="ts-12 text-[var(--c-text-muted)]">{bodyTranslationError}</div>}
             </div>
 
@@ -488,7 +489,7 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
                         </div>
                         <div className="modal-footer" data-ui="modal-footer">
                             <button className="ui-btn ui-btn-ghost" onClick={() => setEditingPostOpen(false)}>取消</button>
-                            <button className="ui-btn ui-btn-action" disabled={!postContentDraft.trim()} onClick={handlePostEditSave}>保存</button>
+                            <button className="ui-btn ui-btn-action" disabled={!postContentDraft.trim() && !post.musicLyricShare} onClick={handlePostEditSave}>保存</button>
                         </div>
                     </div>
                 </div>,

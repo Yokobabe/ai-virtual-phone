@@ -25,5 +25,14 @@ post={id:'p',content:'Rain again.'};const c=mod.translateMomentBody('p');revisio
 const d=mod.translateMomentBody('p');post.content='Edited body.';finish({content:'又下雨了。'});await d;assert.equal(post.contentTranslation,undefined);
 const e=mod.translateMomentBody('p');finish({content:'No translation.'});await assert.rejects(e,/未获得有效中文译文/);
 const f=mod.translateMomentBody('p');post=null;finish({content:'修改后的正文。'});await f;
-console.log('Moments body translation: language, cache, dedup, identity/edit/delete guards and invalid response checks passed.');
+post={id:'lyric',content:'Song and lyrics plus caption',musicLyricShare:{caption:'Stay here with me.'}};
+assert.equal(mod.momentTranslationSource(post),'Stay here with me.');
+const lyric=mod.translateMomentBody('lyric');finish({content:'留在这里陪我。'});await lyric;
+assert.equal(post.contentTranslationSource,'Stay here with me.');
+assert.equal(post.contentTranslation,'留在这里陪我。');
+post.musicLyricShare.caption='';assert.equal(mod.momentTranslationSource(post),'');
+const before=calls;await mod.translateMomentBody('lyric');assert.equal(calls,before);
+post.musicLyricShare.caption='New caption.';const stale=mod.translateMomentBody('lyric');post.musicLyricShare.caption='Changed caption.';finish({content:'新的附言。'});await stale;
+assert.equal(post.contentTranslationSource,'Stay here with me.');
+console.log('Moments body translation: language, cache, dedup, identity/edit/delete guards, lyric caption/clear/stale response checks passed.');
 })().catch(e=>{console.error(e);process.exitCode=1});

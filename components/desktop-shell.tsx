@@ -2382,6 +2382,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
   // Allow other components to switch apps via custom event
   const [chatInitSessionId, setChatInitSessionId] = useState<string | null>(null);
   const [chatFeedsRequest, setChatFeedsRequest] = useState(0);
+  const [chatSessionRequest, setChatSessionRequest] = useState(0);
   const [activeChatSession, setActiveChatSession] = useState<ChatSession | null>(null);
   const [customAppLaunchContext, setCustomAppLaunchContext] = useState<CustomAppLaunchState | null>(null);
   const [appMarketLaunchContext, setAppMarketLaunchContext] = useState<Record<string, unknown> | null>(null);
@@ -2449,6 +2450,8 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
   }, []);
 
   const openChatSessionFromNotice = useCallback((sessionId: string) => {
+    setChatSessionRequest(value => value + 1);
+    setChatFeedsRequest(0);
     setQuickReply(null);
     musicOverlayControllerRef.current?.closeFullPlayer();
     if (chatMessageNoticeTimerRef.current !== null) {
@@ -4005,6 +4008,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
           }}
           initialSessionId={chatInitSessionId}
           feedsRequest={chatFeedsRequest}
+          sessionRequest={chatSessionRequest}
           onSessionChange={setActiveChatSession}
         />
       );

@@ -117,7 +117,8 @@ vm.runInContext(ts.transpileModule(`var handleSendText = ${extract('components/c
     const base = { character, history: [writes[0]], worldBooks: [], regexes: [], preset: null, appId: 'chat', appTags: ['chat', 'text'], userIdentity: { id: 'A', name: 'A' }, timeAware: false };
     const privatePrompt = assembler.assemblePromptPayload(base);
     const sharedSong = { ...writes[0], listeningContext: undefined, mediaType: 'music_share', mediaData: { musicTitle: 'Song', musicArtist: 'Singer' } };
-    assert.equal(assembler.formatRichMediaForHistory(sharedSong, 'A', 'C'), '[音乐分享:Song|Singer]');
+    assert.equal(assembler.formatRichMediaForHistory(sharedSong, 'A', 'C'), '[音乐分享:Song|Singer]\n' + sharedSong.content.trim());
+    assert.equal(assembler.formatRichMediaForHistory({ ...sharedSong, content: '' }, 'A', 'C'), '[音乐分享:Song|Singer]');
     assert.equal(assembler.assemblePromptPayload({ ...base, history: [sharedSong] }).filter(message => message.content === music.MUSIC_LISTENING_INSTRUCTION).length, 1);
 
     const groupRuntime = { loadCharacters: () => [character], formatRichMediaForHistory: assembler.formatRichMediaForHistory,

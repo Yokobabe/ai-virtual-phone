@@ -4,6 +4,7 @@
 import { createContext, useContext, useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import type { MusicTrack } from "./music-storage";
 import { getAudioBlob, markTrackPlayed } from "./music-storage";
+import { getListeningRoom } from "./listen-together";
 import { findPlayableMatch, getNeteaseLyrics, getNeteasePlayUrl, getNeteasePlayInfo, getNeteaseSongDetail } from "./music-service";
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 import { getCurrentIdentityId } from "./identity-runtime";
@@ -176,6 +177,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
                     const nextIdx = idx + 1;
                     if (nextIdx < q.length) {
                         nextTrack = q[nextIdx];
+                    } else if (getListeningRoom()?.status === "joined") {
+                        nextTrack = q[0];
                     }
                 }
 

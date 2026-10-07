@@ -131,7 +131,13 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, onPhot
         case "quote":
             return <QuoteBubble msg={msg} displayContent={displayContent} replyAccessory={replyAccessory} quoteSource={quoteSource} quoteSourceStyle={quoteSourceStyle} defaultTranslationExpanded={defaultTranslationExpanded} reactionStyleForActor={reactionStyleForActor} />;
         case "music_share":
-            return <MusicShareBubble msg={msg} onPlay={onMusicPlay} />;
+            return <div className="chat-music-share-with-caption">
+                <MusicShareBubble msg={msg} onPlay={onMusicPlay} />
+                {msg.content.trim() && <div className={`chat-bubble rounded-md chat-music-share-caption chat-bubble-role-${msg.role}`} data-media-type="text" data-ui={msg.role === "user" ? "bubble-user" : "bubble-bot"}>
+                    <span className="imessage-bubble-surface" aria-hidden="true" />
+                    <TextBubble content={displayContent ?? msg.content} onActionSelect={onActionSelect} defaultTranslationExpanded={defaultTranslationExpanded} chatText={msg.role === "assistant"} />
+                </div>}
+            </div>;
         case "media_file":
             return msg.mediaData?.photoGroupId
                 ? <ImageBubble msg={msg} onUpdate={onUpdate} onPhotoAnnotationsSave={onPhotoAnnotationsSave} characterId={characterId} reactionStyleForActor={reactionStyleForActor} />

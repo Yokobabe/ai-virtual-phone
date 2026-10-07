@@ -7093,7 +7093,7 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
                                 className="chat-msg-wrapper"
                                 data-role={uiRole(msg)}
                                 style={{
-                                    ...(!renderMsg.mediaType || renderMsg.mediaType === "audio" || renderMsg.mediaType === "quote" ? groupBubbleTint(msg.senderCharacterId || session.contactId, uiRole(msg) === "user") : {}),
+                                    ...(!renderMsg.mediaType || renderMsg.mediaType === "audio" || renderMsg.mediaType === "quote" || (renderMsg.mediaType === "music_share" && renderMsg.content.trim()) ? groupBubbleTint(msg.senderCharacterId || session.contactId, uiRole(msg) === "user") : {}),
                                     ...(activeMessageId === msg.id && contextMenuAnchor?.focusBubble ? { transform: `translate3d(0, ${contextFocusShift}px, 0)` } : {}),
                                 } as React.CSSProperties}
                                 {...(isEmptyBubble && renderMsg.reasoningText ? { "data-reasoning-empty": "" } : {})}

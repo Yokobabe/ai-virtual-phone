@@ -25,12 +25,13 @@ export type PhoneChatAppProps = {
     onClose: () => void;
     initialSessionId?: string | null;
     feedsRequest?: number;
+    sessionRequest?: number;
     onSessionChange?: (session: ChatSession | null) => void;
     sharePayload?: ChatSharePayload | null;
     onShareDone?: () => void;
 };
 
-export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSessionId, feedsRequest, onSessionChange, sharePayload, onShareDone }: PhoneChatAppProps) {
+export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSessionId, feedsRequest, sessionRequest, onSessionChange, sharePayload, onShareDone }: PhoneChatAppProps) {
     const sharePayloadRef = useRef(sharePayload);
     sharePayloadRef.current = sharePayload;
     const [activeTab, setActiveTab] = useState<TabKey>("messages");
@@ -56,28 +57,19 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
     useEffect(() => {
         hydrateChatStorage().then(() => {
             setDbReady(true);
-            // Resolve initial session after hydration
-            if (initialSessionId && !sharePayloadRef.current) {
-                const s = loadChatSessions().find(s => s.id === initialSessionId);
-                if (s) setActiveSession(s);
-            }
         });
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // React to external session navigation (e.g., incoming call acceptance)
-    // Only fires when initialSessionId CHANGES after mount (mount case handled by hydration above)
-    const prevInitSessionId = useRef(initialSessionId);
+    // Apply the latest destination after hydration, including repeat requests.
     useEffect(() => {
-        if (initialSessionId === prevInitSessionId.current) return;
-        prevInitSessionId.current = initialSessionId;
-        if (!dbReady) return;
+        if (!dbReady || sharePayloadRef.current) return;
         if (!initialSessionId) {
             setActiveSession(null);
             return;
         }
         const s = loadChatSessions().find(s => s.id === initialSessionId);
-        if (s) setActiveSession(s);
-    }, [initialSessionId, dbReady]);
+        if (s) { setActiveMascot(false); setActiveSession(s); setActiveTab("messages"); }
+    }, [initialSessionId, dbReady, sessionRequest]);
 
     // When sharePayload is set, switch to contacts tab (and close any open chat room)
     useEffect(() => {

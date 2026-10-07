@@ -28,3 +28,37 @@ assert.equal(chat.calls.filter(c => c[0] === 'message').length, 1);
 assert.doesNotMatch(source, /已发送到对话|已发布到朋友圈|setTarget\("moments"\)/);
 assert.match(source, /onView\(sentDestination.current\)/);
 console.log('PASS: direct moments publish, duplicate guard, resolved private-chat destination and go-view wiring; synthetic storage only.');
+
+const phoneSource = fs.readFileSync('components/chat/phone-chat-app.tsx', 'utf8');
+const phoneAst = ts.createSourceFile('phone.tsx', phoneSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const effects = [];
+function collectEffects(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(phoneAst) === 'useEffect') effects.push(node);
+    ts.forEachChild(node, collectEffects);
+}
+collectEffects(phoneAst);
+const sessionEffect = effects.find(node => node.arguments[1]?.getText(phoneAst) === '[initialSessionId, dbReady, sessionRequest]');
+assert.ok(sessionEffect, 'session destination must react to hydration and repeat requests');
+const state = { dbReady: false, sharePayloadRef: { current: null }, initialSessionId: session.id,
+    loadChatSessions: () => [session], setActiveMascot: () => {},
+    setActiveSession: value => state.opened = value, setActiveTab: value => state.tab = value };
+function runEffect(effect) {
+    const code = ts.transpileModule(`(${effect.arguments[0].getText(phoneAst)})()`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+    vm.runInNewContext(code, state);
+}
+runEffect(sessionEffect);
+assert.equal(state.opened, undefined);
+state.dbReady = true;
+runEffect(sessionEffect);
+assert.equal(state.opened.id, session.id);
+state.opened = null;
+runEffect(sessionEffect);
+assert.equal(state.opened.id, session.id, 'repeat request reopens the same session');
+state.initialSessionId = null;
+state.feedsRequest = 1;
+const feedsEffect = effects.find(node => node.arguments[1]?.getText(phoneAst) === '[dbReady, feedsRequest, initialSessionId]');
+assert.ok(feedsEffect);
+runEffect(feedsEffect);
+assert.equal(state.tab, 'feeds');
+assert.equal(state.opened, null);
+console.log('PASS: actual navigation effects cover delayed hydration, repeat chat destination, and Moments feed.');

@@ -50,7 +50,7 @@ export function listeningRoomPrompt(characterId: string, sessionId?: string): st
     if (current.status === "invited") return `用户邀请你一起听歌。按人设、关系与当前意愿接受或拒绝；自然回复后附[一起听:${current.id}:接受]或[一起听:${current.id}:拒绝]。`;
     const snapshot = getMusicControlBridge()?.getState();
     const track = snapshot?.identityId === current.identityId ? snapshot.currentTrack : null;
-    return `你正在与用户一起听歌。${track ? `当前${snapshot!.isPlaying ? "播放" : "暂停"}：${track.title} · ${track.artist}，${lyricTimestamp(snapshot!.currentTime)}。` : "尚未播放歌曲。"}用户发言中的歌词定位优先于当前进度。继续当前对话；想结束时自然说明并附[一起听:${current.id}:退出]。`;
+    return `你正在与用户一起听歌。${track ? `当前${snapshot!.isPlaying ? "播放" : "暂停"}：${track.title} · ${track.artist}，${lyricTimestamp(snapshot!.currentTime)}。` : "尚未播放歌曲。"}换歌、歌曲结束或暂停不结束一起听，无需重新邀请；仅任一方主动退出才结束。用户发言中的歌词定位优先于当前进度。继续当前对话；想结束时自然说明并附[一起听:${current.id}:退出]。`;
 }
 export function applyListeningRoomReply(text: string, sessionId: string): string {
     const cleaned = text.replace(/\[一起听邀请(?::([^\]\n]*))?\]/g, (_, song: string | undefined) => {
@@ -132,7 +132,7 @@ export async function respondToListeningInvitation(id: string, sessionId: string
         room = { ...current, status: accept ? "joined" : "declined", startedAt: Date.now() };
         const message = loadChatMessages(sessionId).find(item => item.id === current.invitationMessageId);
         if (message?.mediaData?.listeningInvite) updateMessageMediaData(message.id, { ...message.mediaData, listeningInvite: { ...message.mediaData.listeningInvite, response: accept ? "accepted" : "declined" } });
-        pushChatMessage({ sessionId, role: "user", content: accept ? "接受了你的一起听邀请。" : "暂时不接受这次一起听邀请。" });
+        pushChatMessage({ sessionId, role: "system", content: accept ? "用户已接受一起听邀请。" : "用户暂未接受一起听邀请。" });
         emit();
         window.dispatchEvent(new CustomEvent("chat-messages-updated", { detail: { sessionId } }));
         window.dispatchEvent(new CustomEvent(CHAT_REQUEST_REPLY_EVENT, { detail: { sessionId } }));

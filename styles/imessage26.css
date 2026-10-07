@@ -2326,6 +2326,9 @@
 }
 
 /* Text pairs share one available width instead of separately shrinking columns. */
+.chat-music-share-with-caption { display:flex; flex-direction:column; gap:4px; min-width:0; align-items:flex-start; }
+.chat-bubble-role-user > .chat-music-share-with-caption { align-items:flex-end; }
+.chat-music-share-with-caption > .chat-music-share-caption { position:relative; isolation:isolate; width:fit-content; max-width:100%; white-space:pre-wrap; overflow-wrap:anywhere; }
 .chat-room-wrapper[data-imessage-private]:not([data-imessage-group]) .chat-msg-content-wrap:has([data-media-type="text"]) {
   max-width: 86% !important;
 }

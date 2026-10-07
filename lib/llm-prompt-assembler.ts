@@ -1295,7 +1295,7 @@ export function formatRichMediaForHistory(msg: ChatMessage, userName: string, ch
         }
         case "music_share": {
             const mTitle = d?.musicTitle || "未知歌曲";
-            return `[音乐分享:${mTitle}${d?.musicArtist ? "|" + d.musicArtist : ""}]`;
+            return [`[音乐分享:${mTitle}${d?.musicArtist ? "|" + d.musicArtist : ""}]`, msg.content.trim()].filter(Boolean).join("\n");
         }
         case "xiaohongshu_note_share":
             return formatXiaohongshuShareForPrompt({
