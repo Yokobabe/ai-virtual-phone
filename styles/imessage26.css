@@ -2341,11 +2341,8 @@
 .chat-room-wrapper[data-imessage-private] .chat-bilingual-block[data-chat-text-layout] {
   max-width: 100%;
 }
-/* Translation wraps inside the original's intrinsic width, without contributing
-   its own preferred width. Its height still participates in normal flow. */
-.chat-room-wrapper[data-imessage-private] .chat-bilingual-block-auto[data-chat-text-layout] > .chat-bilingual-section-translation {
-  contain: inline-size;
-}
+/* Both languages contribute their intrinsic width; the bubble's maximum width
+   caps the wider one and lets either section wrap naturally. */
 .chat-room-wrapper[data-imessage-private] .chat-bilingual-block[data-chat-text-layout] > .chat-bilingual-section {
   width: auto;
   align-self: stretch;
