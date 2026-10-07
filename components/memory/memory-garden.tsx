@@ -196,15 +196,34 @@ export function MemoryFactsTabs({ tab, onChange }: { tab: "short" | "long" | "sh
 
 export function MemoryEvidenceList({ evidence }: { evidence: MemoryEvidence[] }) {
     if (!evidence?.length) return null;
-    return <details className={styles.evidence}><summary>原话依据 · {evidence.length}</summary><div>
-        {evidence.map(e => <blockquote key={e.id}><small>{new Date(e.timestamp).toLocaleString("zh-CN")} · {e.sourceApp}</small><p>{e.excerpt}</p></blockquote>)}
+    return <details className={styles.evidence}><summary>关联材料 · {evidence.length}</summary><div>
+        {evidence.map(e => <blockquote key={e.id}><small>{new Date(e.timestamp).toLocaleString("zh-CN")} · {e.sourceApp} · {e.kind === "memory" ? "记忆摘要" : "事件片段"}</small><p>{e.excerpt}</p>
+            {e.context && e.context !== e.excerpt && <details><summary>查看上下文</summary><p>{e.context}</p></details>}
+        </blockquote>)}
     </div></details>;
+}
+
+function ReflectionSources({ value }: { value: CognitionFacet }) {
+    const basis = value.basis;
+    return <>
+        {basis && <details className={styles.evidence}><summary>本次阅读材料 · {basis.mode === "review" ? "重新审视" : "增量更新"}</summary><div className={styles.basis}>
+            <p>经历 {basis.events} 条 · 核心记忆 {basis.core} 条 · 长期记忆 {basis.longTerm} 条 · 旧判断来源 {basis.previousSources} 条</p>
+            {basis.earliest && basis.latest && <small>{new Date(basis.earliest).toLocaleString("zh-CN")} — {new Date(basis.latest).toLocaleString("zh-CN")}</small>}
+            <p>材料按预算选取，约 {basis.estimatedTokens} token{basis.omittedEvents ? `；另有 ${basis.omittedEvents} 条经历未纳入本次重审` : ""}。人设、当前用户身份和上一版认知一同参与审视。</p>
+        </div></details>}
+        {value.claims?.length ? <details className={styles.evidence}><summary>判断与依据 · {value.claims.length}</summary><div>
+            {value.claims.map((claim, index) => <article key={index} className={styles.claim}>
+                <small>{({ fact: "经历中的事实", interpretation: "他的理解", hypothesis: "尚在猜测" })[claim.kind]}</small><p>{claim.text}</p>
+                <MemoryEvidenceList evidence={value.evidence.filter(e => claim.evidenceIds.includes(e.id))} />
+            </article>)}
+        </div></details> : <MemoryEvidenceList evidence={value.evidence} />}
+    </>;
 }
 
 function Facet({ title, value }: { title: string; value?: CognitionFacet }) {
     return <article className={styles.facet}><h3>{title}</h3>
         <p>{value?.text || "还没有整理到这里。新的相处与记忆总结会慢慢留下轮廓。"}</p>
-        {value && <><small>依据截至 {new Date(value.updatedAt).toLocaleString("zh-CN")}</small><MemoryEvidenceList evidence={value.evidence} /></>}
+        {value && <><small>依据截至 {new Date(value.updatedAt).toLocaleString("zh-CN")}</small><ReflectionSources value={value} /></>}
     </article>;
 }
 
@@ -247,7 +266,7 @@ function CognitionHistory({ state, facet }: { state: MemoryCognition; facet: Cog
                 <div><p>{revision.value.text}</p><small>依据截至 {new Date(revision.value.updatedAt).toLocaleString("zh-CN")}</small>
                     {revision.emotion && <p><strong>当时的情绪</strong><br />{revision.emotion.text}</p>}
                     {revision.mood && <p><strong>当时的心境</strong><br />{revision.mood.text}</p>}
-                    <MemoryEvidenceList evidence={revision.value.evidence} />
+                    <ReflectionSources value={revision.value} />
                 </div>
             </details>)}
             {busy && <p role="status" className={styles.historyNote}>读取中…</p>}
@@ -264,8 +283,8 @@ export function MemoryCognitionPanel({ tab, state, recall, busy, onSummarize, on
 }) {
     const labels = { commitment: "约定", plan: "计划", wish: "愿望", tension: "悬而未决" };
     return <div className={styles.panel}>
-        <div className={styles.updateRow}><p>随记忆总结增量更新<br /><span>查看不调用模型，整理更新会调用记忆总结模型</span></p>
-            <button type="button" disabled={busy} onClick={onSummarize}><Sparkles size={15} />{busy ? "整理中…" : "整理更新"}</button></div>
+        <div className={styles.updateRow}><p>随记忆总结自动更新<br /><span>{tab === "open" ? "整理新经历，更新未了事项" : "结合记忆、人设与当前身份重新审视"}</span></p>
+            <button type="button" disabled={busy} onClick={onSummarize}><Sparkles size={15} />{busy ? "整理中…" : tab === "open" ? "整理更新" : "重新审视"}</button></div>
         {tab !== "open" && <CognitionHistory key={`${state.characterId}:${tab}`} state={state} facet={tab} />}
         {tab === "mirror" ? <><Facet title="人物理解" value={state.mirror} /><Facet title="最近情绪" value={state.emotion} /><Facet title="背景心境" value={state.mood} />
             <article className={styles.facet}><h3>最近一次长期记忆召回</h3>{recall ? <p>{({ all: "少量记忆", vector: "向量与关键词", keyword: "关键词与近期", empty: "未召回" })[recall.mode]} · {recall.selected}/{recall.candidates} 条<br />约 {recall.estimatedTokens} token（长期记忆正文估算）<br /><small>{recall.reason}<br />{new Date(recall.at).toLocaleString("zh-CN")}</small></p> : <p>角色下一次调用记忆后，会在这里显示。这里的估算不是账单用量。</p>}</article>

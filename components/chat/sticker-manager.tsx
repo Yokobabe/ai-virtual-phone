@@ -575,7 +575,7 @@ function PackEditor({ pack, onBack }: { pack: StickerPack; onBack: () => void })
                         <div className="flex flex-col items-center">
                             <button
                                 onClick={() => setShowAddDialog(true)}
-                                className="w-full aspect-square rounded-[20px] bg-transparent border-[1.5px] border-dashed border-[var(--c-icon)]/30 flex flex-col items-center justify-center gap-1.5 text-[var(--c-icon)] cursor-pointer opacity-80 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 transition-all active:scale-95"
+                                className="w-full aspect-square rounded-[20px] bg-transparent border-[1.5px] border-dashed border-[var(--c-icon)]/30 flex flex-col items-center justify-center gap-1.5 text-[var(--c-icon)] cursor-pointer opacity-80 hover:opacity-100 transition-opacity active:scale-95"
                             >
                                 <Plus size={26} strokeWidth={2}/>
                                 <span className="ts-11 font-medium">添加</span>

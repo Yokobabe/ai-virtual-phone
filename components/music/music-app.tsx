@@ -1,6 +1,7 @@
 // components/music/music-app.tsx — Music App main page (immersive, no PageShell)
 "use client";
 
+import { ChevronLeft, Settings } from "lucide-react";
 import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import {
     loadAllTracks, saveTrack, deleteTrack,
@@ -31,10 +32,10 @@ import {
     MUSIC_BG_EVENT, type MusicBgConfig, type MusicPlayerBgMode,
 } from "@/lib/music-bg";
 
-type Props = { onClose: () => void };
+type Props = { onClose: () => void; headerAccessory?: React.ReactNode };
 type TabId = "recommend" | "mine" | "search" | "local";
 
-export default function MusicApp({ onClose }: Props) {
+export default function MusicApp({ onClose, headerAccessory }: Props) {
     const [tracks, setTracks] = useState<MusicTrack[]>([]);
     const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState<TabId>("local");
@@ -301,23 +302,20 @@ export default function MusicApp({ onClose }: Props) {
                         else if (activePlaylist) { setActivePlaylist(null); }
                         else { onClose(); }
                     }} title="返回">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="15 18 9 12 15 6" />
-                        </svg>
+                        <ChevronLeft size={28} strokeWidth={1.9} aria-hidden="true" />
                     </button>
                 </div>
                 <div className="music-header-title">
-                    {dailyView ? "每日推荐" : activePlaylist && tab === "recommend" ? "歌单详情" : tab === "recommend" ? "" : tab === "search" ? "搜索" : tab === "mine" ? "我的" : "本地音乐"}
+                    {dailyView ? "每日推荐" : activePlaylist && tab === "recommend" ? "歌单详情" : tab === "recommend" ? "音乐" : tab === "search" ? "搜索" : tab === "mine" ? "我的" : "本地音乐"}
                 </div>
                 <div className="music-header-right">
                     <button className="music-header-action" onClick={() => setShowSettings(true)} title="设置">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                        </svg>
+                        <Settings size={25} strokeWidth={1.8} aria-hidden="true" />
                     </button>
                 </div>
             </div>
 
+            {headerAccessory}
             {/* Tab content */}
             {tab === "recommend" && hasNetease && (dailyView ? (
                 <DailySongsPage

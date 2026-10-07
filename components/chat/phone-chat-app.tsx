@@ -1,5 +1,6 @@
 "use client";
 
+import type { MusicListeningContext } from "@/lib/music-listening";
 import { memo, useState, useEffect, useRef } from "react";
 import { ChatMessageList } from "./chat-message-list";
 import { ChatContactsList } from "./chat-contacts-list";
@@ -29,9 +30,12 @@ export type PhoneChatAppProps = {
 };
 
 export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSessionId, onSessionChange, sharePayload, onShareDone }: PhoneChatAppProps) {
+    const sharePayloadRef = useRef(sharePayload);
+    sharePayloadRef.current = sharePayload;
     const [activeTab, setActiveTab] = useState<TabKey>("messages");
     const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
     const [activeMascot, setActiveMascot] = useState(false);
+    const [lyricQuote, setLyricQuote] = useState<{ sessionId: string; context: MusicListeningContext } | null>(null);
     // Chat app-level custom CSS (affects all chat pages, lower priority than per-session CSS)
     const [chatAppCSS, setChatAppCSS] = useState(() =>
         typeof window !== "undefined" ? kvGet("chat-app-custom-css") || "" : ""
@@ -46,7 +50,7 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
         hydrateChatStorage().then(() => {
             setDbReady(true);
             // Resolve initial session after hydration
-            if (initialSessionId) {
+            if (initialSessionId && !sharePayloadRef.current) {
                 const s = loadChatSessions().find(s => s.id === initialSessionId);
                 if (s) setActiveSession(s);
             }
@@ -166,11 +170,14 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
     const handleSelectContact = (sess: ChatSession | null) => {
         if (sharePayload && sess) {
             if (sharePayload.type === "music") {
-                pushChatMessage({
+                if (sharePayload.lyricMode === "quote" && sharePayload.listeningContext?.reference) {
+                    setLyricQuote({ sessionId: sess.id, context: sharePayload.listeningContext });
+                } else pushChatMessage({
                     sessionId: sess.id,
                     role: "user",
                     content: "",
                     mediaType: "music_share",
+                    listeningContext: sharePayload.listeningContext,
                     mediaData: {
                         musicTitle: sharePayload.title,
                         musicArtist: sharePayload.artist,
@@ -304,6 +311,8 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
                 <div key={sess.id} style={{ display: activeSession?.id === sess.id ? undefined : 'none' }} className="chat-room-layer absolute inset-0">
                     <ChatRoom
                         session={sess}
+                        lyricQuote={lyricQuote?.sessionId === sess.id ? lyricQuote.context : undefined}
+                        onLyricQuoteConsumed={() => setLyricQuote(null)}
                         onBack={() => setActiveSession(null)}
                         onDeleted={() => {
                             // 会话已删除：把缓存的聊天室一并卸载，避免僵尸挂载

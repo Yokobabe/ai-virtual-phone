@@ -1995,7 +1995,7 @@ export async function buildChatPromptMessages(
     const coreMemories = coreResults ? formatCoreMemories(coreResults) : "";
     const scheduleSummary = buildCalendarScheduleMarker("character", character.id, getWeekStartIso(now));
     const currentSchedule = getCurrentCalendarScheduleForPrompt("character", character.id, now);
-    const musicOnlineHint = isNeteaseConfigured() ? "- 你可以推荐任何歌曲，系统会在线搜索并播放。不局限于用户本地音乐库。\n" : "\n";
+    const musicOnlineHint = isNeteaseConfigured() ? "- 可按角色兴趣分享歌曲，不限本地曲库；分享卡片不自动播放，播放须使用可用音乐工具。\n" : "\n";
     const pluginPrompt = await runChatPluginTransform("prompt.system", {
         sessionId: session.id,
         isGroup: !!session.isGroup,

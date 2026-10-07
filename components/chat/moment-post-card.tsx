@@ -18,6 +18,7 @@ import { resolveUserIdentity } from "@/lib/settings-storage";
 import { buildTwoLevelMomentThreads } from "@/lib/moments-comment-threading";
 import { getChatImageFromIndexedDB } from "@/lib/chat-asset-storage";
 import { splitBilingualText } from "@/lib/bilingual-text";
+import { needsMomentBodyTranslation, translateMomentBody } from "@/lib/moment-body-translation";
 import { retryMomentGeneratedPhoto } from "@/lib/generated-image-retry";
 import { GeneratedImageErrorDialog } from "./generated-image-error-dialog";
 import { Trash2, MoreHorizontal, MapPin, Heart, MessageCircle, Pencil } from "lucide-react";
@@ -38,6 +39,20 @@ function MomentDefaultAvatar({ alt = "" }: { alt?: string }) {
 }
 
 export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentComposer, onOpenReplyComposer }: Props) {
+    const [translatingBody, setTranslatingBody] = useState(false);
+    const [bodyTranslationError, setBodyTranslationError] = useState("");
+    const bodyTranslationPending = useRef(false);
+    const storedTranslation = post.contentTranslationSource === post.content ? post.contentTranslation : undefined;
+    const bodyText = storedTranslation && !splitBilingualText(post.content) ? `${post.content}|${storedTranslation}` : post.content;
+    const translateBody = async () => {
+        if (bodyTranslationPending.current) return;
+        bodyTranslationPending.current = true;
+        setTranslatingBody(true);
+        setBodyTranslationError("");
+        try { await translateMomentBody(post.id); onUpdate(); }
+        catch (error) { setBodyTranslationError(error instanceof Error ? error.message : "翻译失败，请重试"); }
+        finally { bodyTranslationPending.current = false; setTranslatingBody(false); }
+    };
     const [comments, setComments] = useState<MomentComment[]>(() => loadMomentComments(post.id));
     const [showPhotoPromptEditor, setShowPhotoPromptEditor] = useState(false);
     const [photoPromptDraft, setPhotoPromptDraft] = useState("");
@@ -324,10 +339,12 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
             {/* Text content */}
             <div className="feed-post-content ts-16 leading-[1.75] text-[var(--c-text-title)] whitespace-pre-wrap break-words mb-3 w-full">
                 <BilingualTextBlock
-                    text={post.content}
+                    text={bodyText}
                     mode="plain"
                     defaultExpanded={defaultTranslationExpanded}
                 />
+                {!storedTranslation && needsMomentBodyTranslation(post.content) && <button type="button" className="moment-body-translate" disabled={translatingBody} onClick={translateBody}>{translatingBody ? "翻译中…" : "翻译"}</button>}
+                {bodyTranslationError && <div role="status" className="ts-12 text-[var(--c-text-muted)]">{bodyTranslationError}</div>}
             </div>
 
             {/* Location */}

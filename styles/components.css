@@ -2327,7 +2327,7 @@
   background: transparent;
   cursor: pointer;
   text-align: left;
-  transition: background-color 120ms ease;
+  transition: opacity 120ms ease;
   position: relative;
   width: 100%;
 }
@@ -3549,7 +3549,7 @@
   text-align: left;
   cursor: pointer;
 }
-.cw-move-menu button:active { background: var(--ink); color: var(--c-panel); }
+.cw-move-menu button:active { opacity: .72; }
 
 .cw-empty {
   color: color-mix(in srgb, var(--ink) 52%, transparent);
@@ -4963,8 +4963,8 @@
 }
 
 .mem-entry-menu-btn:active {
-  background: color-mix(in srgb, var(--c-text) 10%, transparent);
   color: var(--c-text-title);
+  opacity: .72;
 }
 
 .mem-entry-menu {
@@ -5000,7 +5000,7 @@
 }
 
 .mem-entry-menu button:active {
-  background: color-mix(in srgb, var(--c-text) 10%, transparent);
+  opacity: .72;
 }
 
 .mem-entry-menu button.is-danger {
@@ -5506,4 +5506,21 @@
     --c-page-body-bg: rgba(255, 255, 255, .12);
     border: 1px solid rgba(255, 255, 255, .12);
   }
+}
+
+/* Quiet menu feedback: native touch rectangles must not cover the glass surface.
+   Keep persistent selected states and keyboard focus indicators independent. */
+:where(button, a, summary, [role="button"], [role="menuitem"], .menu-item) {
+  -webkit-tap-highlight-color: transparent;
+}
+:is(.menu-item, .ctx-menu-btn, .chat-plus-menu-item, .imessage-header-call-option,
+    .imessage-list-popover button, .chat-beauty-picker-options button,
+    .wallet-currency-menu button, .feed-post-action-menu button,
+    .mp-option, .mp-icon-button, .mp-lyric-action-buttons button,
+    .music-playlist-picker-item):active:not(:disabled) {
+  opacity: .68;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.menu-item, .ctx-menu-btn, .chat-plus-menu-item,
+      .imessage-header-call-option, .mp-option) { transition: none; }
 }

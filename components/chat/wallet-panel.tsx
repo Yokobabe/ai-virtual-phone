@@ -394,7 +394,7 @@ export function WalletPanel({ onBack }: WalletPanelProps) {
           .wallet-currency-menu svg { color:#007aff; flex-shrink:0; }
           .wallet-currency-picker :focus-visible { outline:2px solid #007aff; outline-offset:3px; }
           .wallet-currency-picker [aria-disabled=true],.wallet-currency-menu button:disabled { opacity:.5; cursor:wait; }
-          @media (hover:hover) { .wallet-currency-menu button:hover { background:rgba(120,120,128,.12); } }
+          @media (hover:hover) { .wallet-currency-menu button:hover { opacity:.72; } }
           @media (prefers-color-scheme:dark) { .wallet-currency-picker { --wallet-material:rgba(36,36,38,.94); --wallet-ink:#f5f5f7; --wallet-muted:#aeaeb2; --wallet-rim:rgba(255,255,255,.12); } .wallet-currency-menu svg { color:#0a84ff; } }
         `}</style>
         {changingCurrency && <span role="status" className="ts-12 text-[var(--c-text)]">正在按汇率换算余额与银行卡…</span>}

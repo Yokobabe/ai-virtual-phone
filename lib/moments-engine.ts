@@ -51,7 +51,7 @@ import { previewMessagesForApi, sendLLMRequest } from "./chat-engine";
 import { bgSetInterval } from "./bg-timer";
 import { sendBrowserNotification } from "./browser-notification";
 import { buildTwoLevelMomentThreads } from "./moments-comment-threading";
-import { DEFAULT_MOMENTS_BILINGUAL_PROMPT, resolveBilingualPrompt } from "./bilingual-prompt-defaults";
+import { buildMomentsBilingualInstruction } from "./moments-bilingual";
 import { generateImageFromConfiguredApi } from "./image-generation-service";
 import { isAbortError, throwIfAborted } from "./abort-utils";
 import { getChatImageFromIndexedDB, saveChatImageToIndexedDB } from "./chat-asset-storage";
@@ -169,10 +169,6 @@ type AssemblerResult = {
     preset: PresetConfig | null;
     character: Character;
 };
-
-function buildMomentsBilingualInstruction(enabled: boolean, customPrompt?: string): string {
-    return resolveBilingualPrompt(enabled, customPrompt, DEFAULT_MOMENTS_BILINGUAL_PROMPT);
-}
 
 /**
  * Resolve all inputs needed for assemblePromptPayload(), following the same

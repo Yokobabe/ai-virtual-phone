@@ -171,13 +171,13 @@
 .imessage-list-actions { display: inline-flex; align-items: center; border-radius: 28px; padding: 2px 4px; flex-shrink: 0; }
 .imessage-list-action { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; color: #101012; background: transparent; cursor: pointer; }
 .imessage-list-action[data-filter-active] { color: #101012; background: rgba(120,120,128,.12); }
-.imessage-list-action:active { background: rgba(120,120,128,.12); }
+.imessage-list-action:active { opacity: .72; }
 .imessage-list-page .imessage-list-popover { position: absolute; top: calc(100% + 10px); right: 0; width: 208px; padding: 6px; border-radius: 23px; z-index: 100; overflow: hidden; background: rgba(250,250,252,.9); }
 .imessage-list-popover .menu-option-border,
 .imessage-filter-option { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 10px 12px; font-size: 15px; color: var(--c-text-title); border: 0; border-radius: 12px; background: transparent; text-align: left; cursor: pointer; }
 .imessage-filter-option { justify-content: space-between; }
-.imessage-list-popover button:hover { background: rgba(120,120,128,.1); }
-.imessage-list-popover button:active { background: rgba(120,120,128,.18); }
+.imessage-list-popover button:hover { opacity: .72; }
+.imessage-list-popover button:active { opacity: .72; }
 .imessage-filter-option[aria-pressed="true"] { color: #101012; font-weight: 600; }
 :is(.imessage-list-page, .imessage-contacts-page) .chat-search-bar { min-height: 40px; border-radius: 12px; padding: 9px 13px; background: rgba(120,120,128,.09); border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .imessage-list-page .minimal-list-item { position: relative; width: 100%; margin: 0; padding: 12px 20px 12px 28px; gap: 12px; border: 0; text-align: left; border-radius: 0; min-height: 82px; }
@@ -314,8 +314,7 @@
   border-color: var(--im26-glass-edge);
   box-shadow: var(--im26-glass-shadow);
 }
-.chat-room-wrapper[data-imessage-private][data-chat-dark] .imessage-header-button:active {
-  background: rgba(65,65,72,.9);
+.chat-room-wrapper[data-imessage-private][data-chat-dark] .imessage-header-button:active { opacity: .72;
 }
 
 /* Night rollout: transfer and gift cards only. Preserve daytime geometry. */
@@ -323,7 +322,7 @@
   --c-text-title:var(--im26-ink); --c-text:var(--im26-ink); --c-icon:var(--im26-secondary);
   --c-border:var(--im26-hairline);
 }
-.chat-room-wrapper[data-imessage-private][data-chat-dark] :is(.imessage-context-index,.chat-floating-ctx-menu) .ctx-menu-btn:hover { background:rgba(255,255,255,.08); }
+.chat-room-wrapper[data-imessage-private][data-chat-dark] :is(.imessage-context-index,.chat-floating-ctx-menu) .ctx-menu-btn:hover { opacity: .72; }
 .chat-room-wrapper[data-imessage-private][data-chat-dark] .chat-plus-icon-box { box-shadow:inset 0 1px 0 rgba(255,255,255,.12); }
 .chat-room-wrapper[data-imessage-private][data-chat-dark] :is(.chat-plus-menu, .imessage-context-index, .chat-floating-ctx-menu[data-imessage-tapback-menu]) { box-shadow:var(--im26-glass-shadow); }
 .chat-room-wrapper[data-imessage-private][data-chat-dark] .chat-input-bar[data-imessage-private]::before { box-shadow:var(--im26-glass-shadow); }
@@ -441,7 +440,7 @@
 
 .chat-room-wrapper[data-imessage-private] .imessage-header-button:active {
   transform: scale(.92);
-  background: rgba(235,235,238,.9);
+  opacity: .72;
 }
 
 .chat-room-wrapper[data-imessage-private] .imessage-header-back {
@@ -994,10 +993,14 @@
   transition: transform 140ms ease, background-color 140ms ease;
 }
 
-.chat-room-wrapper[data-imessage-private] .imessage-tapback-option:hover,
 .chat-room-wrapper[data-imessage-private] .imessage-tapback-option[data-selected] {
   background: rgba(255,255,255,.58);
   transform: scale(1.08);
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-tapback-option:hover {
+  transform: scale(1.08);
+  opacity: .72;
 }
 
 .chat-room-wrapper[data-imessage-private] .imessage-tapback-option:active {
@@ -1164,8 +1167,7 @@
   white-space: nowrap;
 }
 
-.chat-room-wrapper[data-imessage-private] :is(.chat-floating-ctx-menu[data-imessage-tapback-menu], .imessage-context-index) .ctx-menu-btn:hover {
-  background: rgba(255,255,255,.38);
+.chat-room-wrapper[data-imessage-private] :is(.chat-floating-ctx-menu[data-imessage-tapback-menu], .imessage-context-index) .ctx-menu-btn:hover { opacity: .72;
 }
 
 .chat-room-wrapper[data-imessage-private] :is(.chat-floating-ctx-menu[data-imessage-tapback-menu], .imessage-context-index) .ctx-menu-btn-danger {
@@ -2518,8 +2520,8 @@
 }
 
 .chat-room-wrapper[data-imessage-private] .imessage-send-effect-option:active {
-  background: color-mix(in srgb, var(--im26-blue) 13%, transparent);
   transform: scale(.96);
+  opacity: .72;
 }
 
 .chat-room-wrapper[data-imessage-private] .imessage-send-effect-symbol {

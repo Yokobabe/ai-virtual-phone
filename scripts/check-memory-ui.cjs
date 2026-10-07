@@ -9,10 +9,19 @@ async function main() {
  try {
   const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:1}), errors=[];
   const cdp=engine==='chromium'?await page.context().newCDPSession(page):null;
+  // Chromium covers native touch; WebKit exercises the same production pointer handlers with mouse input.
+  const pointer=async(type,x,y)=>{
+   if(cdp){await cdp.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'?[]:[{x,y}]});return;}
+   if(type==='touchStart'){await page.mouse.move(x,y);await page.mouse.down();}
+   else if(type==='touchMove')await page.mouse.move(x,y);
+   else await page.mouse.up();
+  };
   if(cdp){await cdp.send('Runtime.enable');cdp.on('Runtime.exceptionThrown',({exceptionDetails:d})=>console.log('EXCEPTION SOURCE',JSON.stringify({url:d.url,line:d.lineNumber,column:d.columnNumber,description:d.exception?.description?.slice(0,180)})));}
   page.on('pageerror',e=>{errors.push(e.message);console.log('BROWSER ERROR',e.message)});
   await page.route('**/api/**',route=>route.abort());
   await page.route('https://**/*',route=>route.abort());
+  // Keep the isolated regression on one compiled version while other shared-workspace editors may trigger HMR.
+  if(page.routeWebSocket)await page.routeWebSocket('**/*webpack-hmr*',socket=>socket.close());
   // Buffer local dev chunks so a partial/compressed transfer cannot corrupt the browser's script input.
   // Compilation only, never execution here; an actual syntax error still fails after three reads.
   await page.route('**/_next/static/chunks/**',async route=>{
@@ -64,7 +73,7 @@ async function main() {
    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('open-app',{detail:{appId:'resources'}})));
    await page.getByText('记忆库',{exact:true}).click();await page.getByRole('navigation',{name:'角色记忆入口'}).waitFor();
   };
-  const openChar=async(name='沈言')=>{await page.getByRole('navigation',{name:'角色记忆入口'}).getByRole('button',{name:new RegExp(name)}).click();await page.getByRole('navigation',{name:'记忆栏目'}).waitFor()};
+  const openChar=async(name='沈言')=>{await page.getByRole('navigation',{name:'角色记忆入口'}).getByRole('button',{name:new RegExp(name)}).click();await page.getByRole('navigation',{name:'记忆栏目'}).getByRole('button',{name:/FACTS/}).waitFor()};
   const checkLayout=async(navName,file)=>{
    const nav=page.getByRole('navigation',{name:navName});
    assert.equal(await nav.getByRole('button').evaluateAll(nodes=>nodes.every(n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1})),true,'Banner overflow');
@@ -187,9 +196,9 @@ async function main() {
   await page.setViewportSize({width:390,height:844});await page.emulateMedia({colorScheme:'light'});
   // Real touch long press opens the action dialog, release does not enter the character.
   const zeroCard=characterNav.getByRole('button',{name:/林溪/});const rect=await zeroCard.boundingBox();
-  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:rect.x+30,y:rect.y+30}]});await page.waitForTimeout(650);
+  await pointer('touchStart',rect.x+30,rect.y+30);await page.waitForTimeout(650);
   await page.getByRole('dialog',{name:'林溪的记忆卡片操作'}).waitFor();
-  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  await pointer('touchEnd');
   assert.equal(await characterNav.count(),1,'Long press must not navigate');
   await page.waitForTimeout(350);await page.screenshot({path:'tmp/memory-pin-dialog-390-light.png'});
   await page.getByRole('button',{name:'置顶',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});
@@ -199,8 +208,8 @@ async function main() {
   await zeroCard.focus();await page.keyboard.press('Shift+F10');await page.getByRole('button',{name:'取消置顶',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});
   assert.deepEqual(await characterOrder(),['夏予','沈言','林溪'],'Unpin restores count order');
   // Scrolling cancels the timer and must not open the action menu.
-  const scrollRect=await zeroCard.boundingBox();await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:scrollRect.x+30,y:scrollRect.y+30}]});
-  await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:scrollRect.x+30,y:scrollRect.y+5}]});await page.waitForTimeout(600);await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  const scrollRect=await zeroCard.boundingBox();await pointer('touchStart',scrollRect.x+30,scrollRect.y+30);
+  await pointer('touchMove',scrollRect.x+30,scrollRect.y+5);await page.waitForTimeout(600);await pointer('touchEnd');
   assert.equal(await page.getByRole('dialog').count(),0,'Touch move cancels long press');await characterNav.waitFor();
   // Keep a pin to check reload and identity boundaries, including the narrow dark dialog.
   await page.setViewportSize({width:320,height:844});await page.emulateMedia({colorScheme:'dark'});await zeroCard.focus();await page.keyboard.press('Shift+F10');
@@ -228,7 +237,7 @@ async function main() {
   await page.screenshot({path:'tmp/memory-facts-single-back-390-light.png'});
   await page.getByRole('button',{name:'返回',exact:true}).click();
   await page.getByRole('navigation',{name:'记忆栏目'}).getByRole('button',{name:/MIRROR/}).focus();await page.keyboard.press('Enter');
-  await page.getByRole('heading',{name:'人物理解',exact:true}).waitFor();assert.equal(await page.getByRole('heading',{name:'人物理解',exact:true}).evaluate(el=>el.getBoundingClientRect().top<430),true,'Section retained the scrolled entry position');await page.getByText('原话依据 · 1',{exact:true}).first().click();await page.getByText('我们周末去海边，好不好？',{exact:true}).first().waitFor();
+  await page.getByRole('heading',{name:'人物理解',exact:true}).waitFor();assert.equal(await page.getByRole('heading',{name:'人物理解',exact:true}).evaluate(el=>el.getBoundingClientRect().top<430),true,'Section retained the scrolled entry position');await page.getByText('关联材料 · 1',{exact:true}).first().click();await page.getByText('我们周末去海边，好不好？',{exact:true}).first().waitFor();
   // Production schema migration keeps the original facet; synthetic earlier results exercise the real read-only, paginated UI.
   await page.evaluate(async()=>{
    const r=indexedDB.open('ai_phone_memory_db_v1');const db=await new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
@@ -258,7 +267,40 @@ async function main() {
   }
   await page.setViewportSize({width:390,height:844});await page.emulateMedia({colorScheme:'light'});
   await page.getByRole('button',{name:'收起历次镜子',exact:true}).click();
-  await page.screenshot({path:'tmp/memory-mirror-390.png'});await page.getByRole('button',{name:'返回',exact:true}).click();
+  await page.screenshot({path:'tmp/memory-mirror-390.png'});
+  // New provenance metadata is read live after an automatic update, without reopening the page.
+  await page.evaluate(async()=>{
+   const r=indexedDB.open('ai_phone_memory_db_v1');const db=await new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+   const read=db.transaction('cognition','readonly').objectStore('cognition').get('C');
+   const state=await new Promise((res,rej)=>{read.onsuccess=()=>res(read.result);read.onerror=()=>rej(read.error)});
+   const now=new Date().toISOString();
+   state.mirror={text:'新的相处让我愿意纠正原来的误判。',digest:'愿意坦诚纠正误判',updatedAt:now,generatedAt:now,revisionId:'review-fixture',
+    evidence:[{id:'memory:long-fixture',sourceApp:'chat',timestamp:now,kind:'memory',excerpt:'我们约好直说。',context:'先前有过误会，后来我们约好直说。彼此都愿意纠正自己的猜测。'}],
+    claims:[{text:'坦诚有助于纠正我的误判',kind:'interpretation',evidenceIds:['memory:long-fixture']}],
+    basis:{mode:'review',events:12,core:1,longTerm:3,previousSources:2,earliest:now,latest:now,estimatedTokens:2800,sources:['chat','moments'],omittedEvents:8}};
+   state.updatedAt=now;
+   const tx=db.transaction(['cognition','cognition_history'],'readwrite');tx.objectStore('cognition').put(state);
+   tx.objectStore('cognition_history').put({id:JSON.stringify(['C','mirror','review-fixture']),characterId:'C',facet:'mirror',origin:'generated',recordedAt:now,value:state.mirror});
+   await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});db.close();
+   window.dispatchEvent(new CustomEvent('memory-cognition-updated',{detail:{characterId:'C'}}));
+  });
+  await page.getByText('新的相处让我愿意纠正原来的误判。',{exact:true}).waitFor();
+  const mirrorFacet=page.locator('article').filter({has:page.getByRole('heading',{name:'人物理解',exact:true})}).first();
+  await mirrorFacet.getByText('本次阅读材料 · 重新审视',{exact:true}).focus();await page.keyboard.press('Enter');
+  await mirrorFacet.getByText('经历 12 条 · 核心记忆 1 条 · 长期记忆 3 条 · 旧判断来源 2 条',{exact:true}).waitFor();
+  await mirrorFacet.getByText('判断与依据 · 1',{exact:true}).click();await mirrorFacet.getByText('他的理解',{exact:true}).waitFor();
+  await mirrorFacet.getByText('关联材料 · 1',{exact:true}).click();await mirrorFacet.getByText('我们约好直说。',{exact:true}).waitFor();
+  await mirrorFacet.getByText('查看上下文',{exact:true}).click();await mirrorFacet.getByText('先前有过误会，后来我们约好直说。彼此都愿意纠正自己的猜测。',{exact:true}).waitFor();
+  assert.ok((await mirrorFacet.innerText()).includes('记忆摘要'),'Summary material must not be presented as a verbatim dialogue');
+  for(const width of [320,390])for(const theme of ['light','dark']){
+   await page.setViewportSize({width,height:844});await page.emulateMedia({colorScheme:theme});
+   assert.ok(await mirrorFacet.evaluate(n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1}),'Provenance overflow');
+   await page.screenshot({path:`tmp/cognition-provenance-${engine}-${width}-${theme}.png`});
+  }
+  await page.setViewportSize({width:390,height:844});await page.emulateMedia({colorScheme:'light'});
+  await page.getByRole('button',{name:'重新审视',exact:true}).click();await page.getByText('未配置记忆总结 API',{exact:true}).waitFor();
+  // Fresh fixture has no model API; the new button reports this without altering summary progress or data.
+  await page.getByRole('button',{name:'返回',exact:true}).click();
   await page.getByRole('navigation',{name:'记忆栏目'}).getByRole('button',{name:/LIST/}).click();await page.getByRole('button',{name:'标为完成',exact:true}).click();await page.getByText('已完成',{exact:true}).waitFor();
   await enter();await openChar();await page.getByRole('navigation',{name:'记忆栏目'}).getByRole('button',{name:/LIST/}).click();await page.getByText('已完成',{exact:true}).waitFor();
   // Reload into B's real identity namespace. Shared character remains, A's relation memory does not.

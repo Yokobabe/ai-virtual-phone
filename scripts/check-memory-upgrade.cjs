@@ -24,7 +24,7 @@ function load(name) {
   name=name.replace(/^.*\//,'');
   if (deps[name]) return deps[name]; if (modules[name]) return modules[name];
   const filename=`lib/${name}.ts`;
-  if (!fs.existsSync(filename) || !['memory-cognition','memory-types','memory-summarizer','core-memory-builder','memory-service','memory-injector','token-counter','llm-prompt-assembler','macro-engine'].includes(name)) return new Proxy({}, {get:()=>()=>''});
+  if (!fs.existsSync(filename) || !['music-listening','memory-cognition','memory-cognition-context','memory-types','memory-summarizer','core-memory-builder','memory-service','memory-injector','token-counter','llm-prompt-assembler','macro-engine'].includes(name)) return new Proxy({}, {get:()=>()=>''});
   const output={};modules[name]=output;
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:output,require:load,console,window:{},Date,Math,Map,Set,JSON});return output;
 }
@@ -43,7 +43,7 @@ deps['memory-storage']={
 };
 async function main(){
  const cog=load('memory-cognition'), summarizer=load('memory-summarizer'), service=load('memory-service');
- const facet={text:'信任A，期待兑现约定。',evidenceIds:['source-1']};
+ const facet={text:'信任A，期待兑现约定。',evidenceIds:['source-1'],claims:[{text:'我期待兑现海边约定',kind:'interpretation',evidenceIds:['source-1']}],citations:[{id:'source-1',quote:'A和C约好周末一起去海边。'}]};
  const update={summary:'A和C约定周末一起去海边。',mirror:facet,gaze:facet,emotion:facet,mood:facet,openItems:[{id:'',kind:'commitment',text:'周末一起去海边',status:'open',dueAt:'',evidenceIds:['source-1']}]};
  response=JSON.stringify(update);
  assert.equal((await summarizer.runSummarizationPipeline('C','C')).success,true);
@@ -54,7 +54,7 @@ async function main(){
  const deep=cog.parseMemoryCognitionUpdate(JSON.stringify({...update,mirror:{...facet,text:'具体经历与内心矛盾。'.repeat(70),digest:'我用守诺维持从容，却害怕对方只需要可靠的我。'},gaze:{...facet,text:'信任和防备并存。'.repeat(80),digest:'她的主动让我想靠近，也动摇了我习惯掌控的距离。'}}),first,cog.evidenceFromTimeline(timeline),clock).cognition;
  assert.equal(deep.mirror.text.length>600,true);assert.equal(Boolean(deep.mirror.revisionId),true);assert.equal(Boolean(deep.mirror.generatedAt),true);
  const previousWithEvidence={...first,mirror:{...first.mirror,evidence:[{id:'earlier',sourceApp:'chat',timestamp:clock,excerpt:'此前的具体经历'}]}};
- const evolved=cog.parseMemoryCognitionUpdate(JSON.stringify(update),previousWithEvidence,cog.evidenceFromTimeline(timeline),clock).cognition;
+ const evolved=cog.parseMemoryCognitionUpdate(JSON.stringify({...update,mirror:{...facet,text:'经历让我重新理解信任。'}}),previousWithEvidence,cog.evidenceFromTimeline(timeline),clock).cognition;
  assert.deepEqual(Array.from(evolved.mirror.evidence,e=>e.id),['earlier','source-1'],'Evolution must retain old and new evidence');
  assert.notEqual(evolved.mirror.revisionId,deep.mirror.revisionId,'Distinct generations need distinct immutable IDs');
  await cog.cacheMemoryCognition(deep);

@@ -25,7 +25,7 @@ import {
 } from "@/lib/memory-storage";
 import { hydrateChatStorage } from "@/lib/chat-storage";
 import { loadNativeTimeline, type NativeTimelineEntry } from "@/lib/short-term-assembler";
-import { runSummarizationPipeline } from "@/lib/memory-summarizer";
+import { runSummarizationPipeline, refreshMemoryCognition } from "@/lib/memory-summarizer";
 import { runCoreMemoryPipeline } from "@/lib/core-memory-builder";
 import { resolveAuxiliaryApiConfig, resolveUserIdentity } from "@/lib/settings-storage";
 import { generateEmbedding, resolveEmbeddingModel } from "@/lib/memory-embedding";
@@ -191,6 +191,8 @@ type Props = {
 };
 
 export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice, resetSectionToken, onSectionChange }: Props) {
+    const selectedCharRef = useRef(selectedCharId);
+    selectedCharRef.current = selectedCharId;
     const [config, setConfig] = useState<MemoryConfig>(loadMemoryConfig);
     const [characters, setCharacters] = useState<CharacterMemoryInfo[]>([]);
     const [activeTab, setActiveTab] = useState<MemoryTab>("home");
@@ -289,10 +291,13 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice, r
                 loadMemoryEntriesByType(charId, "core"),
                 loadMemoryEntriesByType(charId, "long_term"),
             ]);
+            const nextCognition = await loadPersistedMemoryCognition(charId) || loadMemoryCognition(charId);
+            if (selectedCharRef.current !== charId) return;
             setCoreEntries(core.sort((a, b) => Number(b.metadata?.active !== false) - Number(a.metadata?.active !== false) || b.createdAt.localeCompare(a.createdAt)));
             setLongTermEntries(lt);
-            setCognition(await loadPersistedMemoryCognition(charId) || loadMemoryCognition(charId));
+            setCognition(nextCognition);
         } catch {
+            if (selectedCharRef.current !== charId) return;
             setCoreEntries([]);
             setLongTermEntries([]);
         }
@@ -307,6 +312,15 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice, r
         ));
         setLoading(false);
     }, []);
+
+    useEffect(() => {
+        const refresh = (event: Event) => {
+            const characterId = (event as CustomEvent<{ characterId: string }>).detail?.characterId;
+            if (view === "detail" && characterId === selectedCharRef.current) void loadDetailData(characterId);
+        };
+        window.addEventListener("memory-cognition-updated", refresh);
+        return () => window.removeEventListener("memory-cognition-updated", refresh);
+    }, [view, loadDetailData]);
 
     // Reload detail data when view changes to detail
     useEffect(() => {
@@ -348,6 +362,18 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice, r
 
     const showNotice = (msg: string) => {
         onNotice?.(msg);
+    };
+
+    const handleCognitionReview = async () => {
+        if (!selectedCharId || summarizing) return;
+        setSummarizing(true);
+        try {
+            const result = await refreshMemoryCognition(selectedCharId, selectedChar?.name || "");
+            if (result.success) {
+                loadDetailData(selectedCharId);
+                showNotice(result.changed ? "已重新审视并保存新的认知" : "审视完成，没有新的认知变化");
+            } else showNotice(result.error || "认知重审失败");
+        } finally { setSummarizing(false); }
     };
 
     const handleManualSummarize = async (range: SummarizeRange = "auto") => {
@@ -704,7 +730,7 @@ export function MemoryBankPage({ view, selectedCharId, onSelectChar, onNotice, r
                                 open: cognition.openItems.filter(e => e.status === "open").length }} onOpen={tab => setActiveTab(tab === "facts" ? "short" : tab)} />
                     ) : activeTab === "mirror" || activeTab === "gaze" || activeTab === "open" ? (
                         <MemoryCognitionPanel tab={activeTab} state={cognition} recall={loadMemoryRecallInfo(selectedCharId!)} busy={summarizing || savingCognition}
-                            onSummarize={() => void handleManualSummarize()}
+                            onSummarize={() => void (activeTab === "open" ? handleManualSummarize() : handleCognitionReview())}
                             onStatusChange={(id, status) => {
                                 if (savingCognition || summarizing) return;
                                 setSavingCognition(true);

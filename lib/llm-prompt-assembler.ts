@@ -1,7 +1,9 @@
+import { listeningRoomPrompt, CHARACTER_LISTENING_INVITE_PROTOCOL } from "./listen-together";
 // lib/llm-prompt-assembler.ts
 
 import { Character } from "./character-types";
 import { ChatMessage } from "./chat-storage";
+import { musicListeningHistoryText, MUSIC_LISTENING_INSTRUCTION } from "./music-listening";
 import { echoHistoryText } from "./chat-echo";
 import { loveHistoryText } from "./chat-love";
 import { fireworksHistoryText } from "./chat-fireworks";
@@ -28,6 +30,8 @@ import { walletCurrencyInstruction, CHARACTER_CURRENCY_INSTRUCTION } from "./cur
 import { albumChatContext } from "./photo-album-discussion";
 import { formatCognitionForPrompt, CHARACTER_EMOTION_GUIDANCE } from "./memory-cognition";
 import { loadMemoryConfig } from "./memory-storage";
+import { loadMomentsConfig } from "./moments-storage";
+import { buildMomentsBilingualInstruction, ensureMomentsBilingualInstruction } from "./moments-bilingual";
 
 export type LLMMessageRole = "system" | "user" | "assistant" | "tool";
 export type LLMToolCallPayload = { id: string; name: string; args: Record<string, unknown>; thoughtSignature?: string };
@@ -572,7 +576,7 @@ function pushChronologicalShortTermBlocks(params: {
             }
         }
 
-        body = fireworksHistoryText(msg, loveHistoryText(msg, echoHistoryText(msg, body)));
+        body = musicListeningHistoryText(msg, fireworksHistoryText(msg, loveHistoryText(msg, echoHistoryText(msg, body))));
         if (msg.mediaData?.tapback) {
             const actor = msg.mediaData.tapbackBy === "assistant" ? characterName : resolvedUserName;
             body = `${body}${body.trim() ? "\n" : ""}[Tapback:${actor}对这条消息回应了${msg.mediaData.tapback}；消息ID=${msg.id}]`;
@@ -630,11 +634,26 @@ function isWBAtDepthPosition(entry: WorldBookEntry): boolean {
     return entry.position === 4;
 }
 
+function applyMomentsBilingualProtocol(messages: LLMMessage[], appId: string, activeTags: string[], instruction?: string): void {
+    if (appId === "moments") {
+        ensureMomentsBilingualInstruction(messages, instruction);
+        return;
+    }
+    // Online chat can publish Moments through cross-engine actions, outside the Moments service.
+    if ((appId !== "chat" && appId !== "group_chat") || !activeTags.includes("text") || activeTags.includes("offline")) return;
+    if (!messages.some(message => message.role === "system" && typeof message.content === "string"
+        && /\[[^\]\n]*朋友圈\]/.test(message.content))) return;
+    const config = loadMomentsConfig();
+    ensureMomentsBilingualInstruction(messages, buildMomentsBilingualInstruction(
+        config.bilingualTranslationEnabled === true, config.bilingualTranslationPrompt,
+    ));
+}
+
 /**
  * Core Engine: Assembles the final LLM payload array using Depth and Order injection rules.
- * 完全由预设驱动：宏展开、prompt_order（缺失时按 prompts 数组顺序）、
- * RELATIVE/ABSOLUTE injection_position 分类、标记条目定位。
- * 预设里没有的东西一律不注入——不存在人设/世界书/记忆的硬编码兜底。
+ * 预设驱动宏展开、prompt_order（缺失时按 prompts 数组顺序）、
+ * RELATIVE/ABSOLUTE injection_position 分类、标记条目定位；不硬编码补齐人设/世界书条目。
+ * 应用输出协议在组装后按场景补齐。
  */
 export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
     const { character, history, preset, worldBooks, regexes, userIdentity, userName = "User",
@@ -1039,7 +1058,7 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
                 }
             }
 
-            body = fireworksHistoryText(msg, loveHistoryText(msg, echoHistoryText(msg, body)));
+            body = musicListeningHistoryText(msg, fireworksHistoryText(msg, loveHistoryText(msg, echoHistoryText(msg, body))));
             if (msg.mediaData?.tapback) {
                 const actor = msg.mediaData.tapbackBy === "assistant" ? (character?.name || "对方") : resolvedUserName;
                 body = `${body}${body.trim() ? "\n" : ""}[Tapback:${actor}对这条消息回应了${msg.mediaData.tapback}；消息ID=${msg.id}]`;
@@ -1184,6 +1203,13 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
         const cognition = formatCognitionForPrompt(character.id, history.slice(-6).map(m => m.content).join("\n"), memoryConfig.cognitionTokenBudget ?? 800);
         finalPayload.push({ role: "system", content: [CHARACTER_EMOTION_GUIDANCE, cognition].filter(Boolean).join("\n"), _debugMeta: { marker: "memory_cognition" } });
     }
+    if (appId === "chat" && activeTags.includes("text") && history.at(-1)?.sessionId) finalPayload.push({ role: "system", content: CHARACTER_LISTENING_INVITE_PROTOCOL, _debugMeta: { marker: "character_listening_invite" } });
+    const together = appId === "chat" ? listeningRoomPrompt(character.id, history.at(-1)?.sessionId) : "";
+    if (together || history.some(message => message.listeningContext || message.mediaType === "music_share" || message.mediaType === "music")) finalPayload.push({ role: "system", content: MUSIC_LISTENING_INSTRUCTION, _debugMeta: { marker: "music_listening" } });
+    if (appId === "chat") {
+        if (together) finalPayload.push({ role: "system", content: together, _debugMeta: { marker: "listen_together" } });
+    }
+    applyMomentsBilingualProtocol(finalPayload, appId, activeTags, input.chatBilingualInstruction);
     return finalPayload;
 }
 
@@ -1269,7 +1295,7 @@ export function formatRichMediaForHistory(msg: ChatMessage, userName: string, ch
         }
         case "music_share": {
             const mTitle = d?.musicTitle || "未知歌曲";
-            return `[音乐分享:${mTitle}]`;
+            return `[音乐分享:${mTitle}${d?.musicArtist ? "|" + d.musicArtist : ""}]`;
         }
         case "xiaohongshu_note_share":
             return formatXiaohongshuShareForPrompt({
@@ -1769,7 +1795,7 @@ function pushGroupChronologicalShortTermBlocks(params: {
         prevRole = promptRole;
         prevWasHistory = true;
 
-        let body = msg.content;
+        let body = musicListeningHistoryText(msg, msg.content);
         let imageUrl: string | undefined;
 
         const visionImageUrl = visionEnabled ? getPromptVisionImageUrl(msg) : undefined;
@@ -2258,7 +2284,7 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
             const showTs = ts && !(ts === prevTs && promptRole === prevRole);
             prevTs = ts;
             prevRole = promptRole;
-            let body = msg.content; // Already annotated with [SenderName]: prefix
+            let body = musicListeningHistoryText(msg, msg.content); // Already annotated with [SenderName]: prefix
             let imageUrl: string | undefined;
 
             const visionImageUrl = groupVisionEnabled ? getPromptVisionImageUrl(msg) : undefined;
@@ -2305,6 +2331,7 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
         }).filter(Boolean).join("\n\n");
         blocks.push({ text: [CHARACTER_EMOTION_GUIDANCE, cognition].filter(Boolean).join("\n"), role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "memory_cognition" });
     }
+    if (input.history.some(message => message.listeningContext || message.mediaType === "music_share" || message.mediaType === "music")) blocks.push({ text: MUSIC_LISTENING_INSTRUCTION, role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "music_listening" });
     // Sort: depth descending, then order ascending
     blocks.sort((a, b) => {
         if (b.depth !== a.depth) return b.depth - a.depth;
@@ -2382,6 +2409,7 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
         }
     }
 
+    applyMomentsBilingualProtocol(finalPayload, "group_chat", activeTags);
     return finalPayload;
 }
 

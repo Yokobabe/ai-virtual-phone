@@ -9,7 +9,9 @@ import {
 } from "./chat-db";
 import { resolveUserIdentity } from "./settings-storage";
 import { assertCharacterIdentityAccess } from "./identity-access";
-import { assertIdentityActive } from "./identity-runtime";
+import { captureMusicListeningContext } from "./music-listening-capture";
+import type { MusicListeningContext } from "./music-listening";
+import { assertIdentityActive, getCurrentIdentityId } from "./identity-runtime";
 import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 import { emitChatPluginEvent, runChatPluginTransformSync } from "./chat-plugin-hooks";
@@ -143,6 +145,7 @@ export type ChatMessage = {
     sessionId: string;
     role: ChatMessageRole;
     content: string;
+    listeningContext?: MusicListeningContext | null;
     status: ChatMessageStatus;
     createdAt: string; // ISO date
     order?: number; // Stable per-session display order
@@ -164,7 +167,7 @@ export type ChatMessage = {
         | "voice_call" | "video_call"
         | "accept_red_packet" | "decline_red_packet" | "accept_transfer" | "decline_transfer"
         | "payment_request" | "accept_payment_request" | "decline_payment_request"
-        | "music" | "music_share" | "music_notify" | "music_not_found"
+        | "listening_invite" | "music" | "music_share" | "music_notify" | "music_not_found"
         | "xiaohongshu_note_share"
         | "gift"
         | "contact_card"
@@ -181,6 +184,7 @@ export type ChatMessage = {
     origin?: "chat" | "reading_discuss" | "custom_app" | "custom_app_background";
     mediaUrl?: string;
     mediaData?: {
+        listeningInvite?: { roomId: string; initiator?: "user" | "character"; response?: "accepted" | "declined"; title?: string; artist?: string; coverUrl?: string };
         screenEffect?: "echo" | "love" | "fireworks";
         screenEffectScene?: { imageRef:string; effect:"echo"|"love"|"fireworks"; phase:number; capturedAt:string; partial:boolean };
         mentions?: { characterId: string; name: string }[];
@@ -432,6 +436,7 @@ const MEDIA_PREVIEW_MAP: Record<string, string> = {
     payment_request: "[代付请求]",
     music: "[音乐]",
     music_share: "[音乐分享]",
+    listening_invite: "[一起听邀请]",
     xiaohongshu_note_share: "[小红书分享]",
     app_card: "[应用卡片]",
     tool_notice: "[执行动作]",
@@ -1306,19 +1311,30 @@ export function pushChatMessage(msg: Omit<ChatMessage, "id" | "createdAt" | "sta
 }): ChatMessage {
     assertIdentityActive();
     if (msg.senderCharacterId) assertCharacterIdentityAccess(msg.senderCharacterId);
+    const listeningContext = msg.listeningContext !== undefined
+        ? msg.listeningContext?.identityId === getCurrentIdentityId() ? msg.listeningContext : null
+        : msg.role === "user" && (!msg.origin || msg.origin === "chat") && msg.content.trim() && (!msg.mediaType || msg.mediaType === "quote")
+            ? captureMusicListeningContext(msg.createdAt) : undefined;
     let newMsg: ChatMessage = {
         ...msg,
+        listeningContext,
         id: createMessageId(),
         createdAt: msg.createdAt || new Date().toISOString(),
         order: getNextMessageOrder(msg.sessionId),
         status: msg.status || "sent"
     };
+    const anchoredContext = listeningContext ? {
+        ...listeningContext, lines: listeningContext.lines.map(line => ({ ...line })),
+        ...(listeningContext.reference ? { reference: { ...listeningContext.reference } } : {}),
+    } : listeningContext;
 
     // 聊天插件织入点：消息落库前同步改写（全部消息路径都会经过这里）
     const pluginResult = runChatPluginTransformSync("message.beforePersist", { message: newMsg });
     if (pluginResult.message && typeof pluginResult.message === "object" && pluginResult.message.id === newMsg.id) {
         newMsg = pluginResult.message;
     }
+    // Text transforms do not move or remove the captured listening scene.
+    if (anchoredContext !== undefined) newMsg.listeningContext = anchoredContext;
 
     _messagesCache.push(newMsg);
     dbPutMessage(newMsg);

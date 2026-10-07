@@ -1,4 +1,5 @@
 "use client";
+import { ListeningInviteCard } from "./listening-invite-card";
 import { getCurrentIdentityId } from "@/lib/identity-runtime";
 import { resolveUserIdentity } from "@/lib/settings-storage";
 import { VoiceReferenceGraphic } from "./voice-reference-graphic";
@@ -102,6 +103,8 @@ function PluginKindBubble({ msg, kind }: { msg: ChatMessage; kind: string }) {
  */
 export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, onPhotoAnnotationsSave, charName, userName, onSystemMessage, groupSize, onShowDetail, characterId, onMusicPlay, onActionSelect, displayContent, replyAccessory, quoteSource, quoteSourceStyle, defaultTranslationExpanded = false, reactionStyleForActor }: MessageBubbleProps) {
     switch (msg.mediaType) {
+        case "listening_invite":
+            return <ListeningInviteCard msg={msg} />;
         case "red_packet":
             return <RedPacketBubble msg={msg} charName={charName} userName={userName} groupSize={groupSize} onShowDetail={onShowDetail} />;
         case "transfer":
@@ -2598,7 +2601,7 @@ function MusicShareBubble({ msg, onPlay }: { msg: ChatMessage; onPlay?: MessageB
     const [failedCover, setFailedCover] = useState<string>();
     const pending = msg.mediaData?.musicResolution === "pending";
     const unresolved = msg.mediaData?.musicResolution === "unresolved";
-    const canPlay = !!onPlay && !pending && !unresolved;
+    const canPlay = !!onPlay;
     return (
         <div
             className="chat-music-share-card"
@@ -2624,10 +2627,11 @@ function MusicShareBubble({ msg, onPlay }: { msg: ChatMessage; onPlay?: MessageB
                 </div>
                 {canPlay && <span className="chat-music-share-play" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5a1 1 0 0 1 1.5-.86l10 6.5a1 1 0 0 1 0 1.72l-10 6.5A1 1 0 0 1 8 18.5z" /></svg></span>}
             </div>
+            {msg.listeningContext?.reference && <div className="chat-music-share-lyric">“{msg.listeningContext.reference.text}”</div>}
             <div className="chat-music-share-footer">
                 <svg aria-hidden="true" width="13" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.54c.03 3.23 2.83 4.3 2.86 4.31-.02.08-.45 1.54-1.48 3.05-.9 1.3-1.83 2.6-3.3 2.63-1.44.03-1.9-.85-3.55-.85s-2.17.82-3.54.88c-1.42.05-2.5-1.42-3.4-2.72-1.85-2.67-3.27-7.55-1.37-10.85.94-1.64 2.62-2.68 4.44-2.7 1.39-.03 2.7.93 3.55.93.85 0 2.45-1.15 4.13-.98.7.03 2.67.28 3.93 2.12-.1.06-2.35 1.37-2.27 4.18ZM14.34 4.47c.75-.91 1.25-2.18 1.11-3.44-1.08.04-2.39.72-3.16 1.63-.7.8-1.32 2.1-1.15 3.34 1.2.09 2.42-.61 3.2-1.53Z" /></svg>
                 <span>Music</span>
-                {(pending || unresolved) && <span className="chat-music-share-status" role="status">{pending ? "正在匹配歌曲" : "暂未匹配到此版本"}</span>}
+                {(pending || unresolved) && <span className="chat-music-share-status" role="status">{pending ? "正在匹配歌曲" : "轻点重新匹配播放"}</span>}
             </div>
         </div>
     );

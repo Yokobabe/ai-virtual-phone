@@ -6,6 +6,7 @@ import type { MusicTrack } from "./music-storage";
 import { getAudioBlob, markTrackPlayed } from "./music-storage";
 import { findPlayableMatch, getNeteaseLyrics, getNeteasePlayUrl, getNeteasePlayInfo, getNeteaseSongDetail } from "./music-service";
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
+import { getCurrentIdentityId } from "./identity-runtime";
 import { registerMusicControlBridge } from "./music-control-bridge";
 
 // ── Types ──
@@ -98,6 +99,7 @@ function persistQueue(q: MusicTrack[]): void {
 
 export function MusicProvider({ children }: { children: ReactNode }) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const audioTrackId = useRef<string | null>(null);
     const blobUrlRef = useRef<string | null>(null);
 
     const [currentTrack, setCurrentTrack] = useState<MusicTrack | null>(null);
@@ -222,6 +224,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
             track = { ...track, lastPlayedAt: playedAt };
         }
 
+        audioTrackId.current = track.id;
         setCurrentTrack(track);
         setCurrentTime(0);
 
@@ -245,6 +248,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         cleanupBlobUrl();
         audio.pause();
         audio.src = url;
+        audioTrackId.current = track.id;
         setCurrentTrack(track);
         setCurrentTime(0);
         audio.play().catch(() => {});
@@ -429,11 +433,14 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     }, [playResolvedTrack, queue]);
 
     useEffect(() => {
+        const identityId = getCurrentIdentityId();
         registerMusicControlBridge({
             getState: () => ({
-                currentTrack,
-                isPlaying,
-                currentTime,
+                identityId,
+                currentTrack: audioTrackId.current === currentTrack?.id ? currentTrack : null,
+                selectedTrack: currentTrack,
+                isPlaying: audioRef.current ? !audioRef.current.paused : isPlaying,
+                currentTime: audioRef.current?.currentTime ?? currentTime,
                 duration,
                 playMode,
                 queue,

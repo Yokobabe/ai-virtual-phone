@@ -2,6 +2,10 @@
 
 import { forwardRef, Fragment, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChatSession, ChatMessage, CHAT_APP_SETTINGS_UPDATED_EVENT, CHAT_INITIAL_VISIBLE_MESSAGE_COUNT, CHAT_LOAD_MORE_MESSAGE_COUNT, CHAT_REQUEST_REPLY_EVENT, loadChatAppSettings, loadChatMessages, loadChatContacts, loadChatSessions, saveChatSessions, pushChatMessage, updateChatMessage, deleteChatMessage, deleteChatMessagesFrom, deleteChatMessagesByIds, retractChatMessage, editChatMessage, updateMessageMediaData, replaceResponseBatchWithParts, replaceGroupResponseRound, isReadingDiscussMessage, isSystemInstructionMessage, createResponseBatchId, createResponseRoundId, getLatestStateValues, getLatestCharacterStateValues, compareChatMessages, isSessionStreamingEnabled } from "@/lib/chat-storage";
+import ChatMusicPanel from "@/components/music/chat-music-panel";
+import { inviteListeningRoom, leaveListeningRoom, applyListeningRoomReply } from "@/lib/listen-together";
+import { captureMusicListeningContext } from "@/lib/music-listening-capture";
+import type { MusicListeningContext } from "@/lib/music-listening";
 import { cleanStreamText, splitStreamPreviewSegments, stripLiteralTexts, stripXmlTagBlocks } from "@/lib/stream-preview";
 import type { StateValue } from "@/lib/chat-storage";
 import { parseStateValues, mergeStateValues } from "@/lib/state-value-parser";
@@ -230,6 +234,7 @@ const CHAT_VISUAL_MEDIA_TYPES = new Set([
     "image",
     "location",
     "music_share",
+    "listening_invite",
     "xiaohongshu_note_share",
     "app_card",
     "audio",
@@ -278,6 +283,7 @@ const CHAT_MEDIA_BUBBLE_TYPES = new Set([
     "image",
     "location",
     "music_share",
+    "listening_invite",
     "xiaohongshu_note_share",
     "app_card",
     "media_file",
@@ -512,6 +518,8 @@ function shouldShowTimestamp(currentMsg: string, prevMsg: string | null): boolea
 
 type ChatRoomProps = {
     session: ChatSession;
+    lyricQuote?: MusicListeningContext;
+    onLyricQuoteConsumed?: () => void;
     onBack: () => void;
     /** 会话在设置页被删除后回调：由外层卸载本聊天室并回到列表 */
     onDeleted?: () => void;
@@ -545,7 +553,7 @@ type PendingMessageJump = {
 };
 
 const TRANSIENT_MESSAGE_PREFIX = "ui-transient-";
-type RichModalKind = "photo" | "text_photo" | "red_packet" | "transfer" | "location" | "transfer_target" | "voice_msg" | "gift" | "system_instruction" | "drawing";
+type RichModalKind = "music" | "photo" | "text_photo" | "red_packet" | "transfer" | "location" | "transfer_target" | "voice_msg" | "gift" | "system_instruction" | "drawing";
 type ChatTextInputHandle = {
     appendText: (text: string, options?: { focus?: boolean }) => void;
     mention: (member: MentionMember) => void;
@@ -841,6 +849,7 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
         <img className="imessage-plus-app-icon" src={`/imessage26/apps/${fileName}`} alt="" aria-hidden="true" />
     );
     const plusMenuItems = [
+        { icon: <img src="/apple-music-app.png" alt="" className="imessage-apple-music-icon" draggable={false} />, label: "音乐", onClick: () => onOpenRichModal("music") },
         { icon: imessageMenuIcon("offline-mode.jpg"), label: "线下模式", onClick: onToggleOfflineMode },
         { icon: imessageMenuIcon("photo-wall.jpg"), label: "照片墙", onClick: () => onOpenRichModal("photo") },
         { icon: imessageMenuIcon("text-image.jpg"), label: !isGroup ? "文字图" : "文字图片", onClick: () => onOpenRichModal("text_photo") },
@@ -1011,7 +1020,9 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                     }
                     if (inputText.trim() && shouldSendChatInputOnEnter(e, enterToSendEnabled)) {
                         e.preventDefault();
-                        handleSubmit();
+                        if (isGenerating) return;
+                        if (isGroup && isSpectator) handleSubmit();
+                        else if (!inputLocked) sendDraft(false);
                     }
                 }}
                 enterKeyHint={enterToSendEnabled ? "send" : "enter"}
@@ -1280,7 +1291,7 @@ const OfflineTextInputBar = memo(forwardRef<OfflineTextInputHandle, {
     );
 }));
 
-export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
+export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteConsumed }: ChatRoomProps) {
     const [liveCSS, setLiveCSS] = useState(session.customCSS || "");
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [transientMessages, setTransientMessages] = useState<ChatMessage[]>([]);
@@ -1351,6 +1362,15 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const [mediaDetailMsg, setMediaDetailMsg] = useState<ChatMessage | null>(null);
     // Quote reply
     const [quotingMessage, setQuotingMessage] = useState<ChatMessage | null>(null);
+    useEffect(() => {
+        if (!lyricQuote?.reference) return;
+        setQuotingMessage({
+            id: "lyric-draft", sessionId: session.id, role: "user", status: "sent",
+            createdAt: lyricQuote.capturedAt, content: lyricQuote.reference.text,
+            listeningContext: lyricQuote,
+        });
+        onLyricQuoteConsumed?.();
+    }, [lyricQuote, session.id, onLyricQuoteConsumed]);
     // Emoji panel
     const [showEmojiPanel, setShowEmojiPanel] = useState(false);
     const [showStickerPanel, setShowStickerPanel] = useState(false);
@@ -3317,30 +3337,9 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 showChatToast(result.message);
                 return;
             }
-            const found = await findPlayableMatch(title, artist);
-            if (!found) {
-                showChatToast("没有找到该音乐哦~");
-                return;
-            }
-            const { result: match, playUrl } = found;
-            if (match.source === "local" && match.localTrack) {
-                await musicBridge.playTrack(match.localTrack);
-            } else if (match.source === "netease" && match.neteaseResult && playUrl) {
-                const r = match.neteaseResult;
-                const detail = await getNeteaseSongDetail(r.id);
-                const lyrics = await getNeteaseLyrics(r.id);
-                await musicBridge.playTrack({
-                    id: `netease_${r.id}`,
-                    title: detail?.name || r.name,
-                    artist: detail?.artists || r.artists,
-                    duration: r.duration / 1000,
-                    coverUrl: detail?.coverUrl,
-                    lyrics,
-                    liked: false,
-                    addedAt: new Date().toISOString(),
-                });
-            }
-            clearChatToast();
+            const result = await musicBridge.playByQuery(title, artist);
+            showChatToast(result.message);
+
         } catch {
             showChatToast("没有找到该音乐哦~");
         }
@@ -3366,6 +3365,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             ? getLatestStateValues(session.id)
             : getLatestCharacterStateValues(session.contactId);
 
+        aiResponseText = applyListeningRoomReply(aiResponseText, session.id);
         const { parts: rawParts, stateValues, freshStateValues, statusPanel, innerMonologue } = parseAIResponse(aiResponseText, previousState);
         const parts = stripInvalidStickerParts(rawParts);
         throwIfGenerationStopped(options);
@@ -4668,7 +4668,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             : 0;
         const quotePhoto = quoteGroup.length ? quoteGroup[quoteGroupIndex] : (quoteStored?.mediaType === "image" ? quoteStored : undefined);
         const quoteData = quoteStored ? {
-            quoteMessageId: quoteStored.id,
+            ...(quoteStored.id !== "lyric-draft" ? { quoteMessageId: quoteStored.id } : {}),
             quotePreview: getQuotePreview(quotingMessage || quoteStored),
             quoteRole: quoteStored.role,
             ...(quotePhoto ? {
@@ -4679,6 +4679,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 quotePhotoAnnotations: quotePhoto.mediaData?.photoAnnotations,
             } : {}),
         } : undefined;
+        const sentAt = new Date().toISOString();
+        const listeningContext = captureMusicListeningContext(sentAt, quoteStored?.listeningContext);
         setQuotingMessage(null);
 
         const commitSendText = (currentText: string) => {
@@ -4698,6 +4700,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 sessionId: session.id,
                 role: "user",
                 content: currentText,
+                createdAt: sentAt,
+                listeningContext,
                 mediaType: diceOnly ? "dice" : isQuoting ? "quote" : undefined,
                 mediaUrl: isQuoting ? quotePhoto?.mediaUrl : undefined,
                 mediaData: diceOnly ? { diceFace } : screenEffect || isQuoting || (session.isGroup && options?.mentions?.length) ? {
@@ -4718,8 +4722,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 });
                 setMessages(prev => [...prev, diceAside]);
             }
-            // The explicit send-only shortcut also bypasses keyboard-dismiss auto reply.
-            // Enter keeps the user's existing automatic-reply preference.
+            // Send-only actions, including Enter, bypass keyboard-dismiss auto reply.
             setPendingGenerate(options?.autoReply !== false);
             // 按回复键发送：消息落库后立即触发模型回复（无论插件是否异步改写，
             // 都在消息真正写入后触发，避免回复基于旧上下文）
@@ -7679,6 +7682,30 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             )}
 
             {/* Rich Media Input Modals */}
+            {richModal === "music" && <ChatMusicPanel sessionId={session.id} characterId={session.isGroup ? undefined : session.contactId}
+                name={character?.name || "对方"} avatar={character?.avatar || undefined} busy={isGenerating}
+                onClose={() => setRichModal(null)}
+                onInvite={() => {
+                    if (isGeneratingRef.current) throw new Error("对方正在回复，请稍后邀请");
+                    if (session.isGroup) throw new Error("请在私聊中邀请一起听");
+                    try {
+                        const invitation = inviteListeningRoom(session.id, session.contactId);
+                        const snapshot = getMusicControlBridge()?.getState();
+                        const track = snapshot?.identityId === invitation.identityId ? (snapshot.currentTrack ?? snapshot.selectedTrack) : null;
+                        pushChatMessage({ sessionId: session.id, role: "user", content: "邀请你一起听歌。", mediaType: "listening_invite", mediaData: { listeningInvite: { roomId: invitation.id, title: track?.title, artist: track?.artist, coverUrl: track?.coverUrl } } });
+                        setMessages(loadChatMessages(session.id));
+                        void triggerAIResponse();
+                    } catch (error) {
+                        leaveListeningRoom(session.id);
+                        throw error;
+                    }
+                }}
+                onRetry={() => { if (!isGeneratingRef.current) void triggerAIResponse(); }}
+                onLeave={() => {
+                    leaveListeningRoom(session.id);
+                    pushChatMessage({ sessionId: session.id, role: "system", content: "用户结束了一起听或取消了邀请。" });
+                    setMessages(loadChatMessages(session.id));
+                }} />}
             {richModal === "drawing" && <DrawingBoard key={session.id} session={session} history={messages}
                 characters={session.isGroup ? groupCharacters : character ? [character] : []}
                 onClose={() => setRichModal(null)}

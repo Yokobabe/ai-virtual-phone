@@ -1,3 +1,4 @@
+import { applyListeningRoomReply } from "./listen-together";
 /**
  * Background follow-up service.
  * Runs independently of any React component — fires follow-ups
@@ -918,7 +919,7 @@ export async function parseAndSaveResponse(
     const sess = sessions.find(s => s.id === sessionId);
     const previousState = sess && !sess.isGroup ? getLatestCharacterStateValues(sess.contactId) : [];
 
-    const { parts, stateValues, freshStateValues, statusPanel, innerMonologue } = parseAIResponse(rawText, previousState);
+    const { parts, stateValues, freshStateValues, statusPanel, innerMonologue } = parseAIResponse(applyListeningRoomReply(rawText, sessionId), previousState);
 
     // Detect call triggers and AI media actions, filter them out (not stored as messages)
     let triggerCall: "voice" | "video" | undefined;

@@ -2140,6 +2140,7 @@
   text-align: left;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
+.chat-music-share-lyric { padding: 0 16px 12px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; color: inherit; }
 .chat-music-share-card[role="button"] { cursor:pointer; }
 .chat-music-share-card:focus-visible { outline:2px solid #fa5268; outline-offset:3px; }
 .chat-music-share-card[role="button"]:active .chat-music-share-play { transform:scale(.96); }
@@ -5416,7 +5417,7 @@
 }
 
 .feed-post-action-menu button:active {
-  background: color-mix(in srgb, var(--c-icon-active) 12%, transparent);
+  opacity: .72;
 }
 
 .feed-post-action-menu button[data-danger="true"] {
@@ -5793,7 +5794,7 @@
   border-bottom: none;
 }
 .compose-nav-row:active {
-  background: var(--c-input);
+  opacity: .72;
 }
 
 .compose-nav-left {
@@ -7182,3 +7183,7 @@
   background: currentColor;
   animation: chat-stream-cursor-blink 1s steps(2, start) infinite;
 }
+
+.moment-body-translate { display:block;min-height:44px;padding:4px 0;color:var(--c-icon-active,#527daa);font-size:13px;text-align:left;cursor:pointer; }
+.moment-body-translate:disabled { opacity:.55;cursor:wait; }
+.moment-body-translate:focus-visible { outline:2px solid currentColor;outline-offset:2px;border-radius:6px; }

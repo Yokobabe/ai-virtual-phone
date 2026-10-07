@@ -17,6 +17,7 @@ import { PhonePlaceholderApp } from "@/components/phone-placeholder-app";
 import MusicApp from "@/components/music/music-app";
 import MusicPlayer from "@/components/music/music-player";
 import MusicFloat from "@/components/music/music-float";
+import ShareDestinationSheet from "@/components/chat/share-destination-sheet";
 import MiniAppWindow from "@/components/music/mini-app-window";
 import { PhoneCalendarApp } from "@/components/calendar-app";
 import { PhoneQaApp } from "@/components/phone-qa-app";
@@ -2426,7 +2427,6 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
   const handleMiniChatSessionChange = useCallback((session: ChatSession | null) => {
     miniSessionRef.current = session;
   }, []);
-  const handleMiniShareDone = useCallback(() => setMiniSharePayload(null), []);
   const handleMiniChatExpand = useCallback(() => {
     setShowMiniChat(false);
     musicOverlayControllerRef.current?.closeFullPlayer();
@@ -4455,18 +4455,18 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
                 onControllerChange={handleMusicOverlayControllerChange}
               />
 
+              {showMiniChat && miniSharePayload && <ShareDestinationSheet payload={miniSharePayload} onClose={() => { setShowMiniChat(false); setMiniSharePayload(null); }} />}
+
               {/* Mini chat window — persists across music pages */}
               <MiniAppWindow
                 title="聊天"
-                visible={showMiniChat}
+                visible={showMiniChat && !miniSharePayload}
                 onClose={handleMiniChatClose}
                 onExpand={handleMiniChatExpand}
               >
                 <PhoneChatApp
                   onClose={handleMiniChatClose}
                   onSessionChange={handleMiniChatSessionChange}
-                  sharePayload={miniSharePayload}
-                  onShareDone={handleMiniShareDone}
                 />
               </MiniAppWindow>
 

@@ -10,6 +10,14 @@
 }
 .shell { isolation: isolate; --memory-page-background: #fff; }
 .history { border: 1px solid var(--memory-line); border-radius: 18px; background: var(--memory-surface); overflow: hidden; }
+.basis { padding: 4px 0 10px; font-size: 12px; line-height: 1.7; color: var(--c-text-sub); overflow-wrap: anywhere; }
+.basis p { margin: 6px 0; }
+.claim { padding: 12px 0; border-top: 1px solid var(--memory-line); }
+.claim > small { color: var(--memory-control-ink); font-size: 11px; }
+.claim > p { margin: 6px 0; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.evidence details > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.evidence summary:focus-visible { outline: 2px solid var(--memory-accent); outline-offset: 2px; border-radius: 6px; }
+.evidence > summary { min-height: 44px; display: flex; align-items: center; }
 .historyToggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 48px; padding: 12px 16px; color: var(--memory-control-ink); background: var(--memory-control); font-size: 13px; cursor: pointer; }
 .historyEntries { padding: 4px 16px 16px; }
 .historyNote { margin: 12px 0; font-size: 12px; color: var(--c-text-sub); line-height: 1.6; }

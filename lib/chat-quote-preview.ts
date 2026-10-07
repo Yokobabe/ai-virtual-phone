@@ -20,6 +20,10 @@ function formatQuoteAmount(value: unknown): string {
 
 /** Copy readable content, not media URLs or an empty content field. */
 export function getQuotePreview(message: ChatMessage): string {
+    if (message.listeningContext?.reference) {
+        const { title, reference } = message.listeningContext;
+        return `${title} · ${reference.text}`;
+    }
     const d = message.mediaData;
     if (d?.photoGroupId && (d.photoGroupCount || 0) > 1) {
         const index = Math.max(0, Math.min((d.photoGroupCount || 1) - 1, d.photoGroupActiveIndex ?? 0));
