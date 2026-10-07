@@ -18,6 +18,7 @@ import MusicApp from "@/components/music/music-app";
 import MusicPlayer from "@/components/music/music-player";
 import MusicFloat from "@/components/music/music-float";
 import ShareDestinationSheet from "@/components/chat/share-destination-sheet";
+import QuickReplyWindow from "@/components/chat/quick-reply-window";
 import MiniAppWindow from "@/components/music/mini-app-window";
 import { PhoneCalendarApp } from "@/components/calendar-app";
 import { PhoneQaApp } from "@/components/phone-qa-app";
@@ -2380,6 +2381,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
 
   // Allow other components to switch apps via custom event
   const [chatInitSessionId, setChatInitSessionId] = useState<string | null>(null);
+  const [chatFeedsRequest, setChatFeedsRequest] = useState(0);
   const [activeChatSession, setActiveChatSession] = useState<ChatSession | null>(null);
   const [customAppLaunchContext, setCustomAppLaunchContext] = useState<CustomAppLaunchState | null>(null);
   const [appMarketLaunchContext, setAppMarketLaunchContext] = useState<Record<string, unknown> | null>(null);
@@ -2421,6 +2423,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
 
   // Mini chat window state
   const [showMiniChat, setShowMiniChat] = useState(false);
+  const [quickReply, setQuickReply] = useState<{ sessionId: string; title: string } | null>(null);
   const [miniSharePayload, setMiniSharePayload] = useState<ChatSharePayload | null>(null);
   const miniSessionRef = useRef<ChatSession | null>(null);
   const handleMiniChatClose = useCallback(() => setShowMiniChat(false), []);
@@ -2446,6 +2449,8 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
   }, []);
 
   const openChatSessionFromNotice = useCallback((sessionId: string) => {
+    setQuickReply(null);
+    musicOverlayControllerRef.current?.closeFullPlayer();
     if (chatMessageNoticeTimerRef.current !== null) {
       window.clearTimeout(chatMessageNoticeTimerRef.current);
       chatMessageNoticeTimerRef.current = null;
@@ -2530,8 +2535,14 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
 
   const handleNoticeClick = useCallback(() => {
     if (noticeDragRef.current.far) { noticeDragRef.current.far = false; return; }
-    if (chatMessageNotice) openChatSessionFromNotice(chatMessageNotice.sessionId);
-  }, [chatMessageNotice, openChatSessionFromNotice]);
+    if (!chatMessageNotice) return;
+    if (activeApp === "chat") { openChatSessionFromNotice(chatMessageNotice.sessionId); return; }
+    if (chatMessageNoticeTimerRef.current !== null) window.clearTimeout(chatMessageNoticeTimerRef.current);
+    chatMessageNoticeTimerRef.current = null;
+    setQuickReply({ sessionId: chatMessageNotice.sessionId, title: chatMessageNotice.title });
+    setChatMessageNotice(null);
+    setShowMiniChat(false);
+  }, [chatMessageNotice, activeApp, openChatSessionFromNotice]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -2540,7 +2551,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
 
       const isCurrentMainChat = activeApp === "chat" && activeChatSession?.id === detail.sessionId;
       const isCurrentMiniChat = showMiniChat && miniSessionRef.current?.id === detail.sessionId;
-      if (isCurrentMainChat || isCurrentMiniChat) return;
+      if (isCurrentMainChat || isCurrentMiniChat || quickReply?.sessionId === detail.sessionId) return;
 
       const sessions = loadChatSessions();
       const session = sessions.find(s => s.id === detail.sessionId);
@@ -2574,7 +2585,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
 
     window.addEventListener(CHAT_MESSAGE_NOTICE_EVENT, handler);
     return () => window.removeEventListener(CHAT_MESSAGE_NOTICE_EVENT, handler);
-  }, [activeApp, activeChatSession?.id, showMiniChat]);
+  }, [activeApp, activeChatSession?.id, showMiniChat, quickReply?.sessionId]);
 
   useEffect(() => {
     return () => {
@@ -3990,8 +4001,10 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
             setActiveApp(null);
             setActiveChatSession(null);
             setChatInitSessionId(null);
+            setChatFeedsRequest(0);
           }}
           initialSessionId={chatInitSessionId}
+          feedsRequest={chatFeedsRequest}
           onSessionChange={setActiveChatSession}
         />
       );
@@ -4455,7 +4468,17 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
                 onControllerChange={handleMusicOverlayControllerChange}
               />
 
-              {showMiniChat && miniSharePayload && <ShareDestinationSheet payload={miniSharePayload} onClose={() => { setShowMiniChat(false); setMiniSharePayload(null); }} />}
+              {showMiniChat && miniSharePayload && <ShareDestinationSheet payload={miniSharePayload} onClose={() => { setShowMiniChat(false); setMiniSharePayload(null); }} onView={destination => {
+                setShowMiniChat(false); setMiniSharePayload(null);
+                if (destination !== "moments") { setChatFeedsRequest(0); openChatSessionFromNotice(destination); return; }
+                setQuickReply(null);
+                musicOverlayControllerRef.current?.closeFullPlayer();
+                setChatInitSessionId(null);
+                setChatFeedsRequest(value => value + 1);
+                setActiveApp("chat" as IconId);
+              }} />}
+              {quickReply && <QuickReplyWindow key={quickReply.sessionId} sessionId={quickReply.sessionId} title={quickReply.title}
+                onClose={() => setQuickReply(null)} onExpand={() => openChatSessionFromNotice(quickReply.sessionId)} />}
 
               {/* Mini chat window — persists across music pages */}
               <MiniAppWindow
@@ -4464,10 +4487,10 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
                 onClose={handleMiniChatClose}
                 onExpand={handleMiniChatExpand}
               >
-                <PhoneChatApp
+                {!quickReply && <PhoneChatApp
                   onClose={handleMiniChatClose}
                   onSessionChange={handleMiniChatSessionChange}
-                />
+                />}
               </MiniAppWindow>
 
               <div

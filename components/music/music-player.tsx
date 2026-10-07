@@ -9,7 +9,8 @@ import { useMusicPlayer, type PlayMode } from "@/lib/music-context";
 import { createMusicListeningContext, parseTimedLyrics, lyricTimestamp, type MusicListeningContext, type TimedLyric } from "@/lib/music-listening";
 import { getMusicControlBridge } from "@/lib/music-control-bridge";
 import { getCurrentIdentityId } from "@/lib/identity-runtime";
-import { scrollElementWithinContainer } from "@/lib/dom-scroll";
+import { activeLyricIndex, lyricRange } from "@/lib/lyric-selection";
+import { LyricShareCard } from "./lyric-share-card";
 import { kvGet, kvSet } from "@/lib/kv-db";
 import { extractCoverPalette, DEFAULT_COVER_PALETTE, type CoverPalette } from "@/lib/cover-color";
 import {
@@ -188,8 +189,13 @@ export default function MusicPlayer() {
     const [selectedLyric, setSelectedLyric] = useState<MusicListeningContext | null>(null);
     const [pressingLyric, setPressingLyric] = useState<number | null>(null);
     const [activeLyricIdx, setActiveLyricIdx] = useState(-1);
+    const [selection, setSelection] = useState<[number, number] | null>(null);
+    const [dragSelecting, setDragSelecting] = useState(false);
+    const selectionRef = useRef<[number, number] | null>(null);
+    const manualScrollUntil = useRef(0);
+    const scrollFrame = useRef(0);
     const lyricsContainerRef = useRef<HTMLDivElement>(null);
-    const lyricPress = useRef<{ timer?: ReturnType<typeof setTimeout>; x: number; y: number; consumed: boolean }>({ x: 0, y: 0, consumed: false });
+    const lyricPress = useRef<{ timer?: ReturnType<typeof setTimeout>; x: number; y: number; consumed: boolean; selecting?: boolean; lastY?: number; pointerType?: string }>({ x: 0, y: 0, consumed: false });
     const cancelLyricPress = useCallback(() => {
         clearTimeout(lyricPress.current.timer);
         lyricPress.current.timer = undefined;
@@ -198,27 +204,42 @@ export default function MusicPlayer() {
     useEffect(() => () => cancelLyricPress(), [cancelLyricPress]);
     useEffect(() => { cancelLyricPress(); }, [view, player.currentTrack?.id, cancelLyricPress]);
 
-    useEffect(() => { setSelectedLyric(null); }, [player.currentTrack?.id]);
+    useEffect(() => { setSelectedLyric(null); setSelection(null); selectionRef.current = null; setDragSelecting(false); lyricPress.current.selecting = false; }, [player.currentTrack?.id, view]);
 
     useEffect(() => {
-        const lyrics = parsedLyrics;
-        if (lyrics.length === 0) { setActiveLyricIdx(-1); return; }
-        let idx = -1;
-        for (let i = lyrics.length - 1; i >= 0; i--) {
-            if (player.currentTime >= lyrics[i].time) {
-                idx = i;
-                break;
-            }
-        }
-        setActiveLyricIdx(idx);
-    }, [player.currentTime, parsedLyrics]);
+        if (view !== "lyrics") return;
+        let frame = 0;
+        let lastIndex = -2;
+        const tick = () => {
+            const state = getMusicControlBridge()?.getState();
+            const time = state && state.currentTrack?.id === player.currentTrack?.id ? state.currentTime : player.currentTime;
+            const next = activeLyricIndex(parsedLyrics, time);
+            if (lastIndex !== next) { lastIndex = next; setActiveLyricIdx(next); }
+            if (player.isPlaying) frame = requestAnimationFrame(tick);
+        };
+        tick();
+        return () => cancelAnimationFrame(frame);
+    }, [view, player.currentTrack?.id, player.currentTime, player.isPlaying, parsedLyrics]);
 
     // Auto-scroll lyrics
     useEffect(() => {
-        if (selectedLyric || lyricPress.current.timer || view !== "lyrics" || activeLyricIdx < 0 || !lyricsContainerRef.current) return;
-        const el = lyricsContainerRef.current.children[activeLyricIdx] as HTMLElement;
-        if (el) scrollElementWithinContainer(lyricsContainerRef.current, el, { behavior: "smooth", block: "center" });
-    }, [activeLyricIdx, view, selectedLyric]);
+        cancelAnimationFrame(scrollFrame.current);
+        const container = lyricsContainerRef.current;
+        if (selectedLyric || dragSelecting || lyricPress.current.timer || Date.now() < manualScrollUntil.current || view !== "lyrics" || activeLyricIdx < 0 || !container) return;
+        const el = container.children[activeLyricIdx] as HTMLElement;
+        if (!el) return;
+        const start = container.scrollTop;
+        const top = Math.max(0, Math.min(container.scrollHeight - container.clientHeight, start + el.getBoundingClientRect().top - container.getBoundingClientRect().top - (container.clientHeight - el.clientHeight) / 2));
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { container.scrollTop = top; return; }
+        const started = performance.now();
+        const move = (now: number) => {
+            const progress = Math.min(1, (now - started) / 180);
+            container.scrollTop = start + (top - start) * (1 - Math.pow(1 - progress, 3));
+            if (progress < 1) scrollFrame.current = requestAnimationFrame(move);
+        };
+        scrollFrame.current = requestAnimationFrame(move);
+        return () => cancelAnimationFrame(scrollFrame.current);
+    }, [activeLyricIdx, view, selectedLyric, dragSelecting]);
 
     const handleLyricClick = useCallback((_idx: number, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -228,9 +249,21 @@ export default function MusicPlayer() {
     }, []);
 
     const selectLyric = (line: TimedLyric) => {
+        const index = parsedLyrics.indexOf(line);
+        selectionRef.current = [index, index];
+        setSelection([index, index]);
         const snapshot = getMusicControlBridge()?.getState();
         const context = createMusicListeningContext(snapshot && snapshot.currentTrack?.id === player.currentTrack?.id ? snapshot : player, getCurrentIdentityId(), new Date().toISOString(), line);
         setSelectedLyric(context || null);
+    };
+    const finishLyricRange = () => {
+        const range = selectionRef.current;
+        if (!range) return;
+        const lines = lyricRange(parsedLyrics, ...range);
+        if (!lines.length) return;
+        const snapshot = getMusicControlBridge()?.getState();
+        const context = createMusicListeningContext(snapshot && snapshot.currentTrack?.id === player.currentTrack?.id ? snapshot : player, getCurrentIdentityId(), new Date().toISOString(), lines[0]);
+        if (context) setSelectedLyric({ ...context, selectedLines: lines, reference: { time: lines[0].time, text: lines.map(line => line.text).join("\n") } });
     };
     const sendSelectedLyric = () => {
         if (!selectedLyric || selectedLyric.identityId !== getCurrentIdentityId()) return;
@@ -239,6 +272,8 @@ export default function MusicPlayer() {
             lyricMode: "share", listeningContext: selectedLyric, coverUrl: player.currentTrack?.coverUrl,
         } } }));
         setSelectedLyric(null);
+        setSelection(null);
+        selectionRef.current = null;
     };
 
     const [liked, setLiked] = useState(false);
@@ -432,16 +467,18 @@ export default function MusicPlayer() {
             <div className="mp-body">
                 {view === "lyrics" ? (
                     <div className="mp-lyrics-wrap" onClick={e => handleLyricClick(-1, e)} onKeyDown={e => {
-                        if (e.key === "Escape" && selectedLyric) { e.stopPropagation(); setSelectedLyric(null); }
+                        if (e.key === "Escape" && selectedLyric) { e.stopPropagation(); setSelectedLyric(null); setSelection(null); selectionRef.current = null; }
                     }}>
                         {hasLyrics ? (
-                            <div className="mp-lyrics" ref={lyricsContainerRef}>
+                            <div className="mp-lyrics" ref={lyricsContainerRef} onWheel={() => { manualScrollUntil.current = Date.now() + 1800; cancelAnimationFrame(scrollFrame.current); }}>
                                 {parsedLyrics.map((line, i) => {
                                     const dist = Math.abs(i - activeLyricIdx);
                                     return (
                                         <div
                                             key={i}
                                             className="mp-lyric-line"
+                                            data-lyric-index={i}
+                                            data-selected={selection && i >= Math.min(...selection) && i <= Math.max(...selection) ? "" : undefined}
                                             {...(i === activeLyricIdx ? { "data-active": "" } : dist === 1 ? { "data-near": "" } : {})}
                                         >
                                             <button type="button" className="mp-lyric-seek"
@@ -449,26 +486,55 @@ export default function MusicPlayer() {
                                                 onClick={e => handleLyricClick(i, e)}
                                                 aria-label={line.text + "；轻点返回封面，长按或右键分享歌词"}
                                                 aria-keyshortcuts="Shift+F10"
-                                                aria-pressed={selectedLyric?.reference?.time === line.time}
+                                                aria-pressed={!!(selection && i >= Math.min(...selection) && i <= Math.max(...selection)) || selectedLyric?.reference?.time === line.time}
                                                 onPointerDown={e => {
                                                     cancelLyricPress();
-                                                    lyricPress.current = { x: e.clientX, y: e.clientY, consumed: false };
+                                                    lyricPress.current = { x: e.clientX, y: e.clientY, consumed: false, pointerType: e.pointerType };
                                                     if (e.button !== 0 || !line.text.trim()) return;
+                                                    e.currentTarget.setPointerCapture(e.pointerId);
+                                                    cancelAnimationFrame(scrollFrame.current);
+                                                    setSelectedLyric(null);
+                                                    selectionRef.current = null;
+                                                    setSelection(null);
                                                     setPressingLyric(i);
                                                     lyricPress.current.timer = setTimeout(() => {
                                                         lyricPress.current.timer = undefined;
                                                         lyricPress.current.consumed = true;
+                                                        lyricPress.current.selecting = true;
+                                                        selectionRef.current = [i, i];
+                                                        setSelection([i, i]);
+                                                        setDragSelecting(true);
                                                         setPressingLyric(null);
-                                                        selectLyric(line);
                                                     }, 500);
                                                 }}
                                                 onPointerMove={e => {
-                                                    if (Math.hypot(e.clientX - lyricPress.current.x, e.clientY - lyricPress.current.y) > 10) { cancelLyricPress(); lyricPress.current.consumed = true; }
+                                                    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                                                    const press = lyricPress.current;
+                                                    const container = lyricsContainerRef.current;
+                                                    if (!container) return;
+                                                    if (press.selecting && selectionRef.current) {
+                                                        const bounds = container.getBoundingClientRect();
+                                                        if (e.clientY < bounds.top + 36) container.scrollTop -= 12;
+                                                        if (e.clientY > bounds.bottom - 36) container.scrollTop += 12;
+                                                        const rows = Array.from(container.children) as HTMLElement[];
+                                                        let nearest = selectionRef.current[1], distance = Infinity;
+                                                        rows.forEach((row, index) => {
+                                                            const rect = row.getBoundingClientRect();
+                                                            const delta = Math.abs(e.clientY - (rect.top + rect.bottom) / 2);
+                                                            if (delta < distance) { nearest = index; distance = delta; }
+                                                        });
+                                                        selectionRef.current = [selectionRef.current[0], nearest];
+                                                        setSelection([...selectionRef.current]);
+                                                    } else if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10 || press.consumed) {
+                                                        cancelLyricPress(); press.consumed = true;
+                                                        container.scrollTop += (press.lastY ?? press.y) - e.clientY;
+                                                        manualScrollUntil.current = Date.now() + 1800;
+                                                    }
+                                                    press.lastY = e.clientY;
                                                 }}
-                                                onPointerUp={cancelLyricPress}
-                                                onPointerCancel={() => { cancelLyricPress(); lyricPress.current.consumed = true; }}
-                                                onPointerLeave={() => { cancelLyricPress(); lyricPress.current.consumed = true; }}
-                                                onContextMenu={e => { e.preventDefault(); e.stopPropagation(); cancelLyricPress(); lyricPress.current.consumed = true; if (line.text.trim()) selectLyric(line); }}
+                                                onPointerUp={() => { if (lyricPress.current.selecting) finishLyricRange(); lyricPress.current.selecting = false; setDragSelecting(false); cancelLyricPress(); }}
+                                                onPointerCancel={() => { cancelLyricPress(); lyricPress.current.consumed = true; lyricPress.current.selecting = false; setDragSelecting(false); setSelection(null); selectionRef.current = null; }}
+                                                onContextMenu={e => { e.preventDefault(); e.stopPropagation(); if (lyricPress.current.selecting || lyricPress.current.pointerType === "touch" || lyricPress.current.pointerType === "pen") return; cancelLyricPress(); lyricPress.current.consumed = true; if (line.text.trim()) selectLyric(line); }}
                                                 onKeyDown={e => {
                                                     if ((e.shiftKey && e.key === "F10") || e.key === "ContextMenu") {
                                                         e.preventDefault(); e.stopPropagation(); if (line.text.trim()) selectLyric(line);
@@ -484,10 +550,9 @@ export default function MusicPlayer() {
                                 <div className="mp-lyric-line" data-active="">暂无歌词</div>
                             </div>
                         )}
-                        {selectedLyric?.reference && <div className="mp-lyric-actions" onClick={e => e.stopPropagation()} role="group" aria-label="歌词分享">
-                            <div className="mp-lyric-sheet-heading"><span>歌词片段 · {lyricTimestamp(selectedLyric.reference.time)}</span><button type="button" className="mp-icon-button" aria-label="关闭歌词分享" onClick={() => setSelectedLyric(null)}><X size={18} /></button></div>
-                            <div className="mp-lyric-selected-text">{selectedLyric.reference.text}</div>
-                            <div className="mp-lyric-sheet-track">{track.title} · {track.artist || "未知歌手"}</div>
+                        {!dragSelecting && selectedLyric?.reference && <div className="mp-lyric-actions" onClick={e => e.stopPropagation()} role="group" aria-label="歌词分享">
+                            <div className="mp-lyric-sheet-heading"><span>歌词片段 · {lyricTimestamp(selectedLyric.reference.time)}</span><button type="button" className="mp-icon-button" aria-label="关闭歌词分享" onClick={() => { setSelectedLyric(null); setSelection(null); selectionRef.current = null; }}><X size={18} /></button></div>
+                            <LyricShareCard title={track.title} artist={track.artist || "未知歌手"} coverUrl={track.coverUrl} text={selectedLyric.reference.text} />
                             <div className="mp-lyric-action-buttons">
                                 <button type="button" onClick={sendSelectedLyric}><Send size={18} strokeWidth={1.7} /><span>分享歌词</span></button>
                             </div>

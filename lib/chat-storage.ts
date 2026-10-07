@@ -319,6 +319,7 @@ export type ChatMessage = {
         adminMuteMinutes?: number;// 禁言时长（分钟）
         musicTitle?: string;      // 音乐标题
         musicArtist?: string;     // 音乐歌手
+        musicCoverUrl?: string;   // Preserve the selected album art for lyric shares.
         musicTrack?: import("./music-storage").MusicTrack; // Fixed recording; never persist an expiring play URL.
         musicResolution?: "pending" | "resolved" | "unresolved";
         xiaohongshuAuthor?: string;       // 小红书分享作者

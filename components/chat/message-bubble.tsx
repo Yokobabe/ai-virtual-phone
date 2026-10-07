@@ -1,4 +1,5 @@
 "use client";
+import { LyricShareCard } from "@/components/music/lyric-share-card";
 import { ListeningInviteCard } from "./listening-invite-card";
 import { getCurrentIdentityId } from "@/lib/identity-runtime";
 import { resolveUserIdentity } from "@/lib/settings-storage";
@@ -2602,6 +2603,9 @@ function MusicShareBubble({ msg, onPlay }: { msg: ChatMessage; onPlay?: MessageB
     const pending = msg.mediaData?.musicResolution === "pending";
     const unresolved = msg.mediaData?.musicResolution === "unresolved";
     const canPlay = !!onPlay;
+    if (msg.listeningContext?.reference) return <div style={{ width: "min(340px, 100%)" }} onClick={e => e.stopPropagation()}>
+        <LyricShareCard title={title} artist={artist} text={msg.listeningContext.reference.text} coverUrl={msg.mediaData?.musicCoverUrl || track?.coverUrl} onPlay={onPlay ? () => onPlay(title, artist || undefined, track) : undefined} />
+    </div>;
     return (
         <div
             className="chat-music-share-card"

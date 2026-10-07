@@ -1,4 +1,5 @@
 "use client";
+import { LyricShareCard } from "@/components/music/lyric-share-card";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -161,7 +162,7 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
     };
 
     const openPostEditor = () => {
-        setPostContentDraft(post.content);
+        setPostContentDraft(post.musicLyricShare ? post.musicLyricShare.caption || "" : post.content);
         setPostPhotoDescDraft(post.photoDescription || "");
         setPostUseReferenceDraft(post.photoUseReferenceImage === true);
         setPostLocationDraft(post.location || "");
@@ -171,10 +172,11 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
 
     const handlePostEditSave = () => {
         const content = postContentDraft.trim();
-        if (!content) return;
+        if (!content && !post.musicLyricShare) return;
         const photoDescription = postPhotoDescDraft.trim();
         updateMomentPost(post.id, {
-            content,
+            content: post.musicLyricShare ? [content, `分享歌曲《${post.musicLyricShare.title}》 — ${post.musicLyricShare.artist}`, `「${post.musicLyricShare.text}」`].filter(Boolean).join("\n\n") : content,
+            ...(post.musicLyricShare ? { musicLyricShare: { ...post.musicLyricShare, caption: content } } : {}),
             photoDescription: photoDescription || undefined,
             photoUseReferenceImage: photoDescription ? postUseReferenceDraft : false,
             location: postLocationDraft.trim() || undefined,
@@ -339,15 +341,16 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
             {/* Text content */}
             <div className="feed-post-content ts-16 leading-[1.75] text-[var(--c-text-title)] whitespace-pre-wrap break-words mb-3 w-full">
                 <BilingualTextBlock
-                    text={bodyText}
+                    text={post.musicLyricShare ? post.musicLyricShare.caption || "" : bodyText}
                     mode="plain"
                     defaultExpanded={defaultTranslationExpanded}
                 />
-                {!storedTranslation && needsMomentBodyTranslation(post.content) && <button type="button" className="moment-body-translate" disabled={translatingBody} onClick={translateBody}>{translatingBody ? "翻译中…" : "翻译"}</button>}
+                {!post.musicLyricShare && !storedTranslation && needsMomentBodyTranslation(post.content) && <button type="button" className="moment-body-translate" disabled={translatingBody} onClick={translateBody}>{translatingBody ? "翻译中…" : "翻译"}</button>}
                 {bodyTranslationError && <div role="status" className="ts-12 text-[var(--c-text-muted)]">{bodyTranslationError}</div>}
             </div>
 
             {/* Location */}
+            {post.musicLyricShare && <div className="mb-3"><LyricShareCard {...post.musicLyricShare} /></div>}
             {post.location && (
                 <div className="feed-post-location mb-3 text-[var(--c-icon)] opacity-80 flex items-center ts-12">
                     <MapPin size={12} strokeWidth={1.75} className="mr-1" />

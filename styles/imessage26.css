@@ -2326,9 +2326,30 @@
 }
 
 /* Text pairs share one available width instead of separately shrinking columns. */
+.chat-room-wrapper[data-imessage-private]:not([data-imessage-group]) .chat-msg-content-wrap:has([data-media-type="text"]) {
+  max-width: 86% !important;
+}
+.chat-room-wrapper[data-imessage-private][data-imessage-group] .chat-msg-wrapper[data-role="assistant"] .chat-msg-content-wrap:has([data-media-type="text"]) {
+  max-width: min(100%, calc((100% + var(--group-avatar-gutter)) * .78)) !important;
+}
+.chat-room-wrapper[data-imessage-private][data-imessage-group] .chat-msg-wrapper[data-role="user"] .chat-msg-content-wrap:has([data-media-type="text"]) {
+  max-width: 78% !important;
+}
+.chat-room-wrapper[data-imessage-private] .chat-bilingual-block[data-chat-text-layout] {
+  max-width: 100%;
+}
+/* Translation wraps inside the original's intrinsic width, without contributing
+   its own preferred width. Its height still participates in normal flow. */
+.chat-room-wrapper[data-imessage-private] .chat-bilingual-block-auto[data-chat-text-layout] > .chat-bilingual-section-translation {
+  contain: inline-size;
+}
 .chat-room-wrapper[data-imessage-private] .chat-bilingual-block[data-chat-text-layout] > .chat-bilingual-section {
   width: auto;
   align-self: stretch;
+}
+.chat-room-wrapper[data-imessage-private] .chat-bilingual-block[data-chat-text-layout] :is(.chat-markdown, .chat-markdown-paragraph, p, li) {
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 .chat-room-wrapper[data-imessage-private] .chat-text-missing-translation { font-size: .72em; line-height: 1.4; opacity: .6; }
 

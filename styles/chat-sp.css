@@ -213,6 +213,9 @@
 .sp-header-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .sp-header-actions button { width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border: 0; background: transparent; color: var(--sp-ink); }
 .sp-header-actions button > svg { width: 23px; height: 23px; }
+.sp-header-actions button > .sp-action-video { width:25px; height:25px; }
+.sp-header-actions button > .sp-action-settings { width:22px; height:22px; }
+.sp-header-name-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sp-glyph { display: block; width: 22px; height: 22px; background: currentColor; mask: var(--sp-glyph) center / contain no-repeat; -webkit-mask: var(--sp-glyph) center / contain no-repeat; }
 .sp-glyph-video { --sp-glyph: url('/sp/video.svg'); width: 27px; height: 27px; }
 .sp-glyph-settings { --sp-glyph: url('/sp/settings.svg'); }

@@ -24,12 +24,13 @@ type TabKey = "messages" | "contacts" | "feeds" | "me";
 export type PhoneChatAppProps = {
     onClose: () => void;
     initialSessionId?: string | null;
+    feedsRequest?: number;
     onSessionChange?: (session: ChatSession | null) => void;
     sharePayload?: ChatSharePayload | null;
     onShareDone?: () => void;
 };
 
-export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSessionId, onSessionChange, sharePayload, onShareDone }: PhoneChatAppProps) {
+export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSessionId, feedsRequest, onSessionChange, sharePayload, onShareDone }: PhoneChatAppProps) {
     const sharePayloadRef = useRef(sharePayload);
     sharePayloadRef.current = sharePayload;
     const [activeTab, setActiveTab] = useState<TabKey>("messages");
@@ -44,6 +45,12 @@ export const PhoneChatApp = memo(function PhoneChatApp({ onClose, initialSession
     const [visitedSessions, setVisitedSessions] = useState<Map<string, ChatSession>>(new Map());
     const [dbReady, setDbReady] = useState(false);
     const [hideTabBar, setHideTabBar] = useState(false);
+    useEffect(() => {
+        if (!dbReady || !feedsRequest || initialSessionId) return;
+        setActiveSession(null);
+        setActiveMascot(false);
+        setActiveTab("feeds");
+    }, [dbReady, feedsRequest, initialSessionId]);
 
     // Hydrate IndexedDB → in-memory caches on mount
     useEffect(() => {

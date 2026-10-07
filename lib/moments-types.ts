@@ -6,6 +6,7 @@ export type MomentPost = {
     authorType: "user" | "character";
     authorId: string;               // characterId or "user"
     content: string;
+    musicLyricShare?: { title: string; artist: string; text: string; coverUrl?: string; caption?: string };
     contentTranslation?: string;
     contentTranslationSource?: string;
     photoUrl?: string;              // user-uploaded base64 image
